@@ -12,6 +12,7 @@ import {
   Download,
   XCircle,
   Filter,
+  DollarSign,
 } from "lucide-react";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
@@ -54,6 +55,26 @@ interface Application {
   reviewedAt: string | null;
   user: ApplicationUser;
   reviewer: { id: string; username: string | null } | null;
+}
+
+interface PayoutCreator {
+  id: string;
+  email: string;
+  username: string | null;
+  name: string;
+}
+
+interface PayoutRequest {
+  id: string;
+  creatorId: string;
+  creator: PayoutCreator;
+  periodStart: string;
+  periodEnd: string;
+  totalCreditsSpent: number;
+  amountUsd: number;
+  status: string;
+  paidAt: string | null;
+  createdAt: string;
 }
 
 interface SampleCreator {
@@ -103,6 +124,9 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [draftSamples, setDraftSamples] = useState<DraftSample[]>([]);
+  const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([]);
+  const [payoutFilter, setPayoutFilter] = useState<string>("PENDING");
+  const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("applications");
   const [editingSample, setEditingSample] = useState<ReturnType<
@@ -111,12 +135,29 @@ export default function AdminDashboardPage() {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
 
+  const fetchPayouts = useCallback(async (status?: string) => {
+    try {
+      const filterStatus = status ?? payoutFilter;
+      const url = filterStatus
+        ? `/api/admin/payouts?status=${filterStatus}`
+        : "/api/admin/payouts";
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setPayoutRequests(data.payouts);
+      }
+    } catch (error) {
+      console.error("Failed to fetch payouts:", error);
+    }
+  }, [payoutFilter]);
+
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, appsRes, samplesRes] = await Promise.all([
+      const [statsRes, appsRes, samplesRes, payoutsRes] = await Promise.all([
         fetch("/api/admin/stats"),
         fetch("/api/mod/applications?status=PENDING"),
         fetch("/api/mod/samples"),
+        fetch("/api/admin/payouts?status=PENDING"),
       ]);
 
       if (statsRes.ok) {
@@ -129,6 +170,10 @@ export default function AdminDashboardPage() {
       if (samplesRes.ok) {
         const data = await samplesRes.json();
         setDraftSamples(data.samples);
+      }
+      if (payoutsRes.ok) {
+        const data = await payoutsRes.json();
+        setPayoutRequests(data.payouts);
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data:", error);
@@ -190,6 +235,45 @@ export default function AdminDashboardPage() {
       window.open(data.url, "_blank");
     } catch {
       toast.error("Failed to download file");
+    }
+  };
+
+  const handlePayoutAction = async (
+    payoutId: string,
+    action: "approve" | "reject"
+  ) => {
+    const confirmed = window.confirm(
+      action === "approve"
+        ? "Approve this payout? Make sure you've sent the payment."
+        : "Reject this payout request?"
+    );
+    if (!confirmed) return;
+
+    setProcessingPayoutId(payoutId);
+    try {
+      const res = await fetch("/api/admin/payouts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payoutId, action }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to process payout");
+      }
+
+      toast.success(
+        action === "approve"
+          ? "Payout approved and marked as paid!"
+          : "Payout request rejected."
+      );
+      await fetchPayouts();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to process payout"
+      );
+    } finally {
+      setProcessingPayoutId(null);
     }
   };
 
@@ -378,6 +462,25 @@ export default function AdminDashboardPage() {
           >
             <Music className="w-4 h-4 inline mr-2" />
             Sample Moderation ({draftSamples.length})
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("payouts");
+              fetchPayouts("PENDING");
+            }}
+            className={`px-4 py-3 font-medium border-b-2 transition ${
+              activeTab === "payouts"
+                ? "border-[#00FF88] text-[#00FF88]"
+                : "border-transparent text-[#a1a1a1] hover:text-white"
+            }`}
+          >
+            <DollarSign className="w-4 h-4 inline mr-2" />
+            Payouts
+            {payoutRequests.filter((p) => p.status === "PENDING").length > 0 && (
+              <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-yellow-500/20 text-yellow-400">
+                {payoutRequests.filter((p) => p.status === "PENDING").length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab("tools")}
@@ -583,6 +686,176 @@ export default function AdminDashboardPage() {
                   </h3>
                   <p className="text-[#a1a1a1]">
                     No samples awaiting moderation.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "payouts" && (
+            <div>
+              {/* Filter buttons */}
+              <div className="flex gap-2 mb-6">
+                {["PENDING", "PAID", "FAILED", ""].map((status) => (
+                  <button
+                    key={status || "ALL"}
+                    onClick={() => {
+                      setPayoutFilter(status);
+                      fetchPayouts(status);
+                    }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                      payoutFilter === status
+                        ? "bg-[#00FF88] text-black"
+                        : "bg-[#1a1a1a] text-[#a1a1a1] hover:text-white border border-[#2a2a2a]"
+                    }`}
+                  >
+                    {status || "All"}
+                  </button>
+                ))}
+              </div>
+
+              {payoutRequests.length > 0 ? (
+                <div className="space-y-4">
+                  {payoutRequests.map((payout) => (
+                    <div
+                      key={payout.id}
+                      className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-lg font-bold text-white">
+                            {payout.creator.name}
+                          </h3>
+                          <p className="text-sm text-[#a1a1a1]">
+                            {payout.creator.email}
+                            {payout.creator.username &&
+                              ` (@${payout.creator.username})`}
+                          </p>
+                          <p className="text-xs text-[#666] mt-1">
+                            Requested{" "}
+                            {new Date(payout.createdAt).toLocaleDateString(
+                              "en-US",
+                              {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              }
+                            )}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            payout.status === "PAID"
+                              ? "bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30"
+                              : payout.status === "PENDING"
+                              ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                              : "bg-red-500/20 text-red-400 border border-red-500/30"
+                          }`}
+                        >
+                          {payout.status === "PAID" && (
+                            <CheckCircle2 className="w-3 h-3" />
+                          )}
+                          {payout.status === "PENDING" && (
+                            <Clock className="w-3 h-3" />
+                          )}
+                          {payout.status === "FAILED" && (
+                            <XCircle className="w-3 h-3" />
+                          )}
+                          {payout.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">Amount</p>
+                          <p className="text-lg font-bold text-[#00FF88]">
+                            ${payout.amountUsd.toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Credits Earned
+                          </p>
+                          <p className="text-lg font-bold text-white">
+                            {payout.totalCreditsSpent}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Period Start
+                          </p>
+                          <p className="text-sm text-white">
+                            {new Date(
+                              payout.periodStart
+                            ).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Period End
+                          </p>
+                          <p className="text-sm text-white">
+                            {new Date(payout.periodEnd).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      {payout.paidAt && (
+                        <p className="text-xs text-[#a1a1a1] mb-4">
+                          Paid on{" "}
+                          {new Date(payout.paidAt).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </p>
+                      )}
+
+                      {payout.status === "PENDING" && (
+                        <div className="flex gap-3 border-t border-[#2a2a2a] pt-4">
+                          <Button
+                            onClick={() =>
+                              handlePayoutAction(payout.id, "approve")
+                            }
+                            disabled={processingPayoutId === payout.id}
+                            className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                          >
+                            {processingPayoutId === payout.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                            )}
+                            Approve & Mark Paid
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              handlePayoutAction(payout.id, "reject")
+                            }
+                            disabled={processingPayoutId === payout.id}
+                            className="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                          >
+                            {processingPayoutId === payout.id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <XCircle className="w-4 h-4 mr-2" />
+                            )}
+                            Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <DollarSign className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-white mb-2">
+                    No payout requests
+                  </h3>
+                  <p className="text-[#a1a1a1]">
+                    {payoutFilter === "PENDING"
+                      ? "No pending payout requests to review."
+                      : `No ${payoutFilter.toLowerCase() || ""} payouts found.`}
                   </p>
                 </div>
               )}

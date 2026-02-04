@@ -50,6 +50,7 @@ export default function CreatorEarningsPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
+  const [requestingPayout, setRequestingPayout] = useState(false);
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -66,6 +67,25 @@ export default function CreatorEarningsPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleRequestPayout = async () => {
+    setRequestingPayout(true);
+    try {
+      const res = await fetch("/api/creator/payouts", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to request payout");
+      }
+      toast.success("Payout request submitted! An admin will review it shortly.");
+      await fetchEarnings();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to request payout"
+      );
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
 
   useEffect(() => {
     if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
@@ -169,6 +189,59 @@ export default function CreatorEarningsPage() {
               ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
             </p>
             <p className="text-[#a1a1a1] text-xs mt-2">Ready to withdraw</p>
+          </div>
+        </div>
+
+        {/* Payout Request */}
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white mb-1">
+                Request Payout
+              </h2>
+              <p className="text-[#a1a1a1] text-sm">
+                {stats && stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
+                  <>
+                    You have{" "}
+                    <span className="text-[#00FF88] font-medium">
+                      ${(stats.unpaidEarnings - stats.pendingPayout).toFixed(2)}
+                    </span>{" "}
+                    available for payout.
+                  </>
+                ) : stats && stats.pendingPayout > 0 ? (
+                  <>
+                    You have a pending payout of{" "}
+                    <span className="text-yellow-400 font-medium">
+                      ${stats.pendingPayout.toFixed(2)}
+                    </span>
+                    . Please wait for admin approval.
+                  </>
+                ) : (
+                  <>
+                    Minimum payout is $5.00. Current unpaid earnings:{" "}
+                    <span className="text-white font-medium">
+                      ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+            <Button
+              onClick={handleRequestPayout}
+              disabled={
+                requestingPayout ||
+                !stats ||
+                stats.unpaidEarnings - stats.pendingPayout < 5
+              }
+              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {requestingPayout ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <DollarSign className="w-4 h-4 mr-2" />
+              )}
+              Request Payout
+            </Button>
           </div>
         </div>
 
