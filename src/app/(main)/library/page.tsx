@@ -180,15 +180,27 @@ function DownloadButton({ sampleId }: { sampleId: string }) {
     setDownloading(true);
     try {
       const res = await fetch(`/api/downloads/${sampleId}`);
-      const data = await res.json();
 
       if (!res.ok) {
+        const data = await res.json();
         throw new Error(data.error || "Download failed");
       }
 
-      if (data.url) {
-        window.open(data.url, "_blank");
-      }
+      // Get the filename from Content-Disposition header
+      const disposition = res.headers.get("Content-Disposition");
+      const filenameMatch = disposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch?.[1] || "sample.wav";
+
+      // Create blob and trigger download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download sample.");

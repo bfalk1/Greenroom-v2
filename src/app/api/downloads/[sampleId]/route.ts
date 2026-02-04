@@ -50,7 +50,7 @@ export async function GET(
     const bucket = parts[0];
     const path = parts.slice(1).join("/");
 
-    // Create a service client for signed URL generation
+    // Create a service client to download the actual file
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -58,12 +58,12 @@ export async function GET(
 
     const { data, error } = await serviceClient.storage
       .from(bucket)
-      .createSignedUrl(path, 60); // 60 second expiry
+      .download(path);
 
-    if (error || !data?.signedUrl) {
-      console.error("Signed URL error:", error);
+    if (error || !data) {
+      console.error("Download error:", error);
       return NextResponse.json(
-        { error: "Failed to generate download link" },
+        { error: "Failed to download file" },
         { status: 500 }
       );
     }
@@ -77,7 +77,21 @@ export async function GET(
       },
     });
 
-    return NextResponse.json({ url: data.signedUrl });
+    // Generate a clean filename from the sample name
+    const filename = purchase.sample.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") + ".wav";
+
+    // Return the file directly with proper headers for download
+    const buffer = await data.arrayBuffer();
+    return new NextResponse(buffer, {
+      headers: {
+        "Content-Type": "audio/wav",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": buffer.byteLength.toString(),
+      },
+    });
   } catch (error) {
     console.error("Download error:", error);
     return NextResponse.json(
