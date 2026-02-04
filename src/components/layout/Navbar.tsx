@@ -35,7 +35,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
+          <Link href={user ? "/marketplace" : "/"} className="flex items-center gap-2 group">
             <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
               alt="GREENROOM"
@@ -57,7 +57,11 @@ export function Navbar() {
                   navLink("/mod/samples", "Moderation")}
                 {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
               </>
-            ) : null}
+            ) : (
+              <>
+                {navLink("/pricing", "Pricing")}
+              </>
+            )}
           </nav>
 
           {/* Right Actions */}
