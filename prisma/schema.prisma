@@ -1,0 +1,362 @@
+// GREENROOM - Prisma Schema
+// Next.js + Supabase (Postgres) + Stripe
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  CREATOR
+  MODERATOR
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum CreditTransactionType {
+  SUBSCRIPTION
+  PURCHASE
+  ADMIN_ADJUSTMENT
+  UPGRADE_TOPUP
+  REFUND
+}
+
+enum SampleType {
+  LOOP
+  ONE_SHOT
+}
+
+enum SampleStatus {
+  DRAFT
+  PUBLISHED
+  REVIEW
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// USER & AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id                String   @id @default(uuid()) @db.Uuid
+  email             String   @unique
+  username          String   @unique
+  artistName        String?  @unique @map("artist_name")
+  fullName          String?  @map("full_name")
+  bio               String?
+  avatarUrl         String?  @map("avatar_url")
+  bannerUrl         String?  @map("banner_url")
+  role              UserRole @default(USER)
+  socialLinks       Json?    @map("social_links") @db.JsonB
+  addressLine1      String?  @map("address_line1")
+  addressLine2      String?  @map("address_line2")
+  city              String?
+  state             String?
+  postalCode        String?  @map("postal_code")
+  country           String?
+  credits           Int      @default(0)
+  subscriptionStatus String? @map("subscription_status")
+  profileCompleted  Boolean  @default(false) @map("profile_completed")
+  stripeCustomerId  String?  @map("stripe_customer_id")
+  stripeConnectId   String?  @map("stripe_connect_id")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  subscription         Subscription?
+  creditBalance        CreditBalance?
+  creditTransactions   CreditTransaction[]
+  samples              Sample[]           @relation("CreatorSamples")
+  purchases            Purchase[]
+  downloads            Download[]
+  ratings              Rating[]
+  favorites            Favorite[]
+  following            Follow[]           @relation("Follower")
+  followers            Follow[]           @relation("Creator")
+  creatorApplication   CreatorApplication? @relation("Applicant")
+  reviewedApplications CreatorApplication[] @relation("Reviewer")
+  payouts              CreatorPayout[]
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// SUBSCRIPTIONS & CREDITS
+// ─────────────────────────────────────────────
+
+model SubscriptionTier {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String   @unique // GA, VIP, AA
+  displayName     String   @map("display_name") // General Admission, VIP, All Access
+  creditsPerMonth Int      @map("credits_per_month")
+  priceUsdCents   Int      @map("price_usd_cents")
+  stripePriceId   String?  @map("stripe_price_id")
+  isActive        Boolean  @default(true) @map("is_active")
+
+  subscriptions Subscription[]
+
+  @@map("subscription_tiers")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  userId               String             @unique @map("user_id") @db.Uuid
+  tierId               String             @map("tier_id") @db.Uuid
+  stripeSubscriptionId String?            @map("stripe_subscription_id")
+  status               SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart   DateTime           @map("current_period_start")
+  currentPeriodEnd     DateTime           @map("current_period_end")
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier SubscriptionTier @relation(fields: [tierId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model CreditBalance {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("credit_balances")
+}
+
+model CreditTransaction {
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String                @map("user_id") @db.Uuid
+  amount      Int                   // positive = credit, negative = debit
+  type        CreditTransactionType
+  referenceId String?               @map("reference_id")
+  note        String?
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("credit_transactions")
+}
+
+// ─────────────────────────────────────────────
+// SAMPLES & CATALOG
+// ─────────────────────────────────────────────
+
+model Sample {
+  id             String       @id @default(uuid()) @db.Uuid
+  creatorId      String       @map("creator_id") @db.Uuid
+  name           String
+  slug           String       @unique
+  fileUrl        String       @map("file_url")
+  previewUrl     String?      @map("preview_url")
+  coverImageUrl  String?      @map("cover_image_url")
+  sampleType     SampleType   @map("sample_type")
+  genre          String
+  instrumentType String       @map("instrument_type")
+  key            String?
+  bpm            Int?
+  creditPrice    Int          @default(1) @map("credit_price")
+  durationMs     Int?         @map("duration_ms")
+  fileSizeBytes  BigInt?      @map("file_size_bytes")
+  tags           String[]     @default([])
+  downloadCount  Int          @default(0) @map("download_count")
+  ratingAvg      Float        @default(0) @map("rating_avg")
+  ratingCount    Int          @default(0) @map("rating_count")
+  isActive       Boolean      @default(true) @map("is_active")
+  status         SampleStatus @default(DRAFT)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  creator   User       @relation("CreatorSamples", fields: [creatorId], references: [id])
+  purchases Purchase[]
+  downloads Download[]
+  ratings   Rating[]
+  favorites Favorite[]
+
+  @@index([genre])
+  @@index([instrumentType])
+  @@index([sampleType])
+  @@index([key])
+  @@index([bpm])
+  @@index([status])
+  @@index([downloadCount(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([creatorId])
+  @@map("samples")
+}
+
+// ─────────────────────────────────────────────
+// PURCHASES, DOWNLOADS & ENGAGEMENT
+// ─────────────────────────────────────────────
+
+model Purchase {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  sampleId     String   @map("sample_id") @db.Uuid
+  creditsSpent Int      @map("credits_spent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample    Sample     @relation(fields: [sampleId], references: [id])
+  downloads Download[]
+
+  @@unique([userId, sampleId])
+  @@index([userId])
+  @@index([sampleId])
+  @@map("purchases")
+}
+
+model Download {
+  id         String   @id @default(uuid()) @db.Uuid
+  purchaseId String   @map("purchase_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  sampleId   String   @map("sample_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id])
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample   Sample   @relation(fields: [sampleId], references: [id])
+
+  @@index([userId])
+  @@index([sampleId])
+  @@map("downloads")
+}
+
+model Rating {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  sampleId  String   @map("sample_id") @db.Uuid
+  score     Int      // 1-5
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample Sample @relation(fields: [sampleId], references: [id])
+
+  @@unique([userId, sampleId])
+  @@map("ratings")
+}
+
+model Favorite {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  sampleId  String   @map("sample_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample Sample @relation(fields: [sampleId], references: [id])
+
+  @@unique([userId, sampleId])
+  @@index([userId])
+  @@map("favorites")
+}
+
+model Follow {
+  id         String   @id @default(uuid()) @db.Uuid
+  followerId String   @map("follower_id") @db.Uuid
+  creatorId  String   @map("creator_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  follower User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  creator  User @relation("Creator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, creatorId])
+  @@index([creatorId])
+  @@map("follows")
+}
+
+// ─────────────────────────────────────────────
+// CREATOR APPLICATION & PAYOUTS
+// ─────────────────────────────────────────────
+
+model CreatorApplication {
+  id            String            @id @default(uuid()) @db.Uuid
+  userId        String            @unique @map("user_id") @db.Uuid
+  artistName    String            @map("artist_name")
+  bio           String?
+  socialLinks   Json?             @map("social_links") @db.JsonB
+  sampleZipUrl  String            @map("sample_zip_url")
+  status        ApplicationStatus @default(PENDING)
+  reviewedBy    String?           @map("reviewed_by") @db.Uuid
+  reviewNote    String?           @map("review_note")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  reviewedAt    DateTime?         @map("reviewed_at")
+
+  user     User  @relation("Applicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("Reviewer", fields: [reviewedBy], references: [id])
+
+  @@map("creator_applications")
+}
+
+model CreatorPayout {
+  id                String       @id @default(uuid()) @db.Uuid
+  creatorId         String       @map("creator_id") @db.Uuid
+  periodStart       DateTime     @map("period_start") @db.Date
+  periodEnd         DateTime     @map("period_end") @db.Date
+  totalCreditsSpent Int          @map("total_credits_spent")
+  amountUsdCents    Int          @map("amount_usd_cents")
+  status            PayoutStatus @default(PENDING)
+  stripeTransferId  String?      @map("stripe_transfer_id")
+  paidAt            DateTime?    @map("paid_at")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  creator User @relation(fields: [creatorId], references: [id])
+
+  @@index([creatorId])
+  @@index([periodStart, periodEnd])
+  @@map("creator_payouts")
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String   // e.g. SAMPLE_DELETED, CREATOR_APPROVED, CREDIT_ADJUSTED
+  targetType String   @map("target_type") // e.g. Sample, User, CreatorApplication
+  targetId   String   @map("target_id") @db.Uuid
+  metadata   Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
