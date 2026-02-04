@@ -6,6 +6,7 @@ import { Search, Music, Download, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
+import { toast } from "sonner";
 
 interface LibrarySample {
   id: string;
@@ -142,19 +143,7 @@ export default function LibraryPage() {
                 </div>
 
                 {/* Download */}
-                <Button
-                  size="sm"
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-medium h-8 px-4"
-                  onClick={() => {
-                    // TODO: Wire to signed download URL
-                    if (sample.file_url) {
-                      window.open(sample.file_url, "_blank");
-                    }
-                  }}
-                >
-                  <Download className="w-3.5 h-3.5 mr-1" />
-                  Download
-                </Button>
+                <DownloadButton sampleId={sample.id} />
               </div>
             ))}
           </div>
@@ -181,5 +170,46 @@ export default function LibraryPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function DownloadButton({ sampleId }: { sampleId: string }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/downloads/${sampleId}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Download failed");
+      }
+
+      if (data.url) {
+        window.open(data.url, "_blank");
+      }
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download sample.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Button
+      size="sm"
+      className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-medium h-8 px-4"
+      onClick={handleDownload}
+      disabled={downloading}
+    >
+      {downloading ? (
+        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+      ) : (
+        <Download className="w-3.5 h-3.5 mr-1" />
+      )}
+      Download
+    </Button>
   );
 }
