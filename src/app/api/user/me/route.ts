@@ -51,7 +51,7 @@ export async function GET() {
 
     const credits = user.creditBalance?.balance ?? 0;
     const subscription = user.subscription;
-    const subscriptionStatus = subscription?.status ?? "none";
+    const subscriptionStatus = subscription?.status?.toLowerCase() ?? "none";
 
     return NextResponse.json({
       user: {
