@@ -3,42 +3,14 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Music, Settings, LogOut, Menu, X, Zap } from "lucide-react";
+import { Settings, LogOut, Menu, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-// TODO: Replace with actual auth state from Supabase
-interface NavUser {
-  id: string;
-  email: string;
-  credits: number;
-  subscription_status: string;
-  is_creator: boolean;
-  role: string;
-}
-
-const useMockUser = (): NavUser | null => {
-  // Return null for unauthenticated, or a mock user object
-  return {
-    id: "mock-user",
-    email: "user@example.com",
-    credits: 150,
-    subscription_status: "active",
-    is_creator: true,
-    role: "admin",
-  };
-};
+import { useUser } from "@/lib/hooks/useUser";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
-
-  // TODO: Replace with Supabase auth
-  const user = useMockUser();
-
-  const handleLogout = async () => {
-    // TODO: Replace with Supabase logout
-    console.log("logout");
-  };
+  const { user, loading, logout } = useUser();
 
   const navLink = (href: string, label: string) => {
     const isActive = pathname === href;
@@ -74,31 +46,31 @@ export function Navbar() {
                 {navLink("/marketplace", "Marketplace")}
                 {navLink("/library", "Library")}
                 {navLink("/pricing", "Pricing")}
-                {!user.is_creator && navLink("/creator/apply", "Become a Creator")}
+                {user.role !== "CREATOR" && navLink("/creator/apply", "Become a Creator")}
                 {user.is_creator && navLink("/creator/dashboard", "Dashboard")}
                 {user.is_creator && navLink("/creator/earnings", "Earnings")}
-                {(user.role === "moderator" || user.role === "admin") &&
+                {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                   navLink("/mod/samples", "Moderation")}
-                {user.role === "admin" && navLink("/admin/dashboard", "Admin")}
+                {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
               </>
             ) : null}
           </nav>
 
           {/* Right Actions */}
           <div className="flex items-center gap-4">
-            {user ? (
+            {loading ? (
+              <div className="w-20 h-8 bg-[#1a1a1a] rounded-full animate-pulse" />
+            ) : user ? (
               <>
                 {/* Credits Badge */}
-                {user.subscription_status === "active" && (
-                  <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#00FF88]/30">
-                    <Zap className="w-4 h-4 text-[#00FF88]" />
-                    <span className="text-sm font-medium text-white">
-                      {user.credits} credits
-                    </span>
-                  </div>
-                )}
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#00FF88]/30">
+                  <Zap className="w-4 h-4 text-[#00FF88]" />
+                  <span className="text-sm font-medium text-white">
+                    {user.credits} credits
+                  </span>
+                </div>
 
-                {/* Account Menu */}
+                {/* Account */}
                 <Link
                   href="/account"
                   className="p-2 rounded-lg hover:bg-[#1a1a1a] transition"
@@ -108,7 +80,7 @@ export function Navbar() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleLogout}
+                  onClick={logout}
                   className="text-[#a1a1a1] hover:text-white"
                 >
                   <LogOut className="w-4 h-4" />
@@ -139,61 +111,37 @@ export function Navbar() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && user && (
           <nav className="md:hidden mt-4 pt-4 border-t border-[#2a2a2a] flex flex-col gap-3">
-            <Link
-              href="/marketplace"
-              className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-            >
+            <Link href="/marketplace" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Marketplace
             </Link>
-            <Link
-              href="/library"
-              className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-            >
+            <Link href="/library" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Library
             </Link>
-            <Link
-              href="/pricing"
-              className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-            >
+            <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Pricing
             </Link>
-            {!user.is_creator && (
-              <Link
-                href="/creator/apply"
-                className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-              >
+            {user.role !== "CREATOR" && (
+              <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Become a Creator
               </Link>
             )}
             {user.is_creator && (
-              <Link
-                href="/creator/dashboard"
-                className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-              >
+              <Link href="/creator/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Dashboard
               </Link>
             )}
             {user.is_creator && (
-              <Link
-                href="/creator/earnings"
-                className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-              >
+              <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Earnings
               </Link>
             )}
-            {(user.role === "moderator" || user.role === "admin") && (
-              <Link
-                href="/mod/samples"
-                className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-              >
+            {(user.role === "MODERATOR" || user.role === "ADMIN") && (
+              <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Moderation
               </Link>
             )}
-            {user.role === "admin" && (
-              <Link
-                href="/admin/dashboard"
-                className="text-sm font-medium text-[#a1a1a1] hover:text-white"
-              >
+            {user.role === "ADMIN" && (
+              <Link href="/admin/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Admin
               </Link>
             )}

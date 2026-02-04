@@ -67,7 +67,7 @@ enum PayoutStatus {
 model User {
   id                String   @id @default(uuid()) @db.Uuid
   email             String   @unique
-  username          String   @unique
+  username          String?  @unique
   artistName        String?  @unique @map("artist_name")
   fullName          String?  @map("full_name")
   bio               String?
