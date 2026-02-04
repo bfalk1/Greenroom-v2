@@ -1,54 +1,64 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit2, Trash2, Eye, Music, Search } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, Music, Search, Star } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
-import { SampleUploadForm } from "@/components/creator/SampleUploadForm";
+import { useUser } from "@/lib/hooks/useUser";
+import { toast } from "sonner";
 
 interface CreatorSample {
   id: string;
   name: string;
+  slug: string;
   genre: string;
+  instrumentType: string;
+  sampleType: string;
+  key: string | null;
+  bpm: number | null;
+  creditPrice: number;
   status: string;
+  downloadCount: number;
+  ratingAvg: number;
+  ratingCount: number;
   purchases: number;
   downloads: number;
+  createdAt: string;
 }
 
-// Mock data
-const MOCK_SAMPLES: CreatorSample[] = [
-  {
-    id: "1",
-    name: "Deep House Groove 120 BPM",
-    genre: "House",
-    status: "published",
-    purchases: 12,
-    downloads: 45,
-  },
-  {
-    id: "2",
-    name: "Trap Hi-Hats Pattern",
-    genre: "Trap",
-    status: "draft",
-    purchases: 0,
-    downloads: 0,
-  },
-  {
-    id: "3",
-    name: "Lo-Fi Piano Loop",
-    genre: "Hip-Hop",
-    status: "pending_review",
-    purchases: 0,
-    downloads: 0,
-  },
-];
-
 export default function CreatorDashboardPage() {
-  const [samples] = useState<CreatorSample[]>(MOCK_SAMPLES);
-  const [filteredSamples, setFilteredSamples] = useState<CreatorSample[]>(MOCK_SAMPLES);
-  const [showUploadForm, setShowUploadForm] = useState(false);
+  const router = useRouter();
+  const { user, loading: userLoading } = useUser();
+  const [samples, setSamples] = useState<CreatorSample[]>([]);
+  const [filteredSamples, setFilteredSamples] = useState<CreatorSample[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const fetchSamples = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/creator/samples");
+      if (!res.ok) throw new Error("Failed to fetch samples");
+      const data = await res.json();
+      setSamples(data.samples);
+      setFilteredSamples(data.samples);
+    } catch (error) {
+      console.error("Error fetching samples:", error);
+      toast.error("Failed to load your samples");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && user.role === "CREATOR") {
+      fetchSamples();
+    } else if (!userLoading && (!user || user.role !== "CREATOR")) {
+      setLoading(false);
+    }
+  }, [user, userLoading, fetchSamples]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -58,25 +68,70 @@ export default function CreatorDashboardPage() {
     setFilteredSamples(filtered);
   };
 
-  const handleUploadSuccess = () => {
-    setShowUploadForm(false);
-    // TODO: Refresh samples from DB
-  };
-
   const handleDeleteSample = async (sampleId: string) => {
     if (!confirm("Delete this sample? This cannot be undone.")) return;
-    // TODO: Replace with Supabase/Prisma call
-    console.log("Delete sample:", sampleId);
+    try {
+      const res = await fetch(`/api/samples/${sampleId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false, status: "DRAFT" }),
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      toast.success("Sample removed");
+      fetchSamples();
+    } catch {
+      toast.error("Failed to delete sample");
+    }
   };
 
-  const handleSubmitForReview = async (sampleId: string) => {
-    // TODO: Replace with Supabase/Prisma call
-    alert("Sample submitted for moderation review");
+  const handlePublish = async (sampleId: string) => {
+    try {
+      const res = await fetch(`/api/samples/${sampleId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "PUBLISHED" }),
+      });
+      if (!res.ok) throw new Error("Failed to publish");
+      toast.success("Sample published!");
+      fetchSamples();
+    } catch {
+      toast.error("Failed to publish sample");
+    }
   };
 
-  const totalDownloads = samples.reduce((sum, s) => sum + s.downloads, 0);
+  if (userLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <div className="animate-pulse text-[#a1a1a1]">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user || user.role !== "CREATOR") {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-white mb-2">Creator Access Required</h2>
+          <p className="text-[#a1a1a1] mb-4">
+            Apply to become a creator to access the dashboard.
+          </p>
+          <Button
+            onClick={() => router.push("/marketplace")}
+            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          >
+            Browse Marketplace
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const totalDownloads = samples.reduce((sum, s) => sum + s.downloadCount, 0);
   const totalPurchases = samples.reduce((sum, s) => sum + s.purchases, 0);
-  const totalEarnings = totalPurchases * 0.03;
+  const totalEarnings = samples.reduce(
+    (sum, s) => sum + s.purchases * s.creditPrice * 0.03,
+    0
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -90,11 +145,11 @@ export default function CreatorDashboardPage() {
                 month: "long",
                 year: "numeric",
               })}{" "}
-              - Manage your samples and track earnings
+              — Manage your samples and track earnings
             </p>
           </div>
           <Button
-            onClick={() => setShowUploadForm(!showUploadForm)}
+            onClick={() => router.push("/creator/upload")}
             className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -109,15 +164,6 @@ export default function CreatorDashboardPage() {
           totalEarnings={totalEarnings}
           totalPurchases={totalPurchases}
         />
-
-        {/* Upload Form */}
-        {showUploadForm && (
-          <SampleUploadForm
-            userId="mock-user"
-            onSuccess={handleUploadSuccess}
-            onCancel={() => setShowUploadForm(false)}
-          />
-        )}
 
         {/* Search */}
         {samples.length > 0 && (
@@ -152,7 +198,7 @@ export default function CreatorDashboardPage() {
                       Downloads
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Purchases
+                      Rating
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Status
@@ -170,39 +216,50 @@ export default function CreatorDashboardPage() {
                     >
                       <td className="px-6 py-4">
                         <p className="text-white font-medium">{sample.name}</p>
+                        <p className="text-xs text-[#a1a1a1]">
+                          {sample.creditPrice} credits · {sample.key || "—"}{" "}
+                          {sample.bpm ? `· ${sample.bpm} BPM` : ""}
+                        </p>
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-[#a1a1a1]">{sample.genre}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="text-white">{sample.downloads}</p>
+                        <p className="text-white">{sample.downloadCount}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="text-white">{sample.purchases}</p>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-3.5 h-3.5 text-[#00FF88]" />
+                          <span className="text-white text-sm">
+                            {sample.ratingAvg.toFixed(1)}
+                          </span>
+                          <span className="text-[#a1a1a1] text-xs">
+                            ({sample.ratingCount})
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            sample.status === "published"
+                            sample.status === "PUBLISHED"
                               ? "bg-[#00FF88]/20 text-[#00FF88]"
-                              : sample.status === "pending_review"
+                              : sample.status === "REVIEW"
                               ? "bg-yellow-500/20 text-yellow-400"
                               : "bg-[#2a2a2a] text-[#a1a1a1]"
                           }`}
                         >
-                          {sample.status === "pending_review"
-                            ? "Pending Review"
-                            : sample.status}
+                          {sample.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {sample.status === "draft" && (
+                          {sample.status === "DRAFT" && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleSubmitForReview(sample.id)}
+                              onClick={() => handlePublish(sample.id)}
                               className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
+                              title="Publish"
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
@@ -212,7 +269,7 @@ export default function CreatorDashboardPage() {
                             variant="outline"
                             className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
                             onClick={() =>
-                              alert("Edit feature coming soon")
+                              toast.info("Edit feature coming soon")
                             }
                           >
                             <Edit2 className="w-4 h-4" />
@@ -243,7 +300,7 @@ export default function CreatorDashboardPage() {
               Upload your first sample to get started.
             </p>
             <Button
-              onClick={() => setShowUploadForm(true)}
+              onClick={() => router.push("/creator/upload")}
               className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
             >
               <Plus className="w-4 h-4 mr-2" />

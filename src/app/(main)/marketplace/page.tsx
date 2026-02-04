@@ -1,90 +1,24 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Search, Music } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Search, Music, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
+import { useUser } from "@/lib/hooks/useUser";
+import { toast } from "sonner";
 
-// Mock data for development
-const MOCK_SAMPLES: Sample[] = [
-  {
-    id: "1",
-    name: "Deep House Groove 120 BPM",
-    creator_id: "c1",
-    artist_name: "DJ Phoenix",
-    genre: "House",
-    key: "C",
-    bpm: 120,
-    credit_price: 3,
-    tags: ["house", "deep", "groove"],
-    average_rating: 4.5,
-    total_ratings: 12,
-    total_purchases: 45,
-  },
-  {
-    id: "2",
-    name: "Trap Hi-Hats Pattern",
-    creator_id: "c2",
-    artist_name: "BeatMaker Pro",
-    genre: "Trap",
-    key: "F#",
-    bpm: 140,
-    credit_price: 2,
-    tags: ["trap", "hihats", "percussion"],
-    average_rating: 4.2,
-    total_ratings: 8,
-    total_purchases: 32,
-  },
-  {
-    id: "3",
-    name: "Ambient Pad Cm7",
-    creator_id: "c3",
-    artist_name: "SynthWave",
-    genre: "Ambient",
-    key: "C",
-    bpm: 80,
-    credit_price: 4,
-    tags: ["ambient", "pad", "atmospheric"],
-    average_rating: 4.8,
-    total_ratings: 20,
-    total_purchases: 67,
-  },
-  {
-    id: "4",
-    name: "Lo-Fi Piano Loop",
-    creator_id: "c1",
-    artist_name: "DJ Phoenix",
-    genre: "Hip-Hop",
-    key: "G",
-    bpm: 90,
-    credit_price: 3,
-    tags: ["lofi", "piano", "chill"],
-    average_rating: 4.6,
-    total_ratings: 15,
-    total_purchases: 51,
-  },
-  {
-    id: "5",
-    name: "Techno Kick Drum 808",
-    creator_id: "c4",
-    artist_name: "Underground Sound",
-    genre: "Techno",
-    key: "A",
-    bpm: 130,
-    credit_price: 1,
-    tags: ["techno", "kick", "808"],
-    average_rating: 4.0,
-    total_ratings: 6,
-    total_purchases: 28,
-  },
-];
+const PAGE_SIZE = 20;
 
 export default function MarketplacePage() {
-  const [samples, setSamples] = useState<Sample[]>(MOCK_SAMPLES);
-  const [filteredSamples, setFilteredSamples] = useState<Sample[]>(MOCK_SAMPLES);
-  const [loading, setLoading] = useState(false);
+  const { user, refreshUser } = useUser();
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     genre: "all",
     sampleType: "all",
@@ -92,69 +26,124 @@ export default function MarketplacePage() {
     sortBy: "popular",
   });
 
-  // TODO: Replace with Supabase/Prisma call
-  const user = {
-    id: "mock-user",
-    credits: 150,
-    subscription_status: "active",
-  };
+  const fetchSamples = useCallback(
+    async (offset = 0, append = false) => {
+      try {
+        if (offset === 0) setLoading(true);
+        else setLoadingMore(true);
 
-  const applyFilters = (
-    sampleList: Sample[],
-    query: string,
-    filterObj: typeof filters
-  ) => {
-    let filtered = [...sampleList];
+        const params = new URLSearchParams();
+        if (searchQuery) params.set("search", searchQuery);
+        if (filters.genre !== "all") params.set("genre", filters.genre);
+        if (filters.sampleType !== "all") params.set("sampleType", filters.sampleType);
+        if (filters.key !== "all") params.set("key", filters.key);
+        params.set("sortBy", filters.sortBy);
+        params.set("limit", String(PAGE_SIZE));
+        params.set("offset", String(offset));
 
-    if (query.trim()) {
-      filtered = filtered.filter(
-        (s) =>
-          s.name.toLowerCase().includes(query.toLowerCase()) ||
-          s.artist_name?.toLowerCase().includes(query.toLowerCase()) ||
-          s.tags?.some((t) => t.toLowerCase().includes(query.toLowerCase()))
-      );
+        const res = await fetch(`/api/samples?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch samples");
+
+        const data = await res.json();
+
+        if (append) {
+          setSamples((prev) => [...prev, ...data.samples]);
+        } else {
+          setSamples(data.samples);
+        }
+        setTotal(data.total);
+      } catch (error) {
+        console.error("Error fetching samples:", error);
+        toast.error("Failed to load samples");
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [searchQuery, filters]
+  );
+
+  const fetchPurchases = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/purchases");
+      if (res.ok) {
+        const data = await res.json();
+        setPurchasedIds(new Set(data.sampleIds));
+      }
+    } catch {
+      // silently fail
     }
+  }, [user]);
 
-    if (filterObj.genre !== "all") {
-      filtered = filtered.filter((s) => s.genre === filterObj.genre);
-    }
+  useEffect(() => {
+    fetchSamples(0, false);
+  }, [fetchSamples]);
 
-    if (filterObj.sampleType !== "all") {
-      filtered = filtered.filter((s) => s.sample_type === filterObj.sampleType);
-    }
-
-    if (filterObj.key !== "all") {
-      filtered = filtered.filter((s) => s.key === filterObj.key);
-    }
-
-    if (filterObj.sortBy === "popular") {
-      filtered.sort(
-        (a, b) => (b.total_purchases || 0) - (a.total_purchases || 0)
-      );
-    } else if (filterObj.sortBy === "newest") {
-      filtered.sort(
-        (a, b) =>
-          new Date(b.created_date || "").getTime() -
-          new Date(a.created_date || "").getTime()
-      );
-    } else if (filterObj.sortBy === "rating") {
-      filtered.sort(
-        (a, b) => (b.average_rating || 0) - (a.average_rating || 0)
-      );
-    }
-
-    setFilteredSamples(filtered);
-  };
+  useEffect(() => {
+    fetchPurchases();
+  }, [fetchPurchases]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    applyFilters(samples, query, filters);
   };
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchSamples(0, false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, filters]);
 
   const handleFilterChange = (newFilters: typeof filters) => {
     setFilters(newFilters);
-    applyFilters(samples, searchQuery, newFilters);
   };
+
+  const handleLoadMore = () => {
+    fetchSamples(samples.length, true);
+  };
+
+  const handlePurchase = async (sample: Sample) => {
+    if (!user) {
+      toast.error("Please log in to purchase samples");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Purchase failed");
+      }
+
+      // Update purchased set
+      setPurchasedIds((prev) => new Set([...prev, sample.id]));
+      // Refresh user credits
+      refreshUser();
+      toast.success(`Purchased "${sample.name}" 🎵`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Purchase failed";
+      toast.error(message);
+    }
+  };
+
+  const userForCard = user
+    ? {
+        id: user.id,
+        email: user.email,
+        credits: user.credits,
+        subscription_status: user.subscription_status,
+        is_creator: user.is_creator,
+        role: user.role,
+      }
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -179,7 +168,7 @@ export default function MarketplacePage() {
         {/* Results */}
         <div className="mb-8">
           <h2 className="text-sm font-semibold text-[#a1a1a1] mb-4">
-            {filteredSamples.length} samples
+            {total} sample{total !== 1 ? "s" : ""}
           </h2>
 
           {loading ? (
@@ -193,16 +182,38 @@ export default function MarketplacePage() {
                   />
                 ))}
             </div>
-          ) : filteredSamples.length > 0 ? (
+          ) : samples.length > 0 ? (
             <div className="space-y-2">
-              {filteredSamples.map((sample) => (
+              {samples.map((sample) => (
                 <SampleCard
                   key={sample.id}
                   sample={sample}
-                  user={user}
-                  onPurchase={() => {}}
+                  user={userForCard}
+                  isOwned={purchasedIds.has(sample.id)}
+                  onPurchase={handlePurchase}
                 />
               ))}
+
+              {/* Load More */}
+              {samples.length < total && (
+                <div className="flex justify-center pt-6">
+                  <Button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] px-8"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      `Load More (${samples.length} of ${total})`
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-16">

@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Play, Pause, Download, Heart, Star, User, Check } from "lucide-react";
+import { Play, Pause, Download, Heart, Check, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SampleRating } from "./SampleRating";
 
@@ -40,20 +40,27 @@ export interface UserType {
 interface SampleCardProps {
   sample: Sample;
   user: UserType | null;
+  isOwned?: boolean;
   onPurchase?: (sample: Sample) => void;
 }
 
-export function SampleCard({ sample, user, onPurchase }: SampleCardProps) {
+export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: SampleCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [isOwned, setIsOwned] = useState(false);
+  const [isOwned, setIsOwned] = useState(isOwnedProp ?? false);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (isOwnedProp !== undefined) {
+      setIsOwned(isOwnedProp);
+    }
+  }, [isOwnedProp]);
 
   useEffect(() => {
     if (audioRef.current) {
       if (isPlaying) {
-        audioRef.current.play();
+        audioRef.current.play().catch(() => setIsPlaying(false));
       } else {
         audioRef.current.pause();
       }
@@ -71,18 +78,16 @@ export function SampleCard({ sample, user, onPurchase }: SampleCardProps) {
   const handlePurchase = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!user) {
-      alert("Please log in to purchase samples.");
       return;
     }
+    if (isOwned || isPurchasing) return;
 
     setIsPurchasing(true);
     try {
-      // TODO: Replace with Supabase/Prisma call
-      onPurchase?.(sample);
+      await onPurchase?.(sample);
       setIsOwned(true);
-      alert("Sample purchased successfully!");
     } catch {
-      alert("Purchase failed. Please try again.");
+      // error handled by parent
     } finally {
       setIsPurchasing(false);
     }
@@ -150,7 +155,7 @@ export function SampleCard({ sample, user, onPurchase }: SampleCardProps) {
             <span className="font-medium">{sample.genre}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span>{sample.key}</span>
+            <span>{sample.key || "—"}</span>
           </div>
           {sample.bpm && (
             <div className="flex items-center gap-1">
@@ -171,19 +176,21 @@ export function SampleCard({ sample, user, onPurchase }: SampleCardProps) {
           </div>
           <Button
             onClick={handlePurchase}
-            disabled={isPurchasing || isOwned}
+            disabled={isPurchasing || isOwned || !user}
             className={`text-sm font-medium h-8 px-4 ${
               isOwned
                 ? "bg-[#1a1a1a] text-[#00FF88] border border-[#00FF88]/30 hover:bg-[#1a1a1a]"
                 : "bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50"
             }`}
           >
-            {isOwned ? (
+            {isPurchasing ? (
+              <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+            ) : isOwned ? (
               <Check className="w-3.5 h-3.5 mr-1" />
             ) : (
               <Download className="w-3.5 h-3.5 mr-1" />
             )}
-            {isPurchasing ? "Purchasing..." : isOwned ? "Owned" : "Get"}
+            {isPurchasing ? "..." : isOwned ? "Owned" : "Get"}
           </Button>
           <Button
             variant="ghost"
