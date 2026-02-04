@@ -49,7 +49,7 @@ export async function GET() {
       });
     }
 
-    const credits = user.creditBalance?.balance ?? 0;
+    const credits = user.creditBalance?.balance ?? user.credits ?? 0;
     const subscription = user.subscription;
     const subscriptionStatus =
       subscription?.status?.toLowerCase() ??
