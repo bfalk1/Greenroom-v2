@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
@@ -50,6 +50,18 @@ const packages = [
 ];
 
 export default function PricingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+      </div>
+    }>
+      <PricingContent />
+    </Suspense>
+  );
+}
+
+function PricingContent() {
   const [loading, setLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const { user, loading: userLoading } = useUser();
