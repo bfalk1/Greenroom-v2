@@ -12,21 +12,21 @@ async function main() {
       displayName: "General Admission",
       creditsPerMonth: 100,
       priceUsdCents: 1099,
-      stripePriceId: "price_1Sv50uIWJCIyCVNS2v5Vrdl1",
+      stripePriceId: "price_1Sx90A5k6Fwn7Cbz1uGYPTpZ",
     },
     {
       name: "VIP",
       displayName: "VIP",
       creditsPerMonth: 200,
       priceUsdCents: 1899,
-      stripePriceId: "price_1Sv50uIWJCIyCVNSnYOFdlgc",
+      stripePriceId: "price_1Sx90Q5k6Fwn7CbzwN0qSyDO",
     },
     {
       name: "AA",
       displayName: "All Access",
       creditsPerMonth: 500,
       priceUsdCents: 3499,
-      stripePriceId: "price_1Sv50uIWJCIyCVNSS8KxUBnd",
+      stripePriceId: "price_1Sx90e5k6Fwn7CbzYPkArchS",
     },
   ];
 

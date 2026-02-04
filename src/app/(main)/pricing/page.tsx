@@ -13,7 +13,7 @@ const packages = [
     tierName: "GA",
     credits: 100,
     price: 10.99,
-    priceId: "price_1Sv50uIWJCIyCVNS2v5Vrdl1",
+    priceId: "price_1Sx90A5k6Fwn7Cbz1uGYPTpZ",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
@@ -26,7 +26,7 @@ const packages = [
     tierName: "VIP",
     credits: 200,
     price: 18.99,
-    priceId: "price_1Sv50uIWJCIyCVNSnYOFdlgc",
+    priceId: "price_1Sx90Q5k6Fwn7CbzwN0qSyDO",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
@@ -39,7 +39,7 @@ const packages = [
     tierName: "AA",
     credits: 500,
     price: 34.99,
-    priceId: "price_1Sv50uIWJCIyCVNSS8KxUBnd",
+    priceId: "price_1Sx90e5k6Fwn7CbzYPkArchS",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
