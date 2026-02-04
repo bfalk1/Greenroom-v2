@@ -35,7 +35,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { error, data } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -48,6 +48,15 @@ export default function SignupPage() {
         return;
       }
 
+      // If session exists, email confirmation is off — redirect directly
+      if (data.session) {
+        // Create user record via API
+        await fetch("/api/user/me");
+        router.push("/onboarding");
+        return;
+      }
+
+      // Email confirmation is on — show check email screen
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);
