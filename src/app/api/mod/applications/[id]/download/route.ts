@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/mod/applications/[id]/download — generate signed URL for sample ZIP
@@ -43,8 +44,14 @@ export async function GET(
   // The sampleZipUrl stores the storage path within the "applications" bucket
   const storagePath = application.sampleZipUrl;
 
+  // Use service role client for storage access (bypasses RLS policies)
+  const serviceClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
   // Generate a signed URL (valid for 1 hour)
-  const { data, error } = await supabase.storage
+  const { data, error } = await serviceClient.storage
     .from("applications")
     .createSignedUrl(storagePath, 3600);
 
