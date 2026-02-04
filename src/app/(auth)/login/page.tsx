@@ -32,6 +32,16 @@ export default function LoginPage() {
         return;
       }
 
+      // Check if profile is complete
+      const res = await fetch("/api/user/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.user.profile_completed) {
+          router.push("/onboarding");
+          return;
+        }
+      }
+
       router.push("/marketplace");
       router.refresh();
     } catch (err) {
