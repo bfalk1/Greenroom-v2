@@ -51,6 +51,42 @@ export default function CreatorEarningsPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
+  const [stripeConnected, setStripeConnected] = useState(false);
+  const [stripeLoading, setStripeLoading] = useState(true);
+  const [connectingStripe, setConnectingStripe] = useState(false);
+
+  const fetchStripeStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creator/stripe-connect");
+      if (res.ok) {
+        const data = await res.json();
+        setStripeConnected(data.connected && data.chargesEnabled);
+      }
+    } catch (error) {
+      console.error("Error checking Stripe status:", error);
+    } finally {
+      setStripeLoading(false);
+    }
+  }, []);
+
+  const handleConnectStripe = async () => {
+    setConnectingStripe(true);
+    try {
+      const res = await fetch("/api/creator/stripe-connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnUrl: window.location.href }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start Stripe onboarding");
+      window.location.href = data.url;
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to connect Stripe"
+      );
+      setConnectingStripe(false);
+    }
+  };
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -90,10 +126,12 @@ export default function CreatorEarningsPage() {
   useEffect(() => {
     if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
       fetchEarnings();
+      fetchStripeStatus();
     } else if (!userLoading) {
       setLoading(false);
+      setStripeLoading(false);
     }
-  }, [user, userLoading, fetchEarnings]);
+  }, [user, userLoading, fetchEarnings, fetchStripeStatus]);
 
   if (userLoading || loading) {
     return (
@@ -192,58 +230,85 @@ export default function CreatorEarningsPage() {
           </div>
         </div>
 
-        {/* Payout Request */}
-        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white mb-1">
-                Request Payout
-              </h2>
-              <p className="text-[#a1a1a1] text-sm">
-                {stats && stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
-                  <>
-                    You have{" "}
-                    <span className="text-[#00FF88] font-medium">
-                      ${(stats.unpaidEarnings - stats.pendingPayout).toFixed(2)}
-                    </span>{" "}
-                    available for payout.
-                  </>
-                ) : stats && stats.pendingPayout > 0 ? (
-                  <>
-                    You have a pending payout of{" "}
-                    <span className="text-yellow-400 font-medium">
-                      ${stats.pendingPayout.toFixed(2)}
-                    </span>
-                    . Please wait for admin approval.
-                  </>
+        {/* Stripe Connect / Payout Request */}
+        {!stripeLoading && !stripeConnected ? (
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-white mb-1">
+                  Connect Stripe to Get Paid
+                </h2>
+                <p className="text-[#a1a1a1] text-sm">
+                  Link your Stripe account to receive payouts directly to your bank account.
+                </p>
+              </div>
+              <Button
+                onClick={handleConnectStripe}
+                disabled={connectingStripe}
+                className="bg-[#635BFF] text-white hover:bg-[#5046E5]"
+              >
+                {connectingStripe ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
-                  <>
-                    Minimum payout is $5.00. Current unpaid earnings:{" "}
-                    <span className="text-white font-medium">
-                      ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
-                    </span>
-                  </>
+                  <Wallet className="w-4 h-4 mr-2" />
                 )}
-              </p>
+                Connect Stripe
+              </Button>
             </div>
-            <Button
-              onClick={handleRequestPayout}
-              disabled={
-                requestingPayout ||
-                !stats ||
-                stats.unpaidEarnings - stats.pendingPayout < 5
-              }
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {requestingPayout ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <DollarSign className="w-4 h-4 mr-2" />
-              )}
-              Request Payout
-            </Button>
           </div>
-        </div>
+        ) : !stripeLoading ? (
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-white mb-1">
+                  Request Payout
+                </h2>
+                <p className="text-[#a1a1a1] text-sm">
+                  {stats && stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
+                    <>
+                      You have{" "}
+                      <span className="text-[#00FF88] font-medium">
+                        ${(stats.unpaidEarnings - stats.pendingPayout).toFixed(2)}
+                      </span>{" "}
+                      available for payout.
+                    </>
+                  ) : stats && stats.pendingPayout > 0 ? (
+                    <>
+                      You have a pending payout of{" "}
+                      <span className="text-yellow-400 font-medium">
+                        ${stats.pendingPayout.toFixed(2)}
+                      </span>
+                      . Please wait for admin approval.
+                    </>
+                  ) : (
+                    <>
+                      Minimum payout is $5.00. Current unpaid earnings:{" "}
+                      <span className="text-white font-medium">
+                        ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
+              <Button
+                onClick={handleRequestPayout}
+                disabled={
+                  requestingPayout ||
+                  !stats ||
+                  stats.unpaidEarnings - stats.pendingPayout < 5
+                }
+                className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {requestingPayout ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <DollarSign className="w-4 h-4 mr-2" />
+                )}
+                Request Payout
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Payouts History */}
         {payouts.length > 0 && (
