@@ -73,13 +73,25 @@ export async function POST(
     });
 
     // If approved, promote user to CREATOR and set artistName
+    // Don't downgrade MODERATOR/ADMIN users — only promote USER → CREATOR
     if (decision === "approve") {
+      const applicant = await tx.user.findUnique({
+        where: { id: application.userId },
+        select: { role: true },
+      });
+
+      const updateData: Record<string, unknown> = {
+        artistName: application.artistName,
+      };
+
+      // Only set role to CREATOR if user is currently a regular USER
+      if (applicant?.role === "USER") {
+        updateData.role = "CREATOR";
+      }
+
       await tx.user.update({
         where: { id: application.userId },
-        data: {
-          role: "CREATOR",
-          artistName: application.artistName,
-        },
+        data: updateData,
       });
     }
 
