@@ -180,7 +180,7 @@ export default function CreatorEarningsPage() {
   const canRequestPayout =
     stripeReady &&
     stats &&
-    stats.unpaidEarnings - stats.pendingPayout >= 5;
+    stats.unpaidEarnings - stats.pendingPayout > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -322,7 +322,7 @@ export default function CreatorEarningsPage() {
                   </h2>
                   <p className="text-[#a1a1a1] text-sm">
                     {stats &&
-                    stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
+                    stats.unpaidEarnings - stats.pendingPayout > 0 ? (
                       <>
                         You have{" "}
                         <span className="text-[#00FF88] font-medium">
@@ -343,7 +343,7 @@ export default function CreatorEarningsPage() {
                       </>
                     ) : (
                       <>
-                        Minimum payout is $5.00. Current unpaid earnings:{" "}
+                        Minimum payout is $0.01 (testing mode). Current unpaid earnings:{" "}
                         <span className="text-white font-medium">
                           ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
                         </span>

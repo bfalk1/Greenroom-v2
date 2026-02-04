@@ -125,11 +125,11 @@ export async function POST(_request: NextRequest) {
     const alreadyAccountedCents = payoutAgg._sum.amountUsdCents || 0;
     const unpaidCents = totalEarningsCents - alreadyAccountedCents;
 
-    // Minimum $5.00 to request
-    if (unpaidCents < 500) {
+    // Minimum $0.01 to request (lowered for testing — TODO: raise to $5.00 / 500 cents for production)
+    if (unpaidCents < 1) {
       return NextResponse.json(
         {
-          error: `Minimum payout is $5.00. Your unpaid earnings are $${(unpaidCents / 100).toFixed(2)}.`,
+          error: `No unpaid earnings to withdraw.`,
         },
         { status: 400 }
       );
