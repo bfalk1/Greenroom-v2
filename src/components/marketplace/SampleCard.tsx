@@ -42,14 +42,37 @@ interface SampleCardProps {
   user: UserType | null;
   isOwned?: boolean;
   onPurchase?: (sample: Sample) => void;
+  onPlay?: (sampleId: string) => void;
+  currentlyPlaying?: string | null;
+}
+
+// Global audio element shared across all cards
+let globalAudio: HTMLAudioElement | null = null;
+let globalPlayingId: string | null = null;
+let globalSetters: Map<string, (playing: boolean) => void> = new Map();
+
+function getGlobalAudio() {
+  if (!globalAudio && typeof window !== "undefined") {
+    globalAudio = new Audio();
+    globalAudio.addEventListener("ended", () => {
+      if (globalPlayingId) {
+        const setter = globalSetters.get(globalPlayingId);
+        setter?.(false);
+        globalPlayingId = null;
+      }
+    });
+  }
+  return globalAudio;
 }
 
 export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: SampleCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isOwned, setIsOwned] = useState(isOwnedProp ?? false);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isOwnedProp !== undefined) {
@@ -57,29 +80,94 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
     }
   }, [isOwnedProp]);
 
+  // Register this card's setter for global audio control
   useEffect(() => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.play().catch(() => setIsPlaying(false));
-      } else {
-        audioRef.current.pause();
-      }
-    }
-  }, [isPlaying]);
-
-  useEffect(() => {
+    globalSetters.set(sample.id, setIsPlaying);
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
+      globalSetters.delete(sample.id);
+      if (globalPlayingId === sample.id) {
+        getGlobalAudio()?.pause();
+        globalPlayingId = null;
+      }
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [sample.id]);
+
+  // Track progress
+  useEffect(() => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    const updateProgress = () => {
+      if (globalPlayingId === sample.id && audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+      if (isPlaying) {
+        progressRef.current = requestAnimationFrame(updateProgress);
       }
     };
-  }, []);
+
+    if (isPlaying) {
+      progressRef.current = requestAnimationFrame(updateProgress);
+    } else {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+      if (globalPlayingId !== sample.id) setProgress(0);
+    }
+
+    return () => {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [isPlaying, sample.id]);
+
+  const togglePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    // If this sample is currently playing, pause it
+    if (globalPlayingId === sample.id && isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      globalPlayingId = null;
+      return;
+    }
+
+    // Stop any other playing sample
+    if (globalPlayingId && globalPlayingId !== sample.id) {
+      const prevSetter = globalSetters.get(globalPlayingId);
+      prevSetter?.(false);
+      audio.pause();
+    }
+
+    // Fetch preview URL
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/samples/${sample.id}/preview`);
+      const data = await res.json();
+
+      if (!res.ok || !data.url) {
+        console.error("Preview failed:", data.error);
+        setIsLoading(false);
+        return;
+      }
+
+      audio.src = data.url;
+      audio.currentTime = 0;
+      await audio.play();
+      globalPlayingId = sample.id;
+      setIsPlaying(true);
+    } catch (err) {
+      console.error("Play error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handlePurchase = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!user) {
-      return;
-    }
+    if (!user) return;
     if (isOwned || isPurchasing) return;
 
     setIsPurchasing(true);
@@ -94,15 +182,28 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
   };
 
   return (
-    <div>
-      <audio ref={audioRef} src={sample.file_url} />
+    <div className="relative">
+      {/* Progress bar */}
+      {isPlaying && (
+        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2a2a2a] z-10 rounded-b-lg overflow-hidden">
+          <div
+            className="h-full bg-[#00FF88] transition-none"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
       <div
-        className="rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#00FF88]/50 transition-all duration-300 flex items-center p-3 gap-4"
+        className={`rounded-lg border transition-all duration-300 flex items-center p-3 gap-4 ${
+          isPlaying
+            ? "bg-[#1a1a1a] border-[#00FF88]/40"
+            : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#00FF88]/50"
+        }`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Cover Art */}
-        <div className="relative w-16 h-16 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden">
+        {/* Cover Art + Play */}
+        <div className="relative w-14 h-14 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden">
           <img
             src={
               sample.cover_art_url ||
@@ -112,23 +213,20 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
             className="w-full h-full object-cover"
           />
 
-          {/* Play Button Overlay */}
-          {isHovered && (
+          {(isHovered || isPlaying || isLoading) && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-              <Button
-                size="sm"
-                className="rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] w-8 h-8 p-0 flex items-center justify-center"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setIsPlaying(!isPlaying);
-                }}
+              <button
+                className="rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] w-8 h-8 flex items-center justify-center transition"
+                onClick={togglePlay}
               >
-                {isPlaying ? (
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isPlaying ? (
                   <Pause className="w-4 h-4 fill-current" />
                 ) : (
-                  <Play className="w-4 h-4 fill-current" />
+                  <Play className="w-4 h-4 fill-current ml-0.5" />
                 )}
-              </Button>
+              </button>
             </div>
           )}
         </div>
@@ -140,28 +238,17 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
           </h3>
           <div className="flex items-center gap-2">
             <User className="w-3 h-3 text-[#a1a1a1]" />
-            <Link
-              href={`/creator/profile?id=${sample.creator_id}`}
-              className="text-xs text-[#a1a1a1] hover:text-[#00FF88] truncate transition"
-            >
+            <span className="text-xs text-[#a1a1a1] truncate">
               {sample.artist_name || "Unknown Creator"}
-            </Link>
+            </span>
           </div>
         </div>
 
         {/* Metadata */}
         <div className="hidden md:flex items-center gap-6 text-xs text-[#a1a1a1]">
-          <div className="flex items-center gap-1">
-            <span className="font-medium">{sample.genre}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span>{sample.key || "—"}</span>
-          </div>
-          {sample.bpm && (
-            <div className="flex items-center gap-1">
-              <span>{sample.bpm} BPM</span>
-            </div>
-          )}
+          <span className="font-medium">{sample.genre}</span>
+          <span>{sample.key || "—"}</span>
+          {sample.bpm && <span>{sample.bpm} BPM</span>}
         </div>
 
         {/* Rating */}
@@ -172,7 +259,7 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
         {/* Price & Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <div className="bg-[#00FF88]/10 text-[#00FF88] px-3 py-1 rounded-full text-xs font-bold">
-            {sample.credit_price} credits
+            {sample.credit_price} cr
           </div>
           <Button
             onClick={handlePurchase}
@@ -191,13 +278,6 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
               <Download className="w-3.5 h-3.5 mr-1" />
             )}
             {isPurchasing ? "..." : isOwned ? "Owned" : "Get"}
-          </Button>
-          <Button
-            variant="ghost"
-            className="px-2 h-8 hover:bg-[#2a2a2a]"
-            onClick={(e) => e.preventDefault()}
-          >
-            <Heart className="w-4 h-4 text-[#a1a1a1]" />
           </Button>
         </div>
       </div>
