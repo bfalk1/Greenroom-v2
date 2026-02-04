@@ -12,6 +12,10 @@ export function Navbar() {
   const pathname = usePathname();
   const { user, loading, logout } = useUser();
 
+  const hasActiveSub =
+    user?.subscription_status === "active" ||
+    user?.subscription_status === "past_due";
+
   const navLink = (href: string, label: string) => {
     const isActive = pathname === href;
     return (
@@ -45,7 +49,7 @@ export function Navbar() {
               <>
                 {navLink("/marketplace", "Marketplace")}
                 {navLink("/library", "Library")}
-                {navLink("/pricing", "Pricing")}
+                {!hasActiveSub && navLink("/pricing", "Pricing")}
                 {user.role !== "CREATOR" && navLink("/creator/apply", "Become a Creator")}
                 {user.is_creator && navLink("/creator/dashboard", "Dashboard")}
                 {user.is_creator && navLink("/creator/earnings", "Earnings")}
@@ -117,9 +121,11 @@ export function Navbar() {
             <Link href="/library" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Library
             </Link>
-            <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-              Pricing
-            </Link>
+            {!hasActiveSub && (
+              <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                Pricing
+              </Link>
+            )}
             {user.role !== "CREATOR" && (
               <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Become a Creator
