@@ -108,7 +108,8 @@ export async function POST(request: NextRequest) {
     const origin =
       request.headers.get("origin") ||
       request.headers.get("referer")?.replace(/\/[^/]*$/, "") ||
-      "https://localhost:3000";
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "https://greenroom-v2.vercel.app";
 
     // Create an Account Link for onboarding
     const accountLink = await stripe.accountLinks.create({
@@ -122,10 +123,12 @@ export async function POST(request: NextRequest) {
       url: accountLink.url,
       accountId,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("POST /api/creator/stripe-connect error:", error);
+    const message =
+      error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to create Stripe Connect onboarding link" },
+      { error: `Failed to create Stripe Connect onboarding link: ${message}` },
       { status: 500 }
     );
   }
