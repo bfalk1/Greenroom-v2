@@ -36,7 +36,7 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // Public paths — no auth required
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health", "/api/webhooks"];
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health", "/api/webhooks"];
   const isPublicPath = publicPaths.some((path) =>
     pathname === path || pathname.startsWith("/api/webhooks")
   );

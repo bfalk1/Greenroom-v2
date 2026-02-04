@@ -59,6 +59,7 @@ export function Navbar() {
               </>
             ) : (
               <>
+                {navLink("/marketplace", "Marketplace")}
                 {navLink("/pricing", "Pricing")}
               </>
             )}
