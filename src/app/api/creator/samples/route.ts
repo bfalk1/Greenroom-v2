@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest) {
       where: { id: authUser.id },
     });
 
-    if (!dbUser || dbUser.role !== "CREATOR") {
+    if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
       return NextResponse.json(
         { error: "Creator access required" },
         { status: 403 }

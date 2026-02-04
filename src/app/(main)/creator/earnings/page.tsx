@@ -1,52 +1,108 @@
 "use client";
 
-import React, { useState } from "react";
-import { DollarSign, TrendingUp, Download, ShoppingCart } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  DollarSign,
+  TrendingUp,
+  Download,
+  ShoppingCart,
+  Loader2,
+  Wallet,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useUser } from "@/lib/hooks/useUser";
+import { toast } from "sonner";
+
+interface EarningsStats {
+  totalEarnings: number;
+  totalPurchases: number;
+  totalDownloads: number;
+  totalPaidOut: number;
+  pendingPayout: number;
+  unpaidEarnings: number;
+}
 
 interface Purchase {
   id: string;
-  sample_id: string;
-  user_id: string;
-  credits_spent: number;
-  download_count: number;
-  created_date: string;
+  sampleId: string;
+  sampleName: string;
+  buyerUsername: string;
+  creditsSpent: number;
+  downloadCount: number;
+  createdAt: string;
 }
 
-const MOCK_PURCHASES: Purchase[] = [
-  {
-    id: "p1",
-    sample_id: "s1",
-    user_id: "u1",
-    credits_spent: 3,
-    download_count: 2,
-    created_date: "2024-01-15T12:00:00Z",
-  },
-  {
-    id: "p2",
-    sample_id: "s2",
-    user_id: "u2",
-    credits_spent: 5,
-    download_count: 1,
-    created_date: "2024-01-14T12:00:00Z",
-  },
-];
+interface Payout {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  totalCreditsSpent: number;
+  amountUsd: number;
+  status: string;
+  paidAt: string | null;
+}
 
 export default function CreatorEarningsPage() {
-  const [purchases] = useState<Purchase[]>(MOCK_PURCHASES);
+  const router = useRouter();
+  const { user, loading: userLoading } = useUser();
+  const [stats, setStats] = useState<EarningsStats | null>(null);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const stats = {
-    totalEarnings: purchases
-      .reduce((sum, p) => sum + p.credits_spent * 0.03, 0)
-      .toFixed(2),
-    totalPurchases: purchases.length,
-    totalDownloads: purchases.reduce(
-      (sum, p) => sum + (p.download_count || 0),
-      0
-    ),
-    pendingPayout: purchases
-      .reduce((sum, p) => sum + p.credits_spent * 0.03, 0)
-      .toFixed(2),
-  };
+  const fetchEarnings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creator/earnings");
+      if (!res.ok) throw new Error("Failed to fetch earnings");
+      const data = await res.json();
+      setStats(data.stats);
+      setPurchases(data.purchases);
+      setPayouts(data.payouts);
+    } catch (error) {
+      console.error("Error fetching earnings:", error);
+      toast.error("Failed to load earnings data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
+      fetchEarnings();
+    } else if (!userLoading) {
+      setLoading(false);
+    }
+  }, [user, userLoading, fetchEarnings]);
+
+  if (userLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || (user.role !== "CREATOR" && user.role !== "ADMIN")) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-white mb-2">
+            Creator Access Required
+          </h2>
+          <p className="text-[#a1a1a1] mb-4">
+            Apply to become a creator to view earnings.
+          </p>
+          <Button
+            onClick={() => router.push("/creator/apply")}
+            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          >
+            Apply Now
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -65,7 +121,7 @@ export default function CreatorEarningsPage() {
               </h3>
             </div>
             <p className="text-3xl font-bold text-white">
-              ${stats.totalEarnings}
+              ${stats?.totalEarnings.toFixed(2) ?? "0.00"}
             </p>
             <p className="text-[#a1a1a1] text-xs mt-2">Lifetime earnings</p>
           </div>
@@ -80,7 +136,7 @@ export default function CreatorEarningsPage() {
               </h3>
             </div>
             <p className="text-3xl font-bold text-white">
-              {stats.totalPurchases}
+              {stats?.totalPurchases ?? 0}
             </p>
             <p className="text-[#a1a1a1] text-xs mt-2">Sample purchases</p>
           </div>
@@ -95,7 +151,7 @@ export default function CreatorEarningsPage() {
               </h3>
             </div>
             <p className="text-3xl font-bold text-white">
-              {stats.totalDownloads}
+              {stats?.totalDownloads ?? 0}
             </p>
             <p className="text-[#a1a1a1] text-xs mt-2">Across all samples</p>
           </div>
@@ -103,18 +159,89 @@ export default function CreatorEarningsPage() {
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-green-400" />
+                <Wallet className="w-6 h-6 text-green-400" />
               </div>
               <h3 className="text-[#a1a1a1] text-sm font-medium">
-                Pending Payout
+                Unpaid Earnings
               </h3>
             </div>
             <p className="text-3xl font-bold text-white">
-              ${stats.pendingPayout}
+              ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
             </p>
             <p className="text-[#a1a1a1] text-xs mt-2">Ready to withdraw</p>
           </div>
         </div>
+
+        {/* Payouts History */}
+        {payouts.length > 0 && (
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden mb-8">
+            <div className="p-6 border-b border-[#2a2a2a]">
+              <h2 className="text-lg font-semibold text-white">
+                Payout History
+              </h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-[#2a2a2a]">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Period
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Credits
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Amount
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Paid
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payouts.map((payout) => (
+                    <tr
+                      key={payout.id}
+                      className="border-b border-[#2a2a2a] hover:bg-[#0a0a0a]/50"
+                    >
+                      <td className="px-6 py-4 text-white text-sm">
+                        {new Date(payout.periodStart).toLocaleDateString()} –{" "}
+                        {new Date(payout.periodEnd).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-white text-sm">
+                        {payout.totalCreditsSpent}
+                      </td>
+                      <td className="px-6 py-4 text-white text-sm font-medium">
+                        ${payout.amountUsd.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            payout.status === "PAID"
+                              ? "bg-[#00FF88]/20 text-[#00FF88]"
+                              : payout.status === "PENDING"
+                              ? "bg-yellow-500/20 text-yellow-400"
+                              : "bg-[#2a2a2a] text-[#a1a1a1]"
+                          }`}
+                        >
+                          {payout.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
+                        {payout.paidAt
+                          ? new Date(payout.paidAt).toLocaleDateString()
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Recent Purchases Table */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden">
@@ -136,7 +263,7 @@ export default function CreatorEarningsPage() {
                       Buyer
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Credits Spent
+                      Credits
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Downloads
@@ -152,20 +279,20 @@ export default function CreatorEarningsPage() {
                       key={purchase.id}
                       className="border-b border-[#2a2a2a] hover:bg-[#0a0a0a]/50"
                     >
-                      <td className="px-6 py-4 text-white text-sm">
-                        {purchase.sample_id}
-                      </td>
-                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
-                        {purchase.user_id}
-                      </td>
                       <td className="px-6 py-4 text-white text-sm font-medium">
-                        {purchase.credits_spent}
-                      </td>
-                      <td className="px-6 py-4 text-white text-sm">
-                        {purchase.download_count || 0}
+                        {purchase.sampleName}
                       </td>
                       <td className="px-6 py-4 text-[#a1a1a1] text-sm">
-                        {new Date(purchase.created_date).toLocaleDateString()}
+                        {purchase.buyerUsername}
+                      </td>
+                      <td className="px-6 py-4 text-white text-sm">
+                        {purchase.creditsSpent}
+                      </td>
+                      <td className="px-6 py-4 text-white text-sm">
+                        {purchase.downloadCount}
+                      </td>
+                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
+                        {new Date(purchase.createdAt).toLocaleDateString()}
                       </td>
                     </tr>
                   ))}
@@ -174,6 +301,7 @@ export default function CreatorEarningsPage() {
             </div>
           ) : (
             <div className="p-12 text-center">
+              <TrendingUp className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
               <p className="text-[#a1a1a1]">
                 No purchases yet. Upload samples to start earning!
               </p>

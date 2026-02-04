@@ -53,9 +53,9 @@ export default function CreatorDashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (user && user.role === "CREATOR") {
+    if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
       fetchSamples();
-    } else if (!userLoading && (!user || user.role !== "CREATOR")) {
+    } else if (!userLoading && (!user || (user.role !== "CREATOR" && user.role !== "ADMIN"))) {
       setLoading(false);
     }
   }, [user, userLoading, fetchSamples]);
@@ -107,7 +107,7 @@ export default function CreatorDashboardPage() {
     );
   }
 
-  if (!user || user.role !== "CREATOR") {
+  if (!user || (user.role !== "CREATOR" && user.role !== "ADMIN")) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
         <div className="text-center">
