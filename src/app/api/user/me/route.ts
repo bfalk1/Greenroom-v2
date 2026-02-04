@@ -62,7 +62,7 @@ export async function GET() {
         email: user.email,
         credits,
         subscription_status: subscriptionStatus,
-        is_creator: user.role === "CREATOR",
+        is_creator: user.role === "CREATOR" || user.role === "ADMIN",
         role: user.role,
         full_name: user.fullName,
         username: user.username,

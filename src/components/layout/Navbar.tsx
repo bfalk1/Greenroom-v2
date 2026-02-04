@@ -50,7 +50,7 @@ export function Navbar() {
                 {navLink("/marketplace", "Marketplace")}
                 {navLink("/library", "Library")}
                 {!hasActiveSub && navLink("/pricing", "Pricing")}
-                {user.role !== "CREATOR" && navLink("/creator/apply", "Become a Creator")}
+                {user.role !== "CREATOR" && user.role !== "ADMIN" && navLink("/creator/apply", "Become a Creator")}
                 {user.is_creator && navLink("/creator/dashboard", "Dashboard")}
                 {user.is_creator && navLink("/creator/earnings", "Earnings")}
                 {(user.role === "MODERATOR" || user.role === "ADMIN") &&
@@ -131,7 +131,7 @@ export function Navbar() {
                 Pricing
               </Link>
             )}
-            {user.role !== "CREATOR" && (
+            {user.role !== "CREATOR" && user.role !== "ADMIN" && (
               <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Become a Creator
               </Link>
