@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ export default function CreatorApplicationPage() {
     terms_accepted: false,
   });
   const [fileUploadProgress, setFileUploadProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   // Fetch existing application on mount
@@ -376,7 +377,24 @@ export default function CreatorApplicationPage() {
             <label className="block text-sm font-medium text-white mb-2">
               Sample Collection (ZIP) <span className="text-red-500">*</span>
             </label>
-            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={uploading}
+            />
+            <div
+              onClick={() => {
+                if (!uploading && !formData.zip_file_path) {
+                  fileInputRef.current?.click();
+                }
+              }}
+              className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition ${
+                !uploading && !formData.zip_file_path ? "cursor-pointer" : ""
+              }`}
+            >
               {formData.zip_file_path ? (
                 <div className="space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-[#00FF88] mx-auto" />
@@ -384,9 +402,20 @@ export default function CreatorApplicationPage() {
                   <p className="text-[#a1a1a1] text-sm">
                     {formData.zip_file_name}
                   </p>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFormData((prev) => ({ ...prev, zip_file_path: "", zip_file_name: "" }));
+                    }}
+                    className="text-xs text-red-400 hover:text-red-300 underline mt-2"
+                  >
+                    Remove and upload different file
+                  </button>
                 </div>
               ) : fileUploadProgress > 0 ? (
                 <div className="space-y-2">
+                  <Loader2 className="w-8 h-8 text-[#00FF88] mx-auto animate-spin" />
                   <div className="w-full bg-[#1a1a1a] rounded-full h-2">
                     <div
                       className="bg-[#00FF88] h-2 rounded-full transition-all"
@@ -398,20 +427,13 @@ export default function CreatorApplicationPage() {
                   </p>
                 </div>
               ) : (
-                <label className="cursor-pointer">
+                <>
                   <Upload className="w-8 h-8 text-[#a1a1a1] mx-auto mb-2" />
-                  <p className="text-white font-medium">Upload ZIP file</p>
-                  <p className="text-xs text-[#a1a1a1]">
+                  <p className="text-white font-medium">Click to upload ZIP file</p>
+                  <p className="text-xs text-[#a1a1a1] mt-1">
                     Must contain 40+ WAV samples (Max 50MB)
                   </p>
-                  <input
-                    type="file"
-                    accept=".zip"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                </label>
+                </>
               )}
             </div>
           </div>
