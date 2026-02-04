@@ -195,6 +195,9 @@ export default function CreatorDashboardPage() {
                       Genre
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Purchases
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Downloads
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
@@ -223,6 +226,9 @@ export default function CreatorDashboardPage() {
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-[#a1a1a1]">{sample.genre}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-white">{sample.purchases}</p>
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-white">{sample.downloadCount}</p>
