@@ -431,6 +431,9 @@ export default function CreatorApplicationPage() {
                   <Upload className="w-8 h-8 text-[#a1a1a1] mx-auto mb-2" />
                   <p className="text-white font-medium">Click to upload ZIP file</p>
                   <p className="text-xs text-[#a1a1a1] mt-1">
+                    Zip your WAV samples into a single .zip file before uploading
+                  </p>
+                  <p className="text-xs text-[#a1a1a1]">
                     Must contain 40+ WAV samples (Max 50MB)
                   </p>
                 </>
