@@ -10,21 +10,37 @@ export default function OnboardingPage() {
   const [formData, setFormData] = useState({
     username: "",
     full_name: "",
-    address: "",
+    city: "",
+    country: "",
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
     try {
-      // TODO: Replace with Supabase/Prisma call
+      const res = await fetch("/api/user/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to complete profile");
+        return;
+      }
+
       router.push("/marketplace");
-    } catch (error) {
-      console.error("Error completing profile:", error);
-      alert("Failed to complete profile");
+      router.refresh();
+    } catch (err) {
+      console.error("Error completing profile:", err);
+      setError("Failed to complete profile. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -42,6 +58,12 @@ export default function OnboardingPage() {
           </p>
         </div>
 
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-white mb-2">
@@ -52,11 +74,12 @@ export default function OnboardingPage() {
               required
               value={formData.username}
               onChange={(e) =>
-                setFormData({ ...formData, username: e.target.value })
+                setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "") })
               }
               placeholder="your_username"
               className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
             />
+            <p className="text-xs text-[#666] mt-1">Lowercase letters, numbers, and underscores only</p>
           </div>
 
           <div>
@@ -75,20 +98,35 @@ export default function OnboardingPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-white mb-2">
-              Address
-            </label>
-            <Input
-              type="text"
-              required
-              value={formData.address}
-              onChange={(e) =>
-                setFormData({ ...formData, address: e.target.value })
-              }
-              placeholder="Your Street Address"
-              className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                City
+              </label>
+              <Input
+                type="text"
+                value={formData.city}
+                onChange={(e) =>
+                  setFormData({ ...formData, city: e.target.value })
+                }
+                placeholder="City"
+                className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                Country
+              </label>
+              <Input
+                type="text"
+                value={formData.country}
+                onChange={(e) =>
+                  setFormData({ ...formData, country: e.target.value })
+                }
+                placeholder="Country"
+                className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+              />
+            </div>
           </div>
 
           <Button

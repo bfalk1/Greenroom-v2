@@ -29,31 +29,33 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Do not run code between createServerClient and supabase.auth.getUser().
-  // A simple mistake could make it very hard to debug issues with users being
-  // randomly logged out.
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes - redirect to login if not authenticated
-  const protectedPaths = [
-    "/marketplace",
-    "/library",
-    "/account",
-    "/onboarding",
-    "/creator",
-    "/mod",
-    "/admin",
-  ];
+  const pathname = request.nextUrl.pathname;
 
-  const isProtectedPath = protectedPaths.some((path) =>
-    request.nextUrl.pathname.startsWith(path)
+  // Public paths — no auth required
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/api/health", "/api/webhooks"];
+  const isPublicPath = publicPaths.some((path) =>
+    pathname === path || pathname.startsWith("/api/webhooks")
   );
 
-  if (!user && isProtectedPath) {
+  if (isPublicPath) {
+    return supabaseResponse;
+  }
+
+  // Protected routes — redirect to login if not authenticated
+  if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  // If user is logged in and on login/signup, redirect to marketplace
+  if (user && (pathname === "/login" || pathname === "/signup")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/marketplace";
     return NextResponse.redirect(url);
   }
 
