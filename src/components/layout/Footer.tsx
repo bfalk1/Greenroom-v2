@@ -41,17 +41,12 @@ export function Footer() {
             <h3 className="text-white font-semibold mb-4">Resources</h3>
             <ul className="space-y-2 text-sm text-[#a1a1a1]">
               <li>
-                <a href="#" className="hover:text-white transition">
+                <a href="/help" className="hover:text-white transition">
                   Help Center
                 </a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition">
-                  Blog
-                </a>
-              </li>
-              <li>
-                <a href="#" className="hover:text-white transition">
+                <a href="/contact" className="hover:text-white transition">
                   Contact
                 </a>
               </li>
@@ -61,12 +56,12 @@ export function Footer() {
             <h3 className="text-white font-semibold mb-4">Legal</h3>
             <ul className="space-y-2 text-sm text-[#a1a1a1]">
               <li>
-                <a href="#" className="hover:text-white transition">
+                <a href="/terms" className="hover:text-white transition">
                   Terms of Service
                 </a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition">
+                <a href="/privacy" className="hover:text-white transition">
                   Privacy Policy
                 </a>
               </li>
@@ -75,7 +70,7 @@ export function Footer() {
         </div>
         <div className="border-t border-[#2a2a2a] pt-8">
           <p className="text-center text-[#a1a1a1] text-sm">
-            © 2024 GREENROOM. All rights reserved.
+            © 2026 GREENROOM. All rights reserved.
           </p>
         </div>
       </div>
