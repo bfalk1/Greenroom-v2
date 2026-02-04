@@ -62,6 +62,7 @@ interface PayoutCreator {
   email: string;
   username: string | null;
   name: string;
+  stripeConnected: boolean;
 }
 
 interface PayoutRequest {
@@ -73,6 +74,7 @@ interface PayoutRequest {
   totalCreditsSpent: number;
   amountUsd: number;
   status: string;
+  stripeTransferId: string | null;
   paidAt: string | null;
   createdAt: string;
 }
@@ -742,6 +744,17 @@ export default function AdminDashboardPage() {
                               }
                             )}
                           </p>
+                          <span
+                            className={`inline-flex items-center gap-1 mt-1 text-xs font-medium ${
+                              payout.creator.stripeConnected
+                                ? "text-[#635bff]"
+                                : "text-red-400"
+                            }`}
+                          >
+                            {payout.creator.stripeConnected
+                              ? "✓ Stripe connected"
+                              : "✗ No Stripe account"}
+                          </span>
                         </div>
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -800,47 +813,69 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      {payout.paidAt && (
-                        <p className="text-xs text-[#a1a1a1] mb-4">
-                          Paid on{" "}
-                          {new Date(payout.paidAt).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </p>
+                      {(payout.paidAt || payout.stripeTransferId) && (
+                        <div className="text-xs text-[#a1a1a1] mb-4 space-y-1">
+                          {payout.paidAt && (
+                            <p>
+                              Paid on{" "}
+                              {new Date(payout.paidAt).toLocaleDateString(
+                                "en-US",
+                                {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric",
+                                }
+                              )}
+                            </p>
+                          )}
+                          {payout.stripeTransferId && (
+                            <p className="font-mono text-[#635bff]">
+                              Transfer: {payout.stripeTransferId}
+                            </p>
+                          )}
+                        </div>
                       )}
 
                       {payout.status === "PENDING" && (
-                        <div className="flex gap-3 border-t border-[#2a2a2a] pt-4">
-                          <Button
-                            onClick={() =>
-                              handlePayoutAction(payout.id, "approve")
-                            }
-                            disabled={processingPayoutId === payout.id}
-                            className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-                          >
-                            {processingPayoutId === payout.id ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="w-4 h-4 mr-2" />
-                            )}
-                            Approve & Mark Paid
-                          </Button>
-                          <Button
-                            onClick={() =>
-                              handlePayoutAction(payout.id, "reject")
-                            }
-                            disabled={processingPayoutId === payout.id}
-                            className="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
-                          >
-                            {processingPayoutId === payout.id ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <XCircle className="w-4 h-4 mr-2" />
-                            )}
-                            Reject
-                          </Button>
+                        <div className="border-t border-[#2a2a2a] pt-4">
+                          {!payout.creator.stripeConnected && (
+                            <p className="text-xs text-red-400 mb-3 flex items-center gap-1">
+                              <XCircle className="w-3 h-3" />
+                              Creator has not connected Stripe. Approval will
+                              trigger a transfer — it will fail without a
+                              connected account.
+                            </p>
+                          )}
+                          <div className="flex gap-3">
+                            <Button
+                              onClick={() =>
+                                handlePayoutAction(payout.id, "approve")
+                              }
+                              disabled={processingPayoutId === payout.id}
+                              className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                            >
+                              {processingPayoutId === payout.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                              )}
+                              Approve & Send via Stripe
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                handlePayoutAction(payout.id, "reject")
+                              }
+                              disabled={processingPayoutId === payout.id}
+                              className="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
+                            >
+                              {processingPayoutId === payout.id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <XCircle className="w-4 h-4 mr-2" />
+                              )}
+                              Reject
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>

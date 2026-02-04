@@ -9,6 +9,9 @@ import {
   ShoppingCart,
   Loader2,
   Wallet,
+  ExternalLink,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
@@ -43,6 +46,14 @@ interface Payout {
   paidAt: string | null;
 }
 
+interface StripeConnectStatus {
+  connected: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted?: boolean;
+  accountId: string | null;
+}
+
 export default function CreatorEarningsPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
@@ -51,42 +62,10 @@ export default function CreatorEarningsPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
-  const [stripeConnected, setStripeConnected] = useState(false);
-  const [stripeLoading, setStripeLoading] = useState(true);
+  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(
+    null
+  );
   const [connectingStripe, setConnectingStripe] = useState(false);
-
-  const fetchStripeStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/creator/stripe-connect");
-      if (res.ok) {
-        const data = await res.json();
-        setStripeConnected(data.connected && data.chargesEnabled);
-      }
-    } catch (error) {
-      console.error("Error checking Stripe status:", error);
-    } finally {
-      setStripeLoading(false);
-    }
-  }, []);
-
-  const handleConnectStripe = async () => {
-    setConnectingStripe(true);
-    try {
-      const res = await fetch("/api/creator/stripe-connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ returnUrl: window.location.href }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to start Stripe onboarding");
-      window.location.href = data.url;
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect Stripe"
-      );
-      setConnectingStripe(false);
-    }
-  };
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -104,6 +83,37 @@ export default function CreatorEarningsPage() {
     }
   }, []);
 
+  const fetchStripeStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creator/stripe-connect");
+      if (!res.ok) throw new Error("Failed to check Stripe status");
+      const data = await res.json();
+      setStripeStatus(data);
+    } catch (error) {
+      console.error("Error checking Stripe status:", error);
+    }
+  }, []);
+
+  const handleConnectStripe = async () => {
+    setConnectingStripe(true);
+    try {
+      const res = await fetch("/api/creator/stripe-connect", {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to start Stripe onboarding");
+      }
+      // Redirect to Stripe onboarding
+      window.location.href = data.url;
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to connect Stripe"
+      );
+      setConnectingStripe(false);
+    }
+  };
+
   const handleRequestPayout = async () => {
     setRequestingPayout(true);
     try {
@@ -112,7 +122,9 @@ export default function CreatorEarningsPage() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to request payout");
       }
-      toast.success("Payout request submitted! An admin will review it shortly.");
+      toast.success(
+        "Payout request submitted! An admin will review it shortly."
+      );
       await fetchEarnings();
     } catch (error) {
       toast.error(
@@ -129,7 +141,6 @@ export default function CreatorEarningsPage() {
       fetchStripeStatus();
     } else if (!userLoading) {
       setLoading(false);
-      setStripeLoading(false);
     }
   }, [user, userLoading, fetchEarnings, fetchStripeStatus]);
 
@@ -162,10 +173,21 @@ export default function CreatorEarningsPage() {
     );
   }
 
+  const stripeReady =
+    stripeStatus?.connected && stripeStatus?.chargesEnabled;
+  const stripePartial =
+    stripeStatus?.connected && !stripeStatus?.chargesEnabled;
+  const canRequestPayout =
+    stripeReady &&
+    stats &&
+    stats.unpaidEarnings - stats.pendingPayout >= 5;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h1 className="text-3xl font-bold text-white mb-8">Creator Earnings</h1>
+        <h1 className="text-3xl font-bold text-white mb-8">
+          Creator Earnings
+        </h1>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
@@ -230,85 +252,121 @@ export default function CreatorEarningsPage() {
           </div>
         </div>
 
-        {/* Stripe Connect / Payout Request */}
-        {!stripeLoading && !stripeConnected ? (
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+        {/* Stripe Connect + Payout Request */}
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+          {!stripeStatus || !stripeStatus.connected ? (
+            /* Stripe not connected */
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-white mb-1">
+                <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-yellow-400" />
                   Connect Stripe to Get Paid
                 </h2>
                 <p className="text-[#a1a1a1] text-sm">
-                  Link your Stripe account to receive payouts directly to your bank account.
+                  Set up your Stripe account to receive payouts directly to your
+                  bank. This only takes a few minutes.
                 </p>
               </div>
               <Button
                 onClick={handleConnectStripe}
                 disabled={connectingStripe}
-                className="bg-[#635BFF] text-white hover:bg-[#5046E5]"
+                className="bg-[#635bff] text-white hover:bg-[#5349e0] shrink-0"
               >
                 {connectingStripe ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
-                  <Wallet className="w-4 h-4 mr-2" />
+                  <ExternalLink className="w-4 h-4 mr-2" />
                 )}
                 Connect Stripe
               </Button>
             </div>
-          </div>
-        ) : !stripeLoading ? (
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+          ) : stripePartial ? (
+            /* Stripe connected but not fully set up */
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-white mb-1">
-                  Request Payout
+                <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-yellow-400" />
+                  Finish Stripe Setup
                 </h2>
                 <p className="text-[#a1a1a1] text-sm">
-                  {stats && stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
-                    <>
-                      You have{" "}
-                      <span className="text-[#00FF88] font-medium">
-                        ${(stats.unpaidEarnings - stats.pendingPayout).toFixed(2)}
-                      </span>{" "}
-                      available for payout.
-                    </>
-                  ) : stats && stats.pendingPayout > 0 ? (
-                    <>
-                      You have a pending payout of{" "}
-                      <span className="text-yellow-400 font-medium">
-                        ${stats.pendingPayout.toFixed(2)}
-                      </span>
-                      . Please wait for admin approval.
-                    </>
-                  ) : (
-                    <>
-                      Minimum payout is $5.00. Current unpaid earnings:{" "}
-                      <span className="text-white font-medium">
-                        ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
-                      </span>
-                    </>
-                  )}
+                  Your Stripe account is connected but not fully verified.
+                  Please complete the onboarding to enable payouts.
                 </p>
               </div>
               <Button
-                onClick={handleRequestPayout}
-                disabled={
-                  requestingPayout ||
-                  !stats ||
-                  stats.unpaidEarnings - stats.pendingPayout < 5
-                }
-                className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleConnectStripe}
+                disabled={connectingStripe}
+                className="bg-[#635bff] text-white hover:bg-[#5349e0] shrink-0"
               >
-                {requestingPayout ? (
+                {connectingStripe ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
-                  <DollarSign className="w-4 h-4 mr-2" />
+                  <ExternalLink className="w-4 h-4 mr-2" />
                 )}
-                Request Payout
+                Complete Setup
               </Button>
             </div>
-          </div>
-        ) : null}
+          ) : (
+            /* Stripe fully connected — show payout request */
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <CheckCircle2 className="w-4 h-4 text-[#00FF88]" />
+                <span className="text-sm text-[#00FF88] font-medium">
+                  Stripe connected
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white mb-1">
+                    Request Payout
+                  </h2>
+                  <p className="text-[#a1a1a1] text-sm">
+                    {stats &&
+                    stats.unpaidEarnings - stats.pendingPayout >= 5 ? (
+                      <>
+                        You have{" "}
+                        <span className="text-[#00FF88] font-medium">
+                          $
+                          {(
+                            stats.unpaidEarnings - stats.pendingPayout
+                          ).toFixed(2)}
+                        </span>{" "}
+                        available for payout.
+                      </>
+                    ) : stats && stats.pendingPayout > 0 ? (
+                      <>
+                        You have a pending payout of{" "}
+                        <span className="text-yellow-400 font-medium">
+                          ${stats.pendingPayout.toFixed(2)}
+                        </span>
+                        . Please wait for admin approval.
+                      </>
+                    ) : (
+                      <>
+                        Minimum payout is $5.00. Current unpaid earnings:{" "}
+                        <span className="text-white font-medium">
+                          ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <Button
+                  onClick={handleRequestPayout}
+                  disabled={requestingPayout || !canRequestPayout}
+                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                >
+                  {requestingPayout ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <DollarSign className="w-4 h-4 mr-2" />
+                  )}
+                  Request Payout
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Payouts History */}
         {payouts.length > 0 && (
@@ -361,8 +419,8 @@ export default function CreatorEarningsPage() {
                             payout.status === "PAID"
                               ? "bg-[#00FF88]/20 text-[#00FF88]"
                               : payout.status === "PENDING"
-                              ? "bg-yellow-500/20 text-yellow-400"
-                              : "bg-[#2a2a2a] text-[#a1a1a1]"
+                                ? "bg-yellow-500/20 text-yellow-400"
+                                : "bg-red-500/20 text-red-400"
                           }`}
                         >
                           {payout.status}
