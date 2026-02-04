@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Check, Zap } from "lucide-react";
+import { Check, Zap, Loader2 } from "lucide-react";
+import { useUser } from "@/lib/hooks/useUser";
+import { toast } from "sonner";
 
 const packages = [
   {
     name: "General Admission",
+    tierName: "GA",
     credits: 100,
     price: 10.99,
     priceId: "price_1Sv50uIWJCIyCVNS2v5Vrdl1",
@@ -19,6 +23,7 @@ const packages = [
   },
   {
     name: "VIP",
+    tierName: "VIP",
     credits: 200,
     price: 18.99,
     priceId: "price_1Sv50uIWJCIyCVNSnYOFdlgc",
@@ -31,6 +36,7 @@ const packages = [
   },
   {
     name: "All Access",
+    tierName: "AA",
     credits: 500,
     price: 34.99,
     priceId: "price_1Sv50uIWJCIyCVNSS8KxUBnd",
@@ -44,21 +50,82 @@ const packages = [
 ];
 
 export default function PricingPage() {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const { user, loading: userLoading } = useUser();
+  const searchParams = useSearchParams();
+
+  // Handle success/canceled URL params
+  useEffect(() => {
+    if (searchParams.get("success") === "true") {
+      toast.success("Subscription activated! Your credits are ready to use.");
+      // Clean URL
+      window.history.replaceState({}, "", "/pricing");
+    }
+    if (searchParams.get("canceled") === "true") {
+      toast.info("Checkout canceled. No charges were made.");
+      window.history.replaceState({}, "", "/pricing");
+    }
+  }, [searchParams]);
 
   const handlePurchase = async (priceId: string) => {
-    // TODO: Replace with Stripe checkout session creation
-    setLoading(true);
+    if (!user) {
+      toast.error("Please sign in to subscribe.");
+      return;
+    }
+
+    setLoading(priceId);
     try {
-      console.log("Creating checkout session for:", priceId);
-      alert("Checkout coming soon!");
+      const res = await fetch("/api/subscription/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create checkout session");
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
     } catch (error) {
       console.error("Error creating checkout:", error);
-      alert("Failed to create checkout session");
+      toast.error("Failed to create checkout session. Please try again.");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
+
+  const handleManageSubscription = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await fetch("/api/subscription/portal", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to open billing portal");
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error("Error opening portal:", error);
+      toast.error("Failed to open billing portal. Please try again.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const hasActiveSub =
+    user?.subscription_status === "active" ||
+    user?.subscription_status === "past_due";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -70,6 +137,36 @@ export default function PricingPage() {
             Choose your monthly subscription and get fresh credits every month
           </p>
         </div>
+
+        {/* Active Subscription Banner */}
+        {hasActiveSub && (
+          <div className="max-w-2xl mx-auto mb-12 bg-[#1a1a1a] border border-[#00FF88]/30 rounded-xl p-6 text-center">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Zap className="w-5 h-5 text-[#00FF88]" />
+              <h3 className="text-lg font-semibold text-white">
+                Active Subscription
+              </h3>
+            </div>
+            <p className="text-[#a1a1a1] mb-4">
+              You&apos;re currently subscribed. Manage your plan, update payment
+              methods, or cancel anytime.
+            </p>
+            <Button
+              onClick={handleManageSubscription}
+              disabled={portalLoading}
+              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold"
+            >
+              {portalLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                "Manage Subscription"
+              )}
+            </Button>
+          </div>
+        )}
 
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -128,14 +225,23 @@ export default function PricingPage() {
                 {/* CTA Button */}
                 <Button
                   onClick={() => handlePurchase(pkg.priceId)}
-                  disabled={loading}
+                  disabled={loading !== null || userLoading}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted
                       ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
                       : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
                   }`}
                 >
-                  Subscribe Now
+                  {loading === pkg.priceId ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : hasActiveSub ? (
+                    "Change Plan"
+                  ) : (
+                    "Subscribe Now"
+                  )}
                 </Button>
 
                 {/* Price per credit */}
