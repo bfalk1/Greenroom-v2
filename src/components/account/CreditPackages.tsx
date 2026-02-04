@@ -2,132 +2,120 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Check, Zap, AlertCircle } from "lucide-react";
+import { Zap, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
-const PACKAGES = [
+const PACKS = [
   {
-    name: "General Admission",
-    credits: 100,
-    price: 10.99,
-    priceId: "price_1Sv50uIWJCIyCVNS2v5Vrdl1",
-    description: "Perfect for trying out samples",
-    features: ["100 Credits", "Download rights", "Use anytime"],
-    highlighted: false,
+    credits: 50,
+    price: 5.99,
+    priceId: "price_1Sx9xM5k6Fwn7Cbz15vCSHwt",
+    perCredit: "0.12",
   },
   {
-    name: "VIP",
-    credits: 200,
-    price: 18.99,
-    priceId: "price_1Sv50uIWJCIyCVNSnYOFdlgc",
-    description: "Best value for producers",
-    features: ["200 Credits", "Unlimited downloads", "Best value"],
-    highlighted: true,
+    credits: 150,
+    price: 14.99,
+    priceId: "price_1Sx9xi5k6Fwn7CbzioLNev9W",
+    perCredit: "0.10",
+    popular: true,
   },
   {
-    name: "All Access",
-    credits: 500,
+    credits: 400,
     price: 34.99,
-    priceId: "price_1Sv50uIWJCIyCVNSS8KxUBnd",
-    description: "Maximum value package",
-    features: ["500 Credits", "Priority support", "Best savings"],
-    highlighted: false,
+    priceId: "price_1Sx9y35k6Fwn7CbzGeA0QXz1",
+    perCredit: "0.09",
+    bestValue: true,
   },
 ];
 
 export function CreditPackages() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
 
-  const handlePurchase = async (pkg: (typeof PACKAGES)[0]) => {
-    setLoading(true);
-    setError(null);
-
+  const handleBuy = async (priceId: string) => {
+    setLoading(priceId);
     try {
-      // TODO: Replace with Stripe checkout session creation
-      console.log("Purchase:", pkg.priceId);
-      alert("Checkout coming soon!");
-    } catch (err) {
-      console.error("Checkout error:", err);
-      setError("Failed to process checkout");
+      const res = await fetch("/api/credits/purchase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create checkout");
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error("Credit purchase error:", error);
+      toast.error("Failed to start checkout. Please try again.");
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-white mb-2">Buy Credits</h2>
+      <h2 className="text-lg font-semibold text-white mb-1">Buy Credits</h2>
       <p className="text-[#a1a1a1] text-sm mb-6">
-        Choose a package that fits your needs. Credits never expire.
+        Need more credits? Top up anytime — credits never expire.
       </p>
 
-      {error && (
-        <div className="bg-red-950/20 border border-red-900/30 rounded-lg p-4 mb-6 flex gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-300 text-sm font-medium">Error</p>
-            <p className="text-red-200/70 text-sm">{error}</p>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {PACKAGES.map((pkg) => (
+        {PACKS.map((pack) => (
           <div
-            key={pkg.name}
-            className={`rounded-lg border p-6 transition flex flex-col ${
-              pkg.highlighted
-                ? "bg-gradient-to-b from-[#00FF88]/10 to-[#00cc6a]/5 border-[#00FF88]/30"
-                : "bg-[#1a1a1a] border-[#2a2a2a]"
+            key={pack.credits}
+            className={`relative rounded-xl border p-5 transition ${
+              pack.popular
+                ? "border-[#00FF88]/40 bg-gradient-to-b from-[#00FF88]/5 to-transparent"
+                : "border-[#2a2a2a] bg-[#0a0a0a]"
             }`}
           >
-            {pkg.highlighted && (
-              <div className="bg-[#00FF88] text-black text-xs font-bold px-3 py-1 rounded-full w-fit mb-4">
-                MOST POPULAR
-              </div>
+            {pack.popular && (
+              <span className="absolute -top-2.5 left-4 bg-[#00FF88] text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                Popular
+              </span>
+            )}
+            {pack.bestValue && (
+              <span className="absolute -top-2.5 left-4 bg-white text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+                Best Value
+              </span>
             )}
 
-            <h3 className="text-xl font-semibold text-white mb-2">
-              {pkg.name}
-            </h3>
-            <p className="text-[#a1a1a1] text-sm mb-4">{pkg.description}</p>
-
-            <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-3xl font-bold text-white">
-                ${pkg.price}
-              </span>
-              <span className="text-[#a1a1a1] text-sm">/one-time</span>
-            </div>
-
-            <div className="flex items-center gap-3 mb-6 p-3 rounded-lg bg-[#0a0a0a]/50">
+            <div className="flex items-center gap-2 mb-3">
               <Zap className="w-5 h-5 text-[#00FF88]" />
-              <span className="text-lg font-semibold text-white">
-                {pkg.credits} Credits
+              <span className="text-2xl font-bold text-white">
+                {pack.credits}
               </span>
+              <span className="text-sm text-[#a1a1a1]">credits</span>
             </div>
 
-            <ul className="space-y-2 mb-6 flex-1">
-              {pkg.features.map((feature) => (
-                <li
-                  key={feature}
-                  className="flex gap-2 items-start text-sm text-[#a1a1a1]"
-                >
-                  <Check className="w-4 h-4 text-[#00FF88] mt-0.5 flex-shrink-0" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex items-baseline gap-1 mb-1">
+              <span className="text-xl font-bold text-white">
+                ${pack.price}
+              </span>
+            </div>
+            <p className="text-xs text-[#666] mb-4">
+              ${pack.perCredit} per credit
+            </p>
 
             <Button
-              onClick={() => handlePurchase(pkg)}
-              disabled={loading}
-              className={`w-full h-10 font-semibold transition ${
-                pkg.highlighted
+              onClick={() => handleBuy(pack.priceId)}
+              disabled={loading !== null}
+              className={`w-full font-semibold ${
+                pack.popular
                   ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-                  : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
+                  : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
               }`}
             >
-              {loading ? "Processing..." : "Buy Now"}
+              {loading === pack.priceId ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                "Buy Now"
+              )}
             </Button>
           </div>
         ))}

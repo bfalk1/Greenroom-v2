@@ -15,7 +15,47 @@ function getPeriodDates(subscription: Stripe.Subscription) {
   };
 }
 
+async function handleCreditPurchase(session: Stripe.Checkout.Session) {
+  const userId = session.metadata?.userId;
+  const credits = parseInt(session.metadata?.credits || "0", 10);
+
+  if (!userId || !credits) {
+    console.error("Missing userId or credits in credit purchase metadata");
+    return;
+  }
+
+  // Add credits to balance
+  await prisma.creditBalance.upsert({
+    where: { userId },
+    update: { balance: { increment: credits } },
+    create: { userId, balance: credits },
+  });
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { credits: { increment: credits } },
+  });
+
+  // Log transaction
+  await prisma.creditTransaction.create({
+    data: {
+      userId,
+      amount: credits,
+      type: "PURCHASE",
+      referenceId: session.id,
+      note: `Purchased ${credits} credits`,
+    },
+  });
+
+  console.log(`Issued ${credits} credits to user ${userId} (one-time purchase)`);
+}
+
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  // Handle one-time credit purchases separately
+  if (session.metadata?.type === "credit_purchase") {
+    return handleCreditPurchase(session);
+  }
+
   const userId = session.metadata?.userId;
   if (!userId) {
     console.error("No userId in checkout session metadata");

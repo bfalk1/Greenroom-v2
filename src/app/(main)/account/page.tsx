@@ -12,6 +12,7 @@ import {
   ArrowDownRight,
   CreditCard,
 } from "lucide-react";
+import { CreditPackages } from "@/components/account/CreditPackages";
 import { ProfilePictureUpload } from "@/components/account/ProfilePictureUpload";
 import { BannerImageUpload } from "@/components/account/BannerImageUpload";
 import { useUser } from "@/lib/hooks/useUser";
@@ -325,6 +326,11 @@ export default function AccountPage() {
             </div>
           </div>
         )}
+
+        {/* Buy Credits */}
+        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
+          <CreditPackages />
+        </div>
 
         {/* Profile Section */}
         <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
