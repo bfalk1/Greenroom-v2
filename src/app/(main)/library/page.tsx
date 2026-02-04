@@ -22,6 +22,8 @@ interface LibrarySample {
   credit_price: number;
   tags: string[];
   file_url: string;
+  signed_url: string | null;
+  filename: string;
   preview_url: string | null;
   cover_image_url: string | null;
   average_rating: number;
@@ -84,6 +86,11 @@ export default function LibraryPage() {
           <p className="text-[#a1a1a1]">
             {samples.length} sample{samples.length !== 1 ? "s" : ""} purchased
           </p>
+          {samples.length > 0 && (
+            <p className="text-xs text-[#666] mt-1">
+              💡 Drag samples directly into your DAW or click Download
+            </p>
+          )}
         </div>
 
         {samples.length > 0 && (
@@ -106,7 +113,21 @@ export default function LibraryPage() {
             {filtered.map((sample) => (
               <div
                 key={sample.id}
-                className="rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#00FF88]/50 transition-all p-4 flex items-center gap-4"
+                draggable={!!sample.signed_url}
+                onDragStart={(e) => {
+                  if (sample.signed_url) {
+                    // Chrome DownloadURL format for drag-to-desktop/DAW
+                    e.dataTransfer.setData(
+                      "DownloadURL",
+                      `audio/wav:${sample.filename}:${sample.signed_url}`
+                    );
+                    e.dataTransfer.effectAllowed = "copy";
+                  }
+                }}
+                className={`rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#00FF88]/50 transition-all p-4 flex items-center gap-4 ${
+                  sample.signed_url ? "cursor-grab active:cursor-grabbing" : ""
+                }`}
+                title={sample.signed_url ? "Drag to your DAW or desktop" : ""}
               >
                 {/* Cover */}
                 <div className="w-14 h-14 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden">
@@ -143,7 +164,7 @@ export default function LibraryPage() {
                 </div>
 
                 {/* Download */}
-                <DownloadButton sampleId={sample.id} />
+                <DownloadButton sampleId={sample.id} signedUrl={sample.signed_url} filename={sample.filename} />
               </div>
             ))}
           </div>
@@ -173,10 +194,22 @@ export default function LibraryPage() {
   );
 }
 
-function DownloadButton({ sampleId }: { sampleId: string }) {
+function DownloadButton({ sampleId, signedUrl, filename }: { sampleId: string; signedUrl: string | null; filename: string }) {
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
+    // If we have a signed URL, use it directly (faster)
+    if (signedUrl) {
+      const a = document.createElement("a");
+      a.href = signedUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    // Fallback to API download
     setDownloading(true);
     try {
       const res = await fetch(`/api/downloads/${sampleId}`);
@@ -186,17 +219,15 @@ function DownloadButton({ sampleId }: { sampleId: string }) {
         throw new Error(data.error || "Download failed");
       }
 
-      // Get the filename from Content-Disposition header
       const disposition = res.headers.get("Content-Disposition");
       const filenameMatch = disposition?.match(/filename="(.+)"/);
-      const filename = filenameMatch?.[1] || "sample.wav";
+      const fname = filenameMatch?.[1] || "sample.wav";
 
-      // Create blob and trigger download
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = fname;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
