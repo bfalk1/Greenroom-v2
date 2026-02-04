@@ -1,87 +1,154 @@
 "use client";
 
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import React, { useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Filter } from "lucide-react";
 
 const GENRES = [
-  "Hip Hop",
-  "R&B",
-  "Pop",
   "Electronic",
-  "Trap",
-  "Lo-Fi",
+  "Hip-Hop",
+  "Pop",
   "Rock",
-  "Jazz",
-  "Latin",
-  "Afrobeats",
+  "R&B",
+  "Ambient",
+  "Indie",
+  "Techno",
   "House",
-  "Drill",
+  "Trap",
+  "Jazz",
+  "Classical",
 ];
 
-const INSTRUMENTS = [
-  "Drums",
-  "Bass",
-  "Synth",
-  "Guitar",
-  "Piano",
-  "Vocals",
-  "FX",
-  "Strings",
-  "Brass",
-  "Pad",
+const KEYS = [
+  "C",
+  "C#",
+  "D",
+  "D#",
+  "E",
+  "F",
+  "F#",
+  "G",
+  "G#",
+  "A",
+  "A#",
+  "B",
 ];
 
-export function SampleFilters() {
+interface FilterState {
+  genre: string;
+  sampleType: string;
+  key: string;
+  sortBy: string;
+}
+
+interface SampleFiltersProps {
+  onFilterChange: (filters: FilterState) => void;
+}
+
+export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
+  const [genre, setGenre] = useState("all");
+  const [sampleType, setSampleType] = useState("all");
+  const [key, setKey] = useState("all");
+  const [sortBy, setSortBy] = useState("popular");
+
+  const handleChange = (field: string, value: string) => {
+    let newGenre = genre;
+    let newType = sampleType;
+    let newKey = key;
+    let newSort = sortBy;
+
+    if (field === "genre") newGenre = value;
+    if (field === "type") newType = value;
+    if (field === "key") newKey = value;
+    if (field === "sort") newSort = value;
+
+    setGenre(newGenre);
+    setSampleType(newType);
+    setKey(newKey);
+    setSortBy(newSort);
+
+    onFilterChange({
+      genre: newGenre,
+      sampleType: newType,
+      key: newKey,
+      sortBy: newSort,
+    });
+  };
+
   return (
-    <aside className="w-64 shrink-0 space-y-6">
-      <div>
-        <Label className="text-sm font-medium">Search</Label>
-        <Input placeholder="Search samples..." className="mt-1.5" />
+    <div className="flex flex-wrap gap-4 mb-8 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+      <div className="flex items-center gap-2">
+        <Filter className="w-4 h-4 text-[#00FF88]" />
+        <span className="text-sm font-medium text-white">Filter:</span>
       </div>
 
-      <Separator />
-
-      <div>
-        <Label className="mb-2 text-sm font-medium">Genre</Label>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {GENRES.map((genre) => (
-            <button
-              key={genre}
-              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-emerald-500 hover:text-emerald-500"
-            >
-              {genre}
-            </button>
+      <Select
+        value={genre}
+        onValueChange={(v) => handleChange("genre", v)}
+      >
+        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+          <SelectValue placeholder="Genre" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="all">All Genres</SelectItem>
+          {GENRES.map((g) => (
+            <SelectItem key={g} value={g}>
+              {g}
+            </SelectItem>
           ))}
-        </div>
-      </div>
+        </SelectContent>
+      </Select>
 
-      <Separator />
+      <Select
+        value={sampleType}
+        onValueChange={(v) => handleChange("type", v)}
+      >
+        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+          <SelectValue placeholder="Type" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="all">All Types</SelectItem>
+          <SelectItem value="loop">Loops</SelectItem>
+          <SelectItem value="one_shot">One-Shots</SelectItem>
+        </SelectContent>
+      </Select>
 
-      <div>
-        <Label className="mb-2 text-sm font-medium">Instrument</Label>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {INSTRUMENTS.map((instrument) => (
-            <button
-              key={instrument}
-              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-emerald-500 hover:text-emerald-500"
-            >
-              {instrument}
-            </button>
+      <Select
+        value={key}
+        onValueChange={(v) => handleChange("key", v)}
+      >
+        <SelectTrigger className="w-24 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+          <SelectValue placeholder="Key" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="all">All Keys</SelectItem>
+          {KEYS.map((k) => (
+            <SelectItem key={k} value={k}>
+              {k}
+            </SelectItem>
           ))}
-        </div>
-      </div>
+        </SelectContent>
+      </Select>
 
-      <Separator />
-
-      <div>
-        <Label className="text-sm font-medium">BPM Range</Label>
-        <div className="mt-1.5 flex items-center gap-2">
-          <Input type="number" placeholder="Min" className="w-20" />
-          <span className="text-muted-foreground">–</span>
-          <Input type="number" placeholder="Max" className="w-20" />
-        </div>
-      </div>
-    </aside>
+      <Select
+        value={sortBy}
+        onValueChange={(v) => handleChange("sort", v)}
+      >
+        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+          <SelectValue placeholder="Sort" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="popular">Most Popular</SelectItem>
+          <SelectItem value="newest">Newest</SelectItem>
+          <SelectItem value="rating">Top Rated</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

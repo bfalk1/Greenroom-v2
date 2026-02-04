@@ -1,70 +1,117 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Play, Pause } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Play, Pause, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface AudioPlayerProps {
-  src: string;
-  title?: string;
+  fileUrl?: string;
+  duration?: number;
 }
 
-export function AudioPlayer({ src, title }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, duration = 0 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [volume, setVolume] = useState(1);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const togglePlayback = () => {
-    if (!audioRef.current) return;
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
 
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleEnded = () => setIsPlaying(false);
+
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleEnded);
+    return () => {
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    if (!fileUrl) {
+      alert("Audio file not available");
+      return;
     }
-    setIsPlaying(!isPlaying);
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
   };
 
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) return;
-    const pct =
-      (audioRef.current.currentTime / audioRef.current.duration) * 100;
-    setProgress(pct);
+  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentTime(newTime);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+    }
   };
 
-  const handleEnded = () => {
-    setIsPlaying(false);
-    setProgress(0);
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume;
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-card p-3">
-      <audio
-        ref={audioRef}
-        src={src}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={handleEnded}
-        preload="metadata"
-      />
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 shrink-0"
-        onClick={togglePlayback}
-      >
-        {isPlaying ? (
-          <Pause className="h-4 w-4" />
-        ) : (
-          <Play className="h-4 w-4" />
-        )}
-      </Button>
-      {title && (
-        <span className="truncate text-sm text-foreground">{title}</span>
-      )}
-      <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full bg-emerald-500 transition-all"
-          style={{ width: `${progress}%` }}
+    <div className="bg-[#1a1a1a] rounded-lg p-6 border border-[#2a2a2a]">
+      <audio ref={audioRef} src={fileUrl} />
+
+      <div className="flex items-center gap-4 mb-4">
+        <Button
+          onClick={togglePlay}
+          className="w-12 h-12 rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] flex items-center justify-center"
+        >
+          {isPlaying ? (
+            <Pause className="w-6 h-6 fill-current" />
+          ) : (
+            <Play className="w-6 h-6 fill-current ml-0.5" />
+          )}
+        </Button>
+
+        <div className="flex-1 flex items-center gap-3">
+          <span className="text-xs text-[#a1a1a1] w-10 text-right">
+            {formatTime(currentTime)}
+          </span>
+          <input
+            type="range"
+            min="0"
+            max={duration || 100}
+            value={currentTime}
+            onChange={handleProgressChange}
+            className="flex-1 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
+          />
+          <span className="text-xs text-[#a1a1a1] w-10">
+            {formatTime(duration)}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Volume2 className="w-4 h-4 text-[#a1a1a1]" />
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={volume}
+          onChange={handleVolumeChange}
+          className="w-24 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
         />
       </div>
     </div>
