@@ -29,6 +29,7 @@ export async function GET() {
     totalSamples,
     publishedSamples,
     totalPurchases,
+    totalDownloads,
     pendingApplications,
     pendingSamples,
   ] = await Promise.all([
@@ -37,6 +38,7 @@ export async function GET() {
     prisma.sample.count(),
     prisma.sample.count({ where: { status: "PUBLISHED" } }),
     prisma.purchase.count(),
+    prisma.download.count(),
     prisma.creatorApplication.count({ where: { status: "PENDING" } }),
     prisma.sample.count({
       where: { status: { in: ["DRAFT", "REVIEW"] } },
@@ -49,6 +51,7 @@ export async function GET() {
     totalSamples,
     publishedSamples,
     totalPurchases,
+    totalDownloads,
     pendingApplications,
     pendingSamples,
   });

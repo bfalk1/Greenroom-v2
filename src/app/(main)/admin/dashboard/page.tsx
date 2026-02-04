@@ -24,6 +24,7 @@ interface Stats {
   totalCreators: number;
   totalSamples: number;
   totalPurchases: number;
+  totalDownloads: number;
   pendingApplications: number;
   pendingSamples: number;
 }
