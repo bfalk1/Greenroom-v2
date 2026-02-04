@@ -1,29 +1,68 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Music, Upload, CheckCircle2, Clock } from "lucide-react";
+import { Music, Upload, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { useUser } from "@/lib/hooks/useUser";
+import { createClient } from "@/lib/supabase/client";
+
+interface Application {
+  id: string;
+  status: string;
+  reviewNote?: string;
+  artistName: string;
+  createdAt: string;
+}
 
 export default function CreatorApplicationPage() {
-  const [application, setApplication] = useState<{
-    status: string;
-    review_notes?: string;
-  } | null>(null);
+  const { user, loading: userLoading } = useUser();
+  const [application, setApplication] = useState<Application | null>(null);
+  const [loadingApp, setLoadingApp] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState({
     artist_name: "",
     bio: "",
     soundcloud_url: "",
     spotify_url: "",
     instagram_url: "",
-    zip_file_url: "",
+    zip_file_path: "",
+    zip_file_name: "",
     terms_accepted: false,
   });
   const [fileUploadProgress, setFileUploadProgress] = useState(0);
   const router = useRouter();
+
+  // Fetch existing application on mount
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user) {
+      setLoadingApp(false);
+      return;
+    }
+
+    async function fetchApplication() {
+      try {
+        const res = await fetch("/api/creator/apply");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.application) {
+            setApplication(data.application);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch application:", error);
+      } finally {
+        setLoadingApp(false);
+      }
+    }
+
+    fetchApplication();
+  }, [user, userLoading]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({
@@ -37,14 +76,14 @@ export default function CreatorApplicationPage() {
     if (!file) return;
 
     if (!file.name.endsWith(".zip")) {
-      alert("Please upload a ZIP file");
+      toast.error("Please upload a ZIP file");
       return;
     }
 
     const maxSizeMB = 50;
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     if (file.size > maxSizeBytes) {
-      alert(
+      toast.error(
         `File is too large (${(file.size / 1024 / 1024).toFixed(
           1
         )}MB). Maximum size is ${maxSizeMB}MB.`
@@ -52,19 +91,44 @@ export default function CreatorApplicationPage() {
       return;
     }
 
+    setUploading(true);
+    setFileUploadProgress(10);
+
     try {
-      setFileUploadProgress(50);
-      // TODO: Replace with Supabase storage upload
+      const supabase = createClient();
+
+      // Generate a unique path for the file
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filePath = `${user?.id}/${timestamp}_${safeName}`;
+
+      setFileUploadProgress(30);
+
+      const { error } = await supabase.storage
+        .from("applications")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) {
+        throw error;
+      }
+
       setFileUploadProgress(100);
       setFormData((prev) => ({
         ...prev,
-        zip_file_url: "uploaded-file-url",
+        zip_file_path: filePath,
+        zip_file_name: file.name,
       }));
+      toast.success("File uploaded successfully");
       setTimeout(() => setFileUploadProgress(0), 1000);
     } catch (error) {
       console.error("File upload error:", error);
-      alert("File upload failed");
+      toast.error("File upload failed. Please try again.");
       setFileUploadProgress(0);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -74,25 +138,80 @@ export default function CreatorApplicationPage() {
     if (
       !formData.artist_name ||
       !formData.bio ||
-      !formData.zip_file_url ||
+      !formData.zip_file_path ||
       !formData.terms_accepted
     ) {
-      alert("Please fill in all required fields and accept the terms");
+      toast.error("Please fill in all required fields and accept the terms");
       return;
     }
 
     setSubmitting(true);
     try {
-      // TODO: Replace with Supabase/Prisma call
-      setApplication({ status: "pending" });
-      alert("Application submitted successfully! We'll review it shortly.");
+      const res = await fetch("/api/creator/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artistName: formData.artist_name,
+          bio: formData.bio,
+          socialLinks: {
+            soundcloud: formData.soundcloud_url || undefined,
+            spotify: formData.spotify_url || undefined,
+            instagram: formData.instagram_url || undefined,
+          },
+          sampleZipUrl: formData.zip_file_path,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to submit application");
+      }
+
+      const data = await res.json();
+      setApplication(data.application);
+      toast.success(
+        "Application submitted successfully! We'll review it shortly."
+      );
     } catch (error) {
-      alert("Failed to submit application");
+      toast.error(
+        error instanceof Error ? error.message : "Failed to submit application"
+      );
       console.error(error);
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Loading state
+  if (userLoading || loadingApp) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+      </div>
+    );
+  }
+
+  // Not logged in
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
+          <h1 className="text-3xl font-bold text-white mb-4">
+            Sign in to Apply
+          </h1>
+          <p className="text-[#a1a1a1] mb-6">
+            You need to be signed in to submit a creator application.
+          </p>
+          <Button
+            onClick={() => router.push("/auth/login")}
+            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          >
+            Sign In
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Show application status if already applied
   if (application) {
@@ -100,7 +219,7 @@ export default function CreatorApplicationPage() {
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center">
-            {application.status === "pending" && (
+            {application.status === "PENDING" && (
               <>
                 <Clock className="w-16 h-16 text-[#00FF88] mx-auto mb-4" />
                 <h1 className="text-3xl font-bold text-white mb-2">
@@ -112,7 +231,7 @@ export default function CreatorApplicationPage() {
                 </p>
               </>
             )}
-            {application.status === "approved" && (
+            {application.status === "APPROVED" && (
               <>
                 <CheckCircle2 className="w-16 h-16 text-[#00FF88] mx-auto mb-4" />
                 <h1 className="text-3xl font-bold text-white mb-2">
@@ -130,7 +249,7 @@ export default function CreatorApplicationPage() {
                 </Button>
               </>
             )}
-            {application.status === "rejected" && (
+            {application.status === "DENIED" && (
               <>
                 <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
                   <Music className="w-8 h-8 text-red-500" />
@@ -138,14 +257,21 @@ export default function CreatorApplicationPage() {
                 <h1 className="text-3xl font-bold text-white mb-2">
                   Application Not Approved
                 </h1>
-                {application.review_notes && (
-                  <p className="text-[#a1a1a1] mb-6">
-                    {application.review_notes}
+                {application.reviewNote && (
+                  <p className="text-[#a1a1a1] mb-4">
+                    <span className="font-medium text-white">Reason: </span>
+                    {application.reviewNote}
                   </p>
                 )}
                 <p className="text-[#a1a1a1] mb-6">
-                  Please contact support for more information.
+                  You can resubmit your application with updated information.
                 </p>
+                <Button
+                  onClick={() => setApplication(null)}
+                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                >
+                  Resubmit Application
+                </Button>
               </>
             )}
           </div>
@@ -251,10 +377,13 @@ export default function CreatorApplicationPage() {
               Sample Collection (ZIP) <span className="text-red-500">*</span>
             </label>
             <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition">
-              {formData.zip_file_url ? (
+              {formData.zip_file_path ? (
                 <div className="space-y-2">
                   <CheckCircle2 className="w-8 h-8 text-[#00FF88] mx-auto" />
                   <p className="text-white font-medium">File uploaded</p>
+                  <p className="text-[#a1a1a1] text-sm">
+                    {formData.zip_file_name}
+                  </p>
                 </div>
               ) : fileUploadProgress > 0 ? (
                 <div className="space-y-2">
@@ -265,7 +394,7 @@ export default function CreatorApplicationPage() {
                     />
                   </div>
                   <p className="text-[#a1a1a1] text-sm">
-                    {fileUploadProgress}%
+                    Uploading... {fileUploadProgress}%
                   </p>
                 </div>
               ) : (
@@ -280,6 +409,7 @@ export default function CreatorApplicationPage() {
                     accept=".zip"
                     onChange={handleFileUpload}
                     className="hidden"
+                    disabled={uploading}
                   />
                 </label>
               )}
@@ -305,10 +435,17 @@ export default function CreatorApplicationPage() {
           {/* Submit */}
           <Button
             type="submit"
-            disabled={submitting || !formData.zip_file_url}
+            disabled={submitting || uploading || !formData.zip_file_path}
             className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? "Submitting..." : "Submit Application"}
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              "Submit Application"
+            )}
           </Button>
         </form>
       </div>
