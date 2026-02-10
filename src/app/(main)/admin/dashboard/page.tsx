@@ -13,7 +13,12 @@ import {
   XCircle,
   Filter,
   DollarSign,
+  Settings,
+  Shield,
+  Trash2,
+  Plus,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
 import { CSVExport } from "@/components/admin/CSVExport";
@@ -104,6 +109,21 @@ interface DraftSample {
   creator: SampleCreator;
 }
 
+interface PlatformSettings {
+  creatorPayoutRate: number;
+  creditValueCents: number;
+}
+
+interface Moderator {
+  id: string;
+  email: string;
+  username: string | null;
+  artistName: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
 // Map API sample to the shape SampleModerationPanel expects
 function mapSampleForPanel(s: DraftSample) {
   return {
@@ -136,6 +156,17 @@ export default function AdminDashboardPage() {
   > | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  
+  // Settings state
+  const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
+    creatorPayoutRate: 70,
+    creditValueCents: 10,
+  });
+  const [moderators, setModerators] = useState<Moderator[]>([]);
+  const [newModEmail, setNewModEmail] = useState("");
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [addingMod, setAddingMod] = useState(false);
+  const [removingModId, setRemovingModId] = useState<string | null>(null);
 
   const fetchPayouts = useCallback(async (status?: string) => {
     try {
@@ -152,6 +183,30 @@ export default function AdminDashboardPage() {
       console.error("Failed to fetch payouts:", error);
     }
   }, [payoutFilter]);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setPlatformSettings(data.settings);
+      }
+    } catch (error) {
+      console.error("Failed to fetch settings:", error);
+    }
+  }, []);
+
+  const fetchModerators = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/moderators");
+      if (res.ok) {
+        const data = await res.json();
+        setModerators(data.moderators);
+      }
+    } catch (error) {
+      console.error("Failed to fetch moderators:", error);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -303,6 +358,88 @@ export default function AdminDashboardPage() {
       toast.error(
         error instanceof Error ? error.message : "Failed to moderate sample"
       );
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(platformSettings),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save settings");
+      }
+
+      toast.success("Settings saved!");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save settings"
+      );
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleAddModerator = async () => {
+    if (!newModEmail.trim()) {
+      toast.error("Please enter an email address");
+      return;
+    }
+
+    setAddingMod(true);
+    try {
+      const res = await fetch("/api/admin/moderators", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newModEmail.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add moderator");
+      }
+
+      toast.success("Moderator added!");
+      setNewModEmail("");
+      await fetchModerators();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to add moderator"
+      );
+    } finally {
+      setAddingMod(false);
+    }
+  };
+
+  const handleRemoveModerator = async (userId: string) => {
+    const confirmed = window.confirm("Remove this moderator?");
+    if (!confirmed) return;
+
+    setRemovingModId(userId);
+    try {
+      const res = await fetch(`/api/admin/moderators?userId=${userId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to remove moderator");
+      }
+
+      toast.success("Moderator removed");
+      await fetchModerators();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to remove moderator"
+      );
+    } finally {
+      setRemovingModId(null);
     }
   };
 
@@ -493,6 +630,21 @@ export default function AdminDashboardPage() {
             }`}
           >
             Admin Tools
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("settings");
+              fetchSettings();
+              fetchModerators();
+            }}
+            className={`px-4 py-3 font-medium border-b-2 transition ${
+              activeTab === "settings"
+                ? "border-[#00FF88] text-[#00FF88]"
+                : "border-transparent text-[#a1a1a1] hover:text-white"
+            }`}
+          >
+            <Settings className="w-4 h-4 inline mr-2" />
+            Settings
           </button>
         </div>
 
@@ -901,6 +1053,183 @@ export default function AdminDashboardPage() {
             <div className="space-y-6">
               <UserSearchPanel />
               <CSVExport />
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="space-y-8">
+              {/* Platform Settings */}
+              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-[#00FF88]/10 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-[#00FF88]" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Profit Split</h3>
+                    <p className="text-sm text-[#a1a1a1]">Configure creator payout rates</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-2">
+                      Creator Payout Rate (%)
+                    </label>
+                    <p className="text-xs text-[#666] mb-2">
+                      Percentage of credit value that goes to creators
+                    </p>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={platformSettings.creatorPayoutRate}
+                      onChange={(e) =>
+                        setPlatformSettings((prev) => ({
+                          ...prev,
+                          creatorPayoutRate: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                    />
+                    <p className="text-xs text-[#a1a1a1] mt-2">
+                      Platform keeps {100 - platformSettings.creatorPayoutRate}%
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-2">
+                      Credit Value (cents)
+                    </label>
+                    <p className="text-xs text-[#666] mb-2">
+                      USD value of each credit in cents
+                    </p>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={platformSettings.creditValueCents}
+                      onChange={(e) =>
+                        setPlatformSettings((prev) => ({
+                          ...prev,
+                          creditValueCents: parseInt(e.target.value) || 1,
+                        }))
+                      }
+                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                    />
+                    <p className="text-xs text-[#a1a1a1] mt-2">
+                      1 credit = ${(platformSettings.creditValueCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-[#0a0a0a] rounded-lg p-4 mb-6">
+                  <p className="text-sm text-[#a1a1a1]">
+                    <strong className="text-white">Example:</strong> If a sample costs 2 credits:
+                  </p>
+                  <ul className="text-sm text-[#a1a1a1] mt-2 space-y-1">
+                    <li>• User pays: 2 × ${(platformSettings.creditValueCents / 100).toFixed(2)} = ${((platformSettings.creditValueCents * 2) / 100).toFixed(2)}</li>
+                    <li>• Creator receives: ${((platformSettings.creditValueCents * 2 * platformSettings.creatorPayoutRate / 100) / 100).toFixed(2)} ({platformSettings.creatorPayoutRate}%)</li>
+                    <li>• Platform keeps: ${((platformSettings.creditValueCents * 2 * (100 - platformSettings.creatorPayoutRate) / 100) / 100).toFixed(2)} ({100 - platformSettings.creatorPayoutRate}%)</li>
+                  </ul>
+                </div>
+
+                <Button
+                  onClick={handleSaveSettings}
+                  disabled={savingSettings}
+                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                >
+                  {savingSettings ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                  )}
+                  Save Settings
+                </Button>
+              </div>
+
+              {/* Moderator Whitelist */}
+              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="p-2 bg-purple-500/10 rounded-lg">
+                    <Shield className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Moderator Whitelist</h3>
+                    <p className="text-sm text-[#a1a1a1]">Manage users who can moderate content</p>
+                  </div>
+                </div>
+
+                {/* Add Moderator */}
+                <div className="flex gap-3 mb-6">
+                  <Input
+                    type="email"
+                    placeholder="Enter user email to add as moderator..."
+                    value={newModEmail}
+                    onChange={(e) => setNewModEmail(e.target.value)}
+                    className="flex-1 bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddModerator()}
+                  />
+                  <Button
+                    onClick={handleAddModerator}
+                    disabled={addingMod || !newModEmail.trim()}
+                    className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  >
+                    {addingMod ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+
+                {/* Moderator List */}
+                {moderators.length > 0 ? (
+                  <div className="space-y-3">
+                    {moderators.map((mod) => (
+                      <div
+                        key={mod.id}
+                        className="flex items-center justify-between p-4 bg-[#0a0a0a] rounded-lg border border-[#2a2a2a]"
+                      >
+                        <div className="flex items-center gap-3">
+                          {mod.avatarUrl ? (
+                            <img
+                              src={mod.avatarUrl}
+                              alt=""
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                              <Shield className="w-5 h-5 text-purple-400" />
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-white font-medium">
+                              {mod.artistName || mod.fullName || mod.username || "Unknown"}
+                            </p>
+                            <p className="text-xs text-[#a1a1a1]">{mod.email}</p>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => handleRemoveModerator(mod.id)}
+                          disabled={removingModId === mod.id}
+                          variant="ghost"
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        >
+                          {removingModId === mod.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Shield className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
+                    <p className="text-[#a1a1a1]">No moderators added yet</p>
+                    <p className="text-xs text-[#666]">Add users by their email address</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

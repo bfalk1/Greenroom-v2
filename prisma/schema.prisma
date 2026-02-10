@@ -360,3 +360,21 @@ model AuditLog {
   @@index([createdAt(sort: Desc)])
   @@map("audit_logs")
 }
+
+// ─────────────────────────────────────────────
+// PLATFORM SETTINGS
+// ─────────────────────────────────────────────
+
+model PlatformSetting {
+  id        String   @id @default("default")
+  // Creator payout rate (percentage of credit value, e.g., 70 = 70%)
+  creatorPayoutRate Int      @default(70) @map("creator_payout_rate")
+  // Credit value in USD cents (e.g., 10 = $0.10 per credit)
+  creditValueCents  Int      @default(10) @map("credit_value_cents")
+  // Moderator whitelist (stored as JSON array of user IDs)
+  moderatorIds      String[] @default([]) @map("moderator_ids") @db.Uuid
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedBy         String?  @map("updated_by") @db.Uuid
+
+  @@map("platform_settings")
+}
