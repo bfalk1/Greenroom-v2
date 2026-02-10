@@ -1,56 +1,122 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Star } from "lucide-react";
+import { toast } from "sonner";
 import type { Sample, UserType } from "./SampleCard";
 
 interface SampleRatingProps {
   sample: Sample;
   user: UserType | null;
+  isOwned?: boolean;
+  initialRating?: number;
+  onRatingChange?: (sampleId: string, score: number, stats: { average: number; count: number }) => void;
 }
 
-export function SampleRating({ sample, user }: SampleRatingProps) {
-  const [userRating, setUserRating] = useState(0);
+export function SampleRating({ 
+  sample, 
+  user, 
+  isOwned = false,
+  initialRating,
+  onRatingChange,
+}: SampleRatingProps) {
+  const [userRating, setUserRating] = useState(initialRating || 0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [averageRating, setAverageRating] = useState(sample.average_rating || 0);
+  const [ratingCount, setRatingCount] = useState(sample.total_ratings || 0);
+
+  useEffect(() => {
+    if (initialRating !== undefined) {
+      setUserRating(initialRating);
+    }
+  }, [initialRating]);
+
+  useEffect(() => {
+    setAverageRating(sample.average_rating || 0);
+    setRatingCount(sample.total_ratings || 0);
+  }, [sample.average_rating, sample.total_ratings]);
+
+  const canRate = user && isOwned;
 
   const handleRate = async (rating: number) => {
-    if (!user || submitting) return;
+    if (!user) {
+      toast.error("Please log in to rate samples");
+      return;
+    }
+
+    if (!isOwned) {
+      toast.error("Purchase this sample to rate it");
+      return;
+    }
+
+    if (submitting) return;
 
     try {
       setSubmitting(true);
-      // TODO: Replace with Supabase/Prisma call
+      
+      const res = await fetch("/api/ratings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id, score: rating }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to submit rating");
+      }
+
       setUserRating(rating);
+      setAverageRating(data.sampleStats.average);
+      setRatingCount(data.sampleStats.count);
+      onRatingChange?.(sample.id, rating, data.sampleStats);
+      
+      toast.success(`Rated ${rating} star${rating !== 1 ? "s" : ""} ⭐`);
     } catch (error) {
-      console.error("Error rating sample:", error);
+      const message = error instanceof Error ? error.message : "Failed to submit rating";
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Display rating (user's rating when rated, or average when not)
+  const displayRating = userRating || 0;
+  const showingUserRating = userRating > 0;
+
   return (
     <div className="flex items-center gap-1">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          disabled={!user || submitting}
-          onMouseEnter={() => setHoveredRating(star)}
-          onMouseLeave={() => setHoveredRating(0)}
-          onClick={() => handleRate(star)}
-          className="transition-transform hover:scale-110 disabled:cursor-not-allowed"
-        >
-          <Star
-            className={`w-4 h-4 ${
-              star <= (hoveredRating || userRating)
-                ? "fill-[#00FF88] text-[#00FF88]"
-                : "text-[#3a3a3a]"
-            }`}
-          />
-        </button>
-      ))}
+      {[1, 2, 3, 4, 5].map((star) => {
+        const isActive = star <= (hoveredRating || displayRating);
+        const isUserRated = showingUserRating && star <= userRating && !hoveredRating;
+        
+        return (
+          <button
+            key={star}
+            disabled={!canRate || submitting}
+            onMouseEnter={() => canRate && setHoveredRating(star)}
+            onMouseLeave={() => setHoveredRating(0)}
+            onClick={() => handleRate(star)}
+            className={`transition-transform ${
+              canRate ? "hover:scale-110 cursor-pointer" : "cursor-default"
+            } disabled:cursor-not-allowed`}
+            title={canRate ? `Rate ${star} star${star !== 1 ? "s" : ""}` : (isOwned ? "" : "Purchase to rate")}
+          >
+            <Star
+              className={`w-4 h-4 transition-colors ${
+                isActive
+                  ? isUserRated
+                    ? "fill-[#FFD700] text-[#FFD700]" // Gold for user's rating
+                    : "fill-[#00FF88] text-[#00FF88]" // Green on hover
+                  : "text-[#3a3a3a]"
+              }`}
+            />
+          </button>
+        );
+      })}
       <span className="text-xs text-[#a1a1a1] ml-2">
-        {sample.average_rating ? sample.average_rating.toFixed(1) : "0.0"} (
-        {sample.total_ratings || 0})
+        {averageRating.toFixed(1)} ({ratingCount})
       </span>
     </div>
   );

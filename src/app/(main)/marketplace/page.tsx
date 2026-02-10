@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
@@ -23,6 +23,8 @@ export default function MarketplacePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
+  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+  const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [filters, setFilters] = useState({
     genre: "all",
     sampleType: "all",
@@ -102,6 +104,32 @@ export default function MarketplacePage() {
     }
   }, [user]);
 
+  const fetchFavorites = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/favorites");
+      if (res.ok) {
+        const data = await res.json();
+        setFavoritedIds(new Set(data.sampleIds || []));
+      }
+    } catch {
+      // silently fail
+    }
+  }, [user]);
+
+  const fetchRatings = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/ratings");
+      if (res.ok) {
+        const data = await res.json();
+        setUserRatings(data.ratings || {});
+      }
+    } catch {
+      // silently fail
+    }
+  }, [user]);
+
   useEffect(() => {
     fetchSamples(0, false);
   }, [fetchSamples]);
@@ -112,7 +140,9 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     fetchPurchases();
-  }, [fetchPurchases]);
+    fetchFavorites();
+    fetchRatings();
+  }, [fetchPurchases, fetchFavorites, fetchRatings]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -164,6 +194,18 @@ export default function MarketplacePage() {
     }
   };
 
+  const handleFavoriteChange = (sampleId: string, favorited: boolean) => {
+    if (favorited) {
+      setFavoritedIds((prev) => new Set([...prev, sampleId]));
+    } else {
+      setFavoritedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sampleId);
+        return next;
+      });
+    }
+  };
+
   const userForCard = user
     ? {
         id: user.id,
@@ -194,6 +236,30 @@ export default function MarketplacePage() {
             />
           </div>
         </div>
+
+        {/* Quick Links for logged in users */}
+        {user && !isFiltered && (
+          <div className="flex gap-3 mb-6">
+            <Link href="/favorites">
+              <Button
+                variant="outline"
+                className="border-[#2a2a2a] text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a] hover:border-red-500/50"
+              >
+                <Heart className="w-4 h-4 mr-2" />
+                Favorites
+              </Button>
+            </Link>
+            <Link href="/following">
+              <Button
+                variant="outline"
+                className="border-[#2a2a2a] text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a] hover:border-[#00FF88]/50"
+              >
+                <Users className="w-4 h-4 mr-2" />
+                Following
+              </Button>
+            </Link>
+          </div>
+        )}
 
         {/* For You Section - Only show when not searching/filtering and user has follows */}
         {!isFiltered && user && followingSamples.length > 0 && (
@@ -240,7 +306,10 @@ export default function MarketplacePage() {
                     sample={sample}
                     user={userForCard}
                     isOwned={purchasedIds.has(sample.id)}
+                    isFavorited={favoritedIds.has(sample.id)}
+                    userRating={userRatings[sample.id]}
                     onPurchase={handlePurchase}
+                    onFavoriteChange={handleFavoriteChange}
                   />
                 ))}
               </div>
@@ -293,7 +362,10 @@ export default function MarketplacePage() {
                   sample={sample}
                   user={userForCard}
                   isOwned={purchasedIds.has(sample.id)}
+                  isFavorited={favoritedIds.has(sample.id)}
+                  userRating={userRatings[sample.id]}
                   onPurchase={handlePurchase}
+                  onFavoriteChange={handleFavoriteChange}
                 />
               ))}
 

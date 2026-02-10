@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Play, Pause, Download, Heart, Check, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SampleRating } from "./SampleRating";
+import { toast } from "sonner";
 
 export interface Sample {
   id: string;
@@ -41,7 +42,10 @@ interface SampleCardProps {
   sample: Sample;
   user: UserType | null;
   isOwned?: boolean;
+  isFavorited?: boolean;
+  userRating?: number;
   onPurchase?: (sample: Sample) => void;
+  onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
   onPlay?: (sampleId: string) => void;
   currentlyPlaying?: string | null;
 }
@@ -65,12 +69,22 @@ function getGlobalAudio() {
   return globalAudio;
 }
 
-export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: SampleCardProps) {
+export function SampleCard({ 
+  sample, 
+  user, 
+  isOwned: isOwnedProp, 
+  isFavorited: isFavoritedProp,
+  userRating: userRatingProp,
+  onPurchase,
+  onFavoriteChange,
+}: SampleCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isOwned, setIsOwned] = useState(isOwnedProp ?? false);
+  const [isFavorited, setIsFavorited] = useState(isFavoritedProp ?? false);
+  const [isFavoriting, setIsFavoriting] = useState(false);
   const [progress, setProgress] = useState(0);
   const progressRef = useRef<number | null>(null);
 
@@ -79,6 +93,12 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
       setIsOwned(isOwnedProp);
     }
   }, [isOwnedProp]);
+
+  useEffect(() => {
+    if (isFavoritedProp !== undefined) {
+      setIsFavorited(isFavoritedProp);
+    }
+  }, [isFavoritedProp]);
 
   // Register this card's setter for global audio control
   useEffect(() => {
@@ -181,6 +201,43 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
     }
   };
 
+  const handleFavorite = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user) {
+      toast.error("Please log in to save favorites");
+      return;
+    }
+
+    if (isFavoriting) return;
+
+    setIsFavoriting(true);
+    try {
+      const res = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update favorite");
+      }
+
+      const data = await res.json();
+      setIsFavorited(data.favorited);
+      onFavoriteChange?.(sample.id, data.favorited);
+
+      if (data.favorited) {
+        toast.success("Added to favorites ❤️");
+      }
+    } catch (error) {
+      toast.error("Failed to update favorite");
+    } finally {
+      setIsFavoriting(false);
+    }
+  };
+
   return (
     <div className="relative">
       {/* Progress bar */}
@@ -257,8 +314,30 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
 
         {/* Rating */}
         <div className="hidden lg:block">
-          <SampleRating sample={sample} user={user} />
+          <SampleRating 
+            sample={sample} 
+            user={user} 
+            isOwned={isOwned}
+            initialRating={userRatingProp}
+          />
         </div>
+
+        {/* Favorite Button */}
+        <button
+          onClick={handleFavorite}
+          disabled={isFavoriting}
+          className={`p-2 rounded-full transition-all ${
+            isFavorited
+              ? "text-red-500 hover:text-red-400"
+              : "text-[#3a3a3a] hover:text-red-500"
+          } ${isFavoriting ? "opacity-50" : ""}`}
+        >
+          <Heart
+            className={`w-5 h-5 transition-all ${
+              isFavorited ? "fill-current scale-110" : ""
+            }`}
+          />
+        </button>
 
         {/* Price & Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
