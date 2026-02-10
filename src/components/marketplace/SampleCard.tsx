@@ -236,12 +236,16 @@ export function SampleCard({ sample, user, isOwned: isOwnedProp, onPurchase }: S
           <h3 className="font-semibold text-white truncate text-sm mb-1">
             {sample.name}
           </h3>
-          <div className="flex items-center gap-2">
-            <User className="w-3 h-3 text-[#a1a1a1]" />
-            <span className="text-xs text-[#a1a1a1] truncate">
+          <Link
+            href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+            className="flex items-center gap-2 group w-fit"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <User className="w-3 h-3 text-[#a1a1a1] group-hover:text-[#00FF88] transition-colors" />
+            <span className="text-xs text-[#a1a1a1] truncate group-hover:text-[#00FF88] transition-colors">
               {sample.artist_name || "Unknown Creator"}
             </span>
-          </div>
+          </Link>
         </div>
 
         {/* Metadata */}
