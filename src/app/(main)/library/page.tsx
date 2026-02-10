@@ -24,6 +24,7 @@ interface LibrarySample {
   file_url: string;
   signed_url: string | null;
   filename: string;
+  download_path: string;
   preview_url: string | null;
   cover_image_url: string | null;
   average_rating: number;
@@ -88,7 +89,7 @@ export default function LibraryPage() {
           </p>
           {samples.length > 0 && (
             <p className="text-xs text-[#666] mt-1">
-              💡 Drag samples directly into your DAW or click Download
+              💡 Drag samples directly into your DAW or click Download. Files save as: <code className="bg-[#2a2a2a] px-1 rounded">Greenroom/Artist/Sample_Key_BPM.wav</code>
             </p>
           )}
         </div>
@@ -164,7 +165,12 @@ export default function LibraryPage() {
                 </div>
 
                 {/* Download */}
-                <DownloadButton sampleId={sample.id} signedUrl={sample.signed_url} filename={sample.filename} />
+                <DownloadButton 
+                  sampleId={sample.id} 
+                  signedUrl={sample.signed_url} 
+                  filename={sample.filename}
+                  downloadPath={sample.download_path}
+                />
               </div>
             ))}
           </div>
@@ -194,7 +200,12 @@ export default function LibraryPage() {
   );
 }
 
-function DownloadButton({ sampleId, signedUrl, filename }: { sampleId: string; signedUrl: string | null; filename: string }) {
+function DownloadButton({ sampleId, signedUrl, filename, downloadPath }: { 
+  sampleId: string; 
+  signedUrl: string | null; 
+  filename: string;
+  downloadPath: string;
+}) {
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
@@ -202,10 +213,11 @@ function DownloadButton({ sampleId, signedUrl, filename }: { sampleId: string; s
     if (signedUrl) {
       const a = document.createElement("a");
       a.href = signedUrl;
-      a.download = filename;
+      a.download = filename; // Browser will use this filename
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      toast.success(`Saved as: ${filename}`);
       return;
     }
 

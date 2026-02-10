@@ -64,6 +64,83 @@ const KEYS = [
   "B Minor",
 ];
 
+// Recommended filename format: SampleName_Key_BPM.wav
+// Examples: Dark_Trap_Loop_Cm_140.wav, Smooth_Piano_Chords_Gmaj_90.wav
+const FILENAME_PATTERN = /^[A-Za-z0-9_\-\s]+\.wav$/;
+
+// Parse metadata from filename
+function parseFilename(filename: string): { 
+  name: string | null; 
+  key: string | null; 
+  bpm: string | null;
+  isValid: boolean;
+  warning: string | null;
+} {
+  const baseName = filename.replace(/\.wav$/i, "");
+  const parts = baseName.split(/[_\-\s]+/);
+  
+  let detectedBpm: string | null = null;
+  let detectedKey: string | null = null;
+  const nameParts: string[] = [];
+  
+  // Key patterns: Am, Cmaj, C#min, Db, etc.
+  const keyPatterns = [
+    /^([A-G][#b]?)(maj|min|major|minor)?$/i,
+    /^([A-G][#b]?)\s*(Major|Minor)$/i,
+  ];
+  
+  for (const part of parts) {
+    // Check for BPM (number between 40-300)
+    const bpmMatch = part.match(/^(\d+)(bpm)?$/i);
+    if (bpmMatch && !detectedBpm) {
+      const num = parseInt(bpmMatch[1]);
+      if (num >= 40 && num <= 300) {
+        detectedBpm = bpmMatch[1];
+        continue;
+      }
+    }
+    
+    // Check for key
+    for (const pattern of keyPatterns) {
+      const keyMatch = part.match(pattern);
+      if (keyMatch && !detectedKey) {
+        const root = keyMatch[1].charAt(0).toUpperCase() + keyMatch[1].slice(1);
+        const quality = keyMatch[2]?.toLowerCase();
+        if (quality === "min" || quality === "minor") {
+          detectedKey = `${root} Minor`;
+        } else if (quality === "maj" || quality === "major") {
+          detectedKey = `${root} Major`;
+        } else {
+          // Default to major if no quality specified
+          detectedKey = `${root} Major`;
+        }
+        continue;
+      }
+    }
+    
+    nameParts.push(part);
+  }
+  
+  // Check if filename follows recommended format
+  const hasSpecialChars = /[^A-Za-z0-9_\-\s.]/.test(filename);
+  const isValid = FILENAME_PATTERN.test(filename);
+  
+  let warning: string | null = null;
+  if (hasSpecialChars) {
+    warning = "Filename contains special characters. Recommended format: SampleName_Key_BPM.wav";
+  } else if (!detectedBpm && !detectedKey && nameParts.length === parts.length) {
+    warning = "Consider naming format: SampleName_Key_BPM.wav (e.g., Dark_Loop_Am_120.wav)";
+  }
+  
+  return {
+    name: nameParts.length > 0 ? nameParts.join(" ") : null,
+    key: detectedKey,
+    bpm: detectedBpm,
+    isValid,
+    warning,
+  };
+}
+
 export default function CreatorUploadPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
@@ -85,6 +162,7 @@ export default function CreatorUploadPage() {
   const [uploading, setUploading] = useState(false);
   const [audioUploaded, setAudioUploaded] = useState(false);
   const [coverUploaded, setCoverUploaded] = useState(false);
+  const [filenameWarning, setFilenameWarning] = useState<string | null>(null);
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -93,7 +171,7 @@ export default function CreatorUploadPage() {
   const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.endsWith(".wav")) {
+    if (!file.name.toLowerCase().endsWith(".wav")) {
       toast.error("Only WAV files are accepted");
       return;
     }
@@ -101,6 +179,30 @@ export default function CreatorUploadPage() {
       toast.error("File size must be under 50MB");
       return;
     }
+    
+    // Parse filename for metadata
+    const parsed = parseFilename(file.name);
+    setFilenameWarning(parsed.warning);
+    
+    // Auto-fill form fields from filename if not already set
+    if (parsed.name && !formData.name) {
+      setFormData((prev) => ({ ...prev, name: parsed.name! }));
+    }
+    if (parsed.key && !formData.key) {
+      // Match to our KEYS array
+      const matchedKey = KEYS.find(k => k.toLowerCase() === parsed.key!.toLowerCase());
+      if (matchedKey) {
+        setFormData((prev) => ({ ...prev, key: matchedKey }));
+      }
+    }
+    if (parsed.bpm && !formData.bpm) {
+      setFormData((prev) => ({ ...prev, bpm: parsed.bpm! }));
+    }
+    
+    if (parsed.name || parsed.key || parsed.bpm) {
+      toast.success("Auto-filled fields from filename 🎵");
+    }
+    
     setAudioFile(file);
     setAudioUploaded(false);
   };
@@ -398,6 +500,9 @@ export default function CreatorUploadPage() {
             <label className="block text-sm font-medium text-white mb-2">
               Audio File (WAV) <span className="text-red-500">*</span>
             </label>
+            <p className="text-xs text-[#666] mb-2">
+              💡 Recommended format: <code className="bg-[#2a2a2a] px-1 rounded">SampleName_Key_BPM.wav</code> (e.g., Dark_Loop_Am_120.wav)
+            </p>
             <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
               {audioFile ? (
                 <div className="flex items-center justify-center gap-2">
@@ -435,6 +540,11 @@ export default function CreatorUploadPage() {
                 </label>
               )}
             </div>
+            {filenameWarning && (
+              <p className="text-xs text-yellow-500 mt-2">
+                ⚠️ {filenameWarning}
+              </p>
+            )}
           </div>
 
           {/* Cover Image Upload */}

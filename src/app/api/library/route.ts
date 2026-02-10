@@ -53,10 +53,20 @@ export async function GET() {
           signedUrl = data?.signedUrl || null;
         }
 
-        const filename = p.sample.name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/(^-|-$)/g, "") + ".wav";
+        // Generate standardized filename: ArtistName - SampleName_Key_BPM.wav
+        const artistName = (p.sample.creator.artistName || p.sample.creator.username || "Unknown")
+          .replace(/[^a-zA-Z0-9\s]/g, "")
+          .trim();
+        const sampleName = p.sample.name
+          .replace(/[^a-zA-Z0-9\s]/g, "")
+          .trim()
+          .replace(/\s+/g, "_");
+        const keyPart = p.sample.key ? `_${p.sample.key.replace(/\s+/g, "")}` : "";
+        const bpmPart = p.sample.bpm ? `_${p.sample.bpm}bpm` : "";
+        const filename = `${artistName} - ${sampleName}${keyPart}${bpmPart}.wav`;
+        
+        // Directory path for organized downloads
+        const downloadPath = `Greenroom/${artistName}/${sampleName}${keyPart}${bpmPart}.wav`;
 
         return {
           id: p.sample.id,
@@ -74,6 +84,7 @@ export async function GET() {
           file_url: p.sample.fileUrl,
           signed_url: signedUrl,
           filename,
+          download_path: downloadPath,
           preview_url: p.sample.previewUrl,
           cover_image_url: p.sample.coverImageUrl,
           average_rating: p.sample.ratingAvg,
