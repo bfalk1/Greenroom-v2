@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Search, Music, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Search, Music, Loader2, Users, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
@@ -14,8 +15,11 @@ const PAGE_SIZE = 20;
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
   const [samples, setSamples] = useState<Sample[]>([]);
+  const [followingSamples, setFollowingSamples] = useState<Sample[]>([]);
+  const [followingCount, setFollowingCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingFollowing, setLoadingFollowing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
@@ -63,6 +67,28 @@ export default function MarketplacePage() {
     [searchQuery, filters]
   );
 
+  const fetchFollowingSamples = useCallback(async () => {
+    if (!user) {
+      setFollowingSamples([]);
+      setFollowingCount(0);
+      return;
+    }
+    
+    try {
+      setLoadingFollowing(true);
+      const res = await fetch("/api/samples/following?limit=6");
+      if (res.ok) {
+        const data = await res.json();
+        setFollowingSamples(data.samples || []);
+        setFollowingCount(data.following || 0);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingFollowing(false);
+    }
+  }, [user]);
+
   const fetchPurchases = useCallback(async () => {
     if (!user) return;
     try {
@@ -79,6 +105,10 @@ export default function MarketplacePage() {
   useEffect(() => {
     fetchSamples(0, false);
   }, [fetchSamples]);
+
+  useEffect(() => {
+    fetchFollowingSamples();
+  }, [fetchFollowingSamples]);
 
   useEffect(() => {
     fetchPurchases();
@@ -145,6 +175,9 @@ export default function MarketplacePage() {
       }
     : null;
 
+  // Check if we're in a filtered/search state
+  const isFiltered = searchQuery || filters.genre !== "all" || filters.sampleType !== "all" || filters.key !== "all";
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -162,13 +195,83 @@ export default function MarketplacePage() {
           </div>
         </div>
 
+        {/* For You Section - Only show when not searching/filtering and user has follows */}
+        {!isFiltered && user && followingSamples.length > 0 && (
+          <div className="mb-10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-[#00FF88]/10 rounded-lg">
+                  <Users className="w-5 h-5 text-[#00FF88]" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white">For You</h2>
+                  <p className="text-xs text-[#a1a1a1]">
+                    New from {followingCount} artist{followingCount !== 1 ? "s" : ""} you follow
+                  </p>
+                </div>
+              </div>
+              <Link href="/following">
+                <Button
+                  variant="ghost"
+                  className="text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a]"
+                >
+                  See all
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
+            </div>
+
+            {loadingFollowing ? (
+              <div className="space-y-2">
+                {Array(3)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-20 bg-[#1a1a1a] rounded-lg animate-pulse"
+                    />
+                  ))}
+              </div>
+            ) : (
+              <div className="space-y-2 pb-6 border-b border-[#2a2a2a]">
+                {followingSamples.map((sample) => (
+                  <SampleCard
+                    key={sample.id}
+                    sample={sample}
+                    user={userForCard}
+                    isOwned={purchasedIds.has(sample.id)}
+                    onPurchase={handlePurchase}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Prompt to follow artists if user is logged in but not following anyone */}
+        {!isFiltered && user && followingCount === 0 && !loadingFollowing && (
+          <div className="mb-10 p-6 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-[#00FF88]/10 rounded-full">
+                <Users className="w-6 h-6 text-[#00FF88]" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-white font-semibold mb-1">Discover Artists</h3>
+                <p className="text-sm text-[#a1a1a1]">
+                  Follow your favorite creators to get personalized recommendations right here.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <SampleFilters onFilterChange={handleFilterChange} />
 
         {/* Results */}
         <div className="mb-8">
           <h2 className="text-sm font-semibold text-[#a1a1a1] mb-4">
-            {total} sample{total !== 1 ? "s" : ""}
+            {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
           </h2>
 
           {loading ? (
