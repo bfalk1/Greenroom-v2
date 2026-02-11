@@ -642,18 +642,28 @@ async function calculateMonthlyPayouts() {
   const periodStart = startOfMonth(subMonths(new Date(), 1));
   const periodEnd = endOfMonth(subMonths(new Date(), 1));
 
+  // Get platform default settings
+  const platformSettings = await prisma.platformSetting.findFirst();
+  const defaultPayoutRate = platformSettings?.creatorPayoutRate ?? 70; // 70% default
+  const creditValueCents = platformSettings?.creditValueCents ?? 10;   // $0.10 per credit
+
   // Get all credits spent on each creator's samples during the period
+  // Include creator's payout_rate for per-creator calculation
   const creatorEarnings = await prisma.$queryRaw`
-    SELECT s.creator_id, SUM(p.credits_spent) as total_credits
+    SELECT s.creator_id, u.payout_rate, SUM(p.credits_spent) as total_credits
     FROM purchases p
     JOIN samples s ON p.sample_id = s.id
+    JOIN users u ON s.creator_id = u.id
     WHERE p.created_at >= ${periodStart} AND p.created_at < ${periodEnd}
-    GROUP BY s.creator_id
+    GROUP BY s.creator_id, u.payout_rate
     HAVING SUM(p.credits_spent) > 0
   `;
 
   for (const earning of creatorEarnings) {
-    const amountCents = earning.total_credits * 3; // $0.03 per credit = 3 cents
+    // Use creator-specific payout rate, or fall back to platform default
+    const payoutRate = earning.payout_rate ?? defaultPayoutRate;
+    // Calculate: credits × credit value × payout rate %
+    const amountCents = Math.floor(earning.total_credits * creditValueCents * (payoutRate / 100));
     if (amountCents < 5000) continue; // $50 minimum threshold
 
     await prisma.creatorPayout.create({

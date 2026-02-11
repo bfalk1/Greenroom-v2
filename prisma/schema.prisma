@@ -86,6 +86,7 @@ model User {
   profileCompleted  Boolean  @default(false) @map("profile_completed")
   stripeCustomerId  String?  @map("stripe_customer_id")
   stripeConnectId   String?  @map("stripe_connect_id")
+  payoutRate        Int?     @map("payout_rate") // Creator-specific payout % (e.g., 70 = 70%). Falls back to platform default if null.
   isActive          Boolean  @default(true) @map("is_active")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
