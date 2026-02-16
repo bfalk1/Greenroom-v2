@@ -168,6 +168,7 @@ export default function LibraryPage() {
                 <DownloadButton 
                   sampleId={sample.id} 
                   filename={sample.filename}
+                  downloadPath={sample.download_path}
                 />
               </div>
             ))}
@@ -198,17 +199,20 @@ export default function LibraryPage() {
   );
 }
 
-function DownloadButton({ sampleId, filename }: { 
+function DownloadButton({ sampleId, filename, downloadPath }: { 
   sampleId: string; 
   filename: string;
+  downloadPath: string;
 }) {
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      // Always use our API route - it sets Content-Disposition: attachment
-      // which forces the browser to download instead of opening
+      // Dynamically import JSZip (client-side only)
+      const JSZip = (await import("jszip")).default;
+      
+      // Fetch the file through our API
       const res = await fetch(`/api/downloads/${sampleId}`);
 
       if (!res.ok) {
@@ -217,16 +221,25 @@ function DownloadButton({ sampleId, filename }: {
       }
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      
+      // Create ZIP with folder structure: Greenroom/ArtistName/file.wav
+      const zip = new JSZip();
+      zip.file(downloadPath, blob);
+      
+      // Generate ZIP
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      
+      // Download the ZIP
+      const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = filename.replace(".wav", ".zip");
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      toast.success(`Downloaded: ${filename}`);
+      toast.success(`Downloaded: ${filename.replace(".wav", ".zip")}`);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download sample.");
