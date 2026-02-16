@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { calculateCreatorEarningsCents, getCreatorEarningsInfo } from "@/lib/payouts";
 
 // GET /api/creator/earnings — fetch earnings data for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -76,8 +77,14 @@ export async function GET(_request: NextRequest) {
       0
     );
 
-    // $0.03 per credit earned by creator
-    const totalEarningsCents = totalCreditsEarned * 3;
+    // Calculate earnings using creator's effective payout rate
+    const totalEarningsCents = await calculateCreatorEarningsCents(
+      authUser.id,
+      totalCreditsEarned
+    );
+
+    // Get payout rate info for display
+    const earningsInfo = await getCreatorEarningsInfo(authUser.id);
 
     const mappedPurchases = purchases.map((p) => ({
       id: p.id,
@@ -97,6 +104,12 @@ export async function GET(_request: NextRequest) {
         totalPaidOut: totalPaidOutCents / 100,
         pendingPayout: pendingPayoutCents / 100,
         unpaidEarnings: (totalEarningsCents - totalPaidOutCents) / 100,
+      },
+      payoutInfo: {
+        effectiveRate: earningsInfo.effectiveRate,
+        perCreditCents: earningsInfo.perCreditCents,
+        isCustomRate: earningsInfo.isCustomRate,
+        platformRate: earningsInfo.platformRate,
       },
       purchases: mappedPurchases,
       payouts: payouts.map((p) => ({

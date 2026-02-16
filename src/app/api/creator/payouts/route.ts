@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { calculateCreatorEarningsCents } from "@/lib/payouts";
 
 // GET /api/creator/payouts — fetch payout history for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -111,7 +112,12 @@ export async function POST(_request: NextRequest) {
     });
 
     const totalCreditsEarned = purchaseAgg._sum.creditsSpent || 0;
-    const totalEarningsCents = totalCreditsEarned * 3; // $0.03 per credit
+    
+    // Calculate earnings using creator's effective payout rate
+    const totalEarningsCents = await calculateCreatorEarningsCents(
+      authUser.id,
+      totalCreditsEarned
+    );
 
     // Get total already paid out or pending
     const payoutAgg = await prisma.creatorPayout.aggregate({
