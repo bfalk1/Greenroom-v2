@@ -211,10 +211,10 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Sample not found" }, { status: 404 });
   }
 
-  // Soft delete: mark as inactive
+  // Soft delete: mark as inactive and set back to draft
   await prisma.sample.update({
     where: { id: sampleId },
-    data: { isActive: false, status: "DELETED" },
+    data: { isActive: false, status: "DRAFT" },
   });
 
   await prisma.auditLog.create({
