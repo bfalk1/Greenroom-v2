@@ -27,10 +27,24 @@ export async function GET(
       return NextResponse.json({ error: "Sample not found" }, { status: 404 });
     }
 
-    // Use previewUrl if available, otherwise fall back to fileUrl
-    const storagePath = sample.previewUrl || sample.fileUrl;
+    // SECURITY: Only serve actual previews, never the full file
+    // Previews are stored in the "previews" bucket as compressed MP3s
+    // If no preview exists yet, the sample cannot be previewed
+    const storagePath = sample.previewUrl;
+    
     if (!storagePath) {
-      return NextResponse.json({ error: "No audio available" }, { status: 404 });
+      return NextResponse.json({ 
+        error: "Preview not available yet",
+        hint: "Preview is being generated" 
+      }, { status: 404 });
+    }
+    
+    // Extra safety: reject if previewUrl points to the full file (samples bucket)
+    if (storagePath.startsWith("samples/")) {
+      return NextResponse.json({ 
+        error: "Preview not available yet",
+        hint: "Preview is being generated" 
+      }, { status: 404 });
     }
 
     const parts = storagePath.split("/");

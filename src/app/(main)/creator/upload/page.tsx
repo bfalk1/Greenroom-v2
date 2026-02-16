@@ -278,6 +278,8 @@ export default function CreatorUploadPage() {
       }
 
       // Create sample via API
+      // Note: previewUrl is NOT set here - it will be generated server-side
+      // as a compressed, truncated MP3 to prevent theft of full WAV files
       const res = await fetch("/api/samples", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -291,7 +293,6 @@ export default function CreatorUploadPage() {
           creditPrice: formData.creditPrice,
           tags: formData.tags,
           fileUrl,
-          previewUrl: fileUrl,
           coverImageUrl,
         }),
       });
