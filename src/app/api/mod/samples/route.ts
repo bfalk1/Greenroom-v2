@@ -172,7 +172,7 @@ export async function PATCH(req: NextRequest) {
       action: "SAMPLE_EDITED",
       targetType: "Sample",
       targetId: sampleId,
-      details: JSON.stringify(updateData),
+      metadata: JSON.stringify(updateData),
     },
   });
 
@@ -223,7 +223,7 @@ export async function DELETE(req: NextRequest) {
       action: "SAMPLE_DELETED",
       targetType: "Sample",
       targetId: sampleId,
-      details: JSON.stringify({ name: sample.name, creatorId: sample.creatorId }),
+      metadata: JSON.stringify({ name: sample.name, creatorId: sample.creatorId }),
     },
   });
 

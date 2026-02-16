@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         action: log.action,
         targetType: log.targetType,
         targetId: log.targetId,
-        details: log.details,
+        details: log.metadata ? JSON.stringify(log.metadata) : null,
         actor: {
           id: log.actor.id,
           name: log.actor.artistName || log.actor.username || log.actor.email,
