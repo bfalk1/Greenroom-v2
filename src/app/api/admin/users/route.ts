@@ -99,18 +99,18 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updateData: {
-      role?: string;
+      role?: "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
       credits?: number;
       payoutRate?: number | null;
     } = {};
 
     // Role change
     if (role !== undefined) {
-      const validRoles = ["USER", "CREATOR", "MODERATOR", "ADMIN"];
+      const validRoles = ["USER", "CREATOR", "MODERATOR", "ADMIN"] as const;
       if (!validRoles.includes(role)) {
         return NextResponse.json({ error: "Invalid role" }, { status: 400 });
       }
-      updateData.role = role;
+      updateData.role = role as "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
     }
 
     // Credit adjustment
