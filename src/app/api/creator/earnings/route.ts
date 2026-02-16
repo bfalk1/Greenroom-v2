@@ -106,10 +106,9 @@ export async function GET(_request: NextRequest) {
         unpaidEarnings: (totalEarningsCents - totalPaidOutCents) / 100,
       },
       payoutInfo: {
-        effectiveRate: earningsInfo.effectiveRate,
-        perCreditCents: earningsInfo.perCreditCents,
+        centsPerCredit: earningsInfo.centsPerCredit,
+        perCreditDisplay: earningsInfo.perCreditDisplay,
         isCustomRate: earningsInfo.isCustomRate,
-        platformRate: earningsInfo.platformRate,
       },
       purchases: mappedPurchases,
       payouts: payouts.map((p) => ({

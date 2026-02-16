@@ -123,15 +123,16 @@ export async function PATCH(request: NextRequest) {
       updateData.credits = newCredits;
     }
 
-    // Payout rate (for creators)
+    // Payout rate (cents per credit for creators)
+    // Default is $0.03/credit (3 cents). Admin can override.
     if (payoutRate !== undefined) {
       if (payoutRate === null || payoutRate === "") {
-        updateData.payoutRate = null; // Use platform default
+        updateData.payoutRate = null; // Use default ($0.03/credit)
       } else {
         const rate = parseInt(payoutRate);
-        if (isNaN(rate) || rate < 0 || rate > 100) {
+        if (isNaN(rate) || rate < 1 || rate > 50) {
           return NextResponse.json(
-            { error: "Payout rate must be 0-100 or empty for default" },
+            { error: "Payout rate must be 1-50 cents per credit, or empty for default ($0.03)" },
             { status: 400 }
           );
         }

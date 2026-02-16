@@ -255,7 +255,7 @@ export function UserSearchPanel() {
                       {user.role === "CREATOR" && user.payoutRate !== null && (
                         <div className="text-right">
                           <p className="text-sm text-[#a1a1a1]">Payout</p>
-                          <p className="text-[#00FF88] font-bold">{user.payoutRate}%</p>
+                          <p className="text-[#00FF88] font-bold">${(user.payoutRate / 100).toFixed(2)}/cr</p>
                         </div>
                       )}
                       <div className={`flex items-center gap-2 px-2 py-1 rounded ${
@@ -323,18 +323,20 @@ export function UserSearchPanel() {
                     <div className="flex items-center gap-2 text-[#a1a1a1]">
                       <Percent className="w-5 h-5 text-[#00FF88]" />
                       <span>
-                        Creator Payout Rate
-                        {selectedUser.payoutRate === null && (
-                          <span className="ml-2 text-xs text-[#666]">(using platform default)</span>
+                        Payout Rate (¢/credit)
+                        {selectedUser.payoutRate === null ? (
+                          <span className="ml-2 text-xs text-[#666]">(default: $0.03/credit)</span>
+                        ) : (
+                          <span className="ml-2 text-xs text-[#00FF88]">(custom: ${(selectedUser.payoutRate / 100).toFixed(2)}/credit)</span>
                         )}
                       </span>
                     </div>
                     <div className="flex gap-2">
                       <Input
                         type="number"
-                        min="0"
-                        max="100"
-                        placeholder="Leave empty for platform default"
+                        min="1"
+                        max="50"
+                        placeholder="Default: 3 (= $0.03/credit)"
                         value={payoutRateInput}
                         onChange={(e) => setPayoutRateInput(e.target.value)}
                         className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
@@ -348,7 +350,7 @@ export function UserSearchPanel() {
                       </Button>
                     </div>
                     <p className="text-xs text-[#a1a1a1]">
-                      Set a custom payout % for this creator (0-100). Leave empty to use platform default rate.
+                      Cents per credit (e.g., 3 = $0.03, 5 = $0.05). Leave empty for default $0.03/credit.
                     </p>
                   </div>
                 )}

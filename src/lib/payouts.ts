@@ -1,37 +1,35 @@
 import { prisma } from "@/lib/prisma";
 
+// Default payout: $0.03 per credit (3 cents)
+const DEFAULT_PAYOUT_CENTS_PER_CREDIT = 3;
+
 /**
- * Get the effective payout rate for a creator.
- * Uses creator's custom rate if set, otherwise falls back to platform default.
+ * Get the effective payout rate for a creator (in cents per credit).
+ * Uses creator's custom rate if set by admin, otherwise $0.03/credit.
+ * 
+ * The payoutRate field stores cents per credit (e.g., 3 = $0.03, 5 = $0.05)
  */
 export async function getCreatorPayoutConfig(creatorId: string) {
-  // Get platform settings
-  const platformSettings = await prisma.platformSetting.findUnique({
-    where: { id: "default" },
-  });
-
-  const platformRate = platformSettings?.creatorPayoutRate ?? 70;
-  const creditValueCents = platformSettings?.creditValueCents ?? 10;
-
   // Get creator's custom rate if set
   const creator = await prisma.user.findUnique({
     where: { id: creatorId },
     select: { payoutRate: true },
   });
 
-  const effectiveRate = creator?.payoutRate ?? platformRate;
+  const centsPerCredit = creator?.payoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
 
   return {
-    platformRate,
-    creatorRate: creator?.payoutRate,
-    effectiveRate,
-    creditValueCents,
+    defaultRate: DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+    customRate: creator?.payoutRate,
+    centsPerCredit,
+    isCustomRate: creator?.payoutRate !== null && creator?.payoutRate !== undefined,
   };
 }
 
 /**
  * Calculate creator earnings in cents for a given number of credits.
- * Formula: credits * creditValueCents * (payoutRate / 100)
+ * Formula: credits * centsPerCredit
+ * Default: $0.03 per credit
  */
 export async function calculateCreatorEarningsCents(
   creatorId: string,
@@ -39,13 +37,9 @@ export async function calculateCreatorEarningsCents(
 ): Promise<number> {
   const config = await getCreatorPayoutConfig(creatorId);
   
-  // credits * creditValueCents * (rate / 100)
-  // e.g., 100 credits * 10 cents * 70% = 700 cents = $7.00
-  const earningsCents = Math.floor(
-    creditsEarned * config.creditValueCents * (config.effectiveRate / 100)
-  );
-
-  return earningsCents;
+  // Simple: credits * cents per credit
+  // e.g., 100 credits * 3 cents = 300 cents = $3.00
+  return creditsEarned * config.centsPerCredit;
 }
 
 /**
@@ -54,14 +48,8 @@ export async function calculateCreatorEarningsCents(
 export async function getCreatorEarningsInfo(creatorId: string) {
   const config = await getCreatorPayoutConfig(creatorId);
   
-  // Calculate per-credit earnings in cents
-  const perCreditCents = config.creditValueCents * (config.effectiveRate / 100);
-  
   return {
     ...config,
-    perCreditCents,
-    perCreditDisplay: `$${(perCreditCents / 100).toFixed(3)}`,
-    rateDisplay: `${config.effectiveRate}%`,
-    isCustomRate: config.creatorRate !== null && config.creatorRate !== undefined,
+    perCreditDisplay: `$${(config.centsPerCredit / 100).toFixed(2)}`,
   };
 }
