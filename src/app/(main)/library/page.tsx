@@ -167,9 +167,7 @@ export default function LibraryPage() {
                 {/* Download */}
                 <DownloadButton 
                   sampleId={sample.id} 
-                  signedUrl={sample.signed_url} 
                   filename={sample.filename}
-                  downloadPath={sample.download_path}
                 />
               </div>
             ))}
@@ -200,30 +198,17 @@ export default function LibraryPage() {
   );
 }
 
-function DownloadButton({ sampleId, signedUrl, filename, downloadPath }: { 
+function DownloadButton({ sampleId, filename }: { 
   sampleId: string; 
-  signedUrl: string | null; 
   filename: string;
-  downloadPath: string;
 }) {
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
-    // If we have a signed URL, use it directly (faster)
-    if (signedUrl) {
-      const a = document.createElement("a");
-      a.href = signedUrl;
-      a.download = filename; // Browser will use this filename
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast.success(`Saved as: ${filename}`);
-      return;
-    }
-
-    // Fallback to API download
     setDownloading(true);
     try {
+      // Always use our API route - it sets Content-Disposition: attachment
+      // which forces the browser to download instead of opening
       const res = await fetch(`/api/downloads/${sampleId}`);
 
       if (!res.ok) {
@@ -231,19 +216,17 @@ function DownloadButton({ sampleId, signedUrl, filename, downloadPath }: {
         throw new Error(data.error || "Download failed");
       }
 
-      const disposition = res.headers.get("Content-Disposition");
-      const filenameMatch = disposition?.match(/filename="(.+)"/);
-      const fname = filenameMatch?.[1] || "sample.wav";
-
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = fname;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      
+      toast.success(`Downloaded: ${filename}`);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download sample.");
