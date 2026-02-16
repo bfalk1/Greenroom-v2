@@ -65,7 +65,7 @@ export async function GET(
   }
 }
 
-// PUT /api/samples/[id] — Auth required, must be sample creator
+// PUT /api/samples/[id] — CREATOR can edit own samples only
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -82,12 +82,26 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Must be CREATOR role
+    const dbUser = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: { role: true },
+    });
+
+    if (!dbUser || dbUser.role !== "CREATOR") {
+      return NextResponse.json(
+        { error: "Only creators can edit samples" },
+        { status: 403 }
+      );
+    }
+
     const existing = await prisma.sample.findUnique({ where: { id } });
 
     if (!existing) {
       return NextResponse.json({ error: "Sample not found" }, { status: 404 });
     }
 
+    // Creator can only edit their OWN samples
     if (existing.creatorId !== authUser.id) {
       return NextResponse.json(
         { error: "You can only edit your own samples" },
