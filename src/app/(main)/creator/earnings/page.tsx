@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
+import { EarningsChart } from "@/components/creator/EarningsChart";
 
 interface EarningsStats {
   totalEarnings: number;
@@ -438,6 +439,11 @@ export default function CreatorEarningsPage() {
             </div>
           </div>
         )}
+
+        {/* Earnings Chart */}
+        <div className="mb-8">
+          <EarningsChart />
+        </div>
 
         {/* Recent Purchases Table */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden">
