@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import nodemailer from "nodemailer";
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.CONTACT_EMAIL || "bfalkner9@gmail.com",
-    pass: process.env.CONTACT_EMAIL_APP_PASSWORD || "",
-  },
-});
+import { sendContactEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,21 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await transporter.sendMail({
-      from: `"GREENROOM Contact" <${process.env.CONTACT_EMAIL || "bfalkner9@gmail.com"}>`,
-      to: process.env.CONTACT_EMAIL || "bfalkner9@gmail.com",
-      replyTo: email,
-      subject: `[GREENROOM] Contact from ${name}`,
-      text: `Name: ${name}\nEmail: ${email}\n\n${message}`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px;">
-          <h2 style="color: #00FF88;">New GREENROOM Contact Message</h2>
-          <p><strong>From:</strong> ${name} (${email})</p>
-          <hr style="border: 1px solid #2a2a2a;" />
-          <p style="white-space: pre-wrap;">${message}</p>
-        </div>
-      `,
-    });
+    await sendContactEmail(name, email, message);
 
     return NextResponse.json({ success: true });
   } catch (error) {

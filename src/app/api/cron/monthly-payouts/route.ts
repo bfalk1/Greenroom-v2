@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { calculateCreatorEarningsCents } from "@/lib/payouts";
+import { 
+  sendPayoutNotification, 
+  sendPayoutFailedNotification, 
+  sendPayoutSummaryToAdmin 
+} from "@/lib/email";
 
 // Minimum payout threshold in cents ($50 = 5000 cents)
 const MIN_PAYOUT_CENTS = 5000;
@@ -36,6 +41,7 @@ export async function POST(request: NextRequest) {
     processed: 0,
     payoutsCreated: 0,
     payoutsSent: 0,
+    totalAmountCents: 0,
     skippedBelowThreshold: 0,
     skippedNoStripe: 0,
     errors: [] as string[],
@@ -228,9 +234,23 @@ export async function POST(request: NextRequest) {
           });
 
           results.payoutsSent++;
+          results.totalAmountCents += unpaidEarningsCents;
           console.log(
             `Sent payout to ${creator.email}: $${(unpaidEarningsCents / 100).toFixed(2)} (${transfer.id})`
           );
+
+          // Send email notification to creator
+          try {
+            await sendPayoutNotification(
+              creator.email,
+              creator.artistName || creator.email,
+              unpaidEarningsCents / 100,
+              periodStart,
+              periodEnd
+            );
+          } catch (emailError) {
+            console.error(`Failed to send payout email to ${creator.email}:`, emailError);
+          }
         } catch (stripeError) {
           // Mark as failed but keep the record
           await prisma.creatorPayout.update({
@@ -242,6 +262,18 @@ export async function POST(request: NextRequest) {
             stripeError instanceof Error ? stripeError.message : "Unknown error";
           results.errors.push(`${creator.email}: Stripe transfer failed - ${errorMsg}`);
           console.error(`Stripe transfer failed for ${creator.email}:`, stripeError);
+
+          // Send failure notification to creator
+          try {
+            await sendPayoutFailedNotification(
+              creator.email,
+              creator.artistName || creator.email,
+              unpaidEarningsCents / 100,
+              errorMsg
+            );
+          } catch (emailError) {
+            console.error(`Failed to send failure email to ${creator.email}:`, emailError);
+          }
         }
       } catch (creatorError) {
         const errorMsg =
@@ -253,13 +285,30 @@ export async function POST(request: NextRequest) {
 
     console.log("Monthly payout processing complete:", results);
 
+    // Send summary email to admin
+    try {
+      await sendPayoutSummaryToAdmin({
+        processed: results.processed,
+        payoutsSent: results.payoutsSent,
+        totalAmountUsd: results.totalAmountCents / 100,
+        skippedBelowThreshold: results.skippedBelowThreshold,
+        skippedNoStripe: results.skippedNoStripe,
+        errors: results.errors,
+      });
+    } catch (emailError) {
+      console.error("Failed to send admin summary email:", emailError);
+    }
+
     return NextResponse.json({
       success: true,
       period: {
         start: periodStart.toISOString(),
         end: periodEnd.toISOString(),
       },
-      results,
+      results: {
+        ...results,
+        totalAmountUsd: results.totalAmountCents / 100,
+      },
     });
   } catch (error) {
     console.error("Monthly payout cron error:", error);

@@ -49,8 +49,8 @@ export default function ContactPage() {
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-6 text-center">
             <Mail className="w-8 h-8 text-[#00FF88] mx-auto mb-3" />
             <h3 className="text-white font-semibold mb-2">Email</h3>
-            <a href="mailto:support@greenroom.app" className="text-[#00FF88] hover:underline text-sm">
-              support@greenroom.app
+            <a href="mailto:admin@greenroom.fm" className="text-[#00FF88] hover:underline text-sm">
+              admin@greenroom.fm
             </a>
           </div>
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-6 text-center">
