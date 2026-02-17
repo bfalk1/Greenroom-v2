@@ -1,34 +1,11 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Admin email for contact form and notifications
 export const ADMIN_EMAIL = "admin@greenroom.fm";
-
-// Create transporter - uses Gmail by default, can be configured for other providers
-const createTransporter = () => {
-  // If custom SMTP is configured, use it
-  if (process.env.SMTP_HOST) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  }
-
-  // Default to Gmail
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.CONTACT_EMAIL || "bfalkner9@gmail.com",
-      pass: process.env.CONTACT_EMAIL_APP_PASSWORD || "",
-    },
-  });
-};
-
-const transporter = createTransporter();
+const FROM_EMAIL = "GREENROOM <noreply@greenroom.fm>";
 
 interface SendEmailOptions {
   to: string;
@@ -39,16 +16,21 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
-  const fromEmail = process.env.SMTP_FROM || process.env.CONTACT_EMAIL || "noreply@greenroom.fm";
-  
-  return transporter.sendMail({
-    from: `"GREENROOM" <${fromEmail}>`,
+  const { data, error } = await resend.emails.send({
+    from: FROM_EMAIL,
     to: options.to,
     replyTo: options.replyTo,
     subject: options.subject,
     text: options.text,
     html: options.html,
   });
+
+  if (error) {
+    console.error("Resend error:", error);
+    throw new Error(error.message);
+  }
+
+  return data;
 }
 
 // Contact form email
