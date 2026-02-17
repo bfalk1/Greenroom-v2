@@ -313,6 +313,23 @@ export default function BatchUploadPage() {
           </div>
         </div>
 
+        {/* Naming Convention Info */}
+        <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-4 mb-6">
+          <h3 className="text-white font-medium mb-2">📝 Naming Convention</h3>
+          <p className="text-[#a1a1a1] text-sm mb-3">
+            Name your files using this format to auto-extract metadata:
+          </p>
+          <code className="block bg-[#1a1a1a] rounded px-3 py-2 text-[#00FF88] text-sm mb-3">
+            SampleName_Key_BPM.wav
+          </code>
+          <div className="text-xs text-[#666] space-y-1">
+            <p><strong className="text-[#a1a1a1]">Examples:</strong></p>
+            <p>• <code className="text-[#00FF88]">Dark_Trap_Loop_Am_140.wav</code> → Name: Dark Trap Loop, Key: A Minor, BPM: 140</p>
+            <p>• <code className="text-[#00FF88]">Piano_Chords_Gmaj_90bpm.wav</code> → Name: Piano Chords, Key: G Major, BPM: 90</p>
+            <p>• <code className="text-[#00FF88]">808_Bass_Cm_128.wav</code> → Name: 808 Bass, Key: C Minor, BPM: 128</p>
+          </div>
+        </div>
+
         {/* Upload Options */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           {/* Multiple WAV Files */}
