@@ -316,6 +316,7 @@ async function getOrPickDirectory(): Promise<FileSystemDirectoryHandle | null> {
   // Return cached handle if we have one
   if (greenroomDirHandle) {
     // Verify we still have permission
+    // @ts-expect-error - File System Access API not fully typed
     const permission = await greenroomDirHandle.queryPermission({ mode: "readwrite" });
     if (permission === "granted") {
       return greenroomDirHandle;
