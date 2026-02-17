@@ -30,7 +30,6 @@ export default function CreatorApplicationPage() {
     soundcloud_url: "",
     spotify_url: "",
     instagram_url: "",
-    linkedin_url: "",
     zip_file_path: "",
     zip_file_name: "",
     terms_accepted: false,
@@ -159,7 +158,6 @@ export default function CreatorApplicationPage() {
             soundcloud: formData.soundcloud_url || undefined,
             spotify: formData.spotify_url || undefined,
             instagram: formData.instagram_url || undefined,
-            linkedin: formData.linkedin_url || undefined,
           },
           sampleZipUrl: formData.zip_file_path,
         }),
@@ -368,20 +366,6 @@ export default function CreatorApplicationPage() {
                 value={formData.instagram_url}
                 onChange={(e) =>
                   handleInputChange("instagram_url", e.target.value)
-                }
-                className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                LinkedIn URL
-              </label>
-              <Input
-                type="url"
-                placeholder="linkedin.com/in/..."
-                value={formData.linkedin_url}
-                onChange={(e) =>
-                  handleInputChange("linkedin_url", e.target.value)
                 }
                 className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
               />
