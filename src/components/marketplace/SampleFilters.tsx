@@ -8,21 +8,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter } from "lucide-react";
+import { Filter, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 const GENRES = [
-  "Electronic",
-  "Hip-Hop",
-  "Pop",
-  "Rock",
+  "Hip Hop",
   "R&B",
+  "Pop",
+  "Electronic",
+  "Trap",
+  "Lo-Fi",
+  "Rock",
+  "Jazz",
+  "Latin",
+  "Afrobeats",
+  "House",
+  "Drill",
   "Ambient",
   "Indie",
   "Techno",
-  "House",
-  "Trap",
-  "Jazz",
   "Classical",
+  "Reggaeton",
+  "Soul",
+  "Funk",
+  "Country",
 ];
 
 const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -89,10 +98,10 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
         value={genre}
         onValueChange={(v) => handleChange("genre", v)}
       >
-        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+        <SelectTrigger className="w-36 bg-[#0a0a0a] border-[#2a2a2a] text-white">
           <SelectValue placeholder="Genre" />
         </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] max-h-64 overflow-y-auto">
           <SelectItem value="all">All Genres</SelectItem>
           {GENRES.map((g) => (
             <SelectItem key={g} value={g}>

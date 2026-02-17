@@ -13,6 +13,8 @@ import JSZip from "jszip";
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
   "Rock", "Jazz", "Latin", "Afrobeats", "House", "Drill",
+  "Ambient", "Indie", "Techno", "Classical", "Reggaeton", 
+  "Soul", "Funk", "Country",
 ];
 
 const INSTRUMENTS = [

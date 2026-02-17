@@ -22,6 +22,14 @@ const GENRES = [
   "Afrobeats",
   "House",
   "Drill",
+  "Ambient",
+  "Indie",
+  "Techno",
+  "Classical",
+  "Reggaeton",
+  "Soul",
+  "Funk",
+  "Country",
 ];
 
 const INSTRUMENTS = [
