@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Download, Loader2, CheckSquare, Square, Package } from "lucide-react";
+import { Search, Music, Download, Loader2, CheckSquare, Square, Package, Play, Pause } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { toast } from "sonner";
 import JSZip from "jszip";
 
@@ -41,6 +42,88 @@ export default function LibraryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize audio element
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      audioRef.current = new Audio();
+      audioRef.current.addEventListener("ended", () => setPlayingId(null));
+    }
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  // Toggle play for a sample
+  const togglePlay = useCallback(async (sample: LibrarySample) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // If this sample is playing, pause it
+    if (playingId === sample.id) {
+      audio.pause();
+      setPlayingId(null);
+      return;
+    }
+
+    // Stop any currently playing audio
+    audio.pause();
+
+    // Play the new sample
+    setIsLoadingAudio(true);
+    try {
+      const res = await fetch(`/api/samples/${sample.id}/preview`);
+      const data = await res.json();
+      if (res.ok && data.url) {
+        audio.src = data.url;
+        audio.currentTime = 0;
+        await audio.play();
+        setPlayingId(sample.id);
+      }
+    } catch (err) {
+      console.error("Play error:", err);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  }, [playingId]);
+
+  // Stop playback
+  const stopPlayback = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setPlayingId(null);
+    }
+  }, []);
+
+  // Keyboard navigation
+  const handleKeyboardPlay = useCallback((index: number) => {
+    const sample = filtered[index];
+    if (sample) {
+      togglePlay(sample);
+    }
+  }, [filtered, togglePlay]);
+
+  const { selectedIndex, isSelected: isKeyboardSelected } = useKeyboardNavigation(filtered, {
+    enabled: filtered.length > 0 && !loading,
+    onPlay: handleKeyboardPlay,
+  });
+
+  // Handle Escape to stop playback
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "ArrowLeft") {
+        stopPlayback();
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [stopPlayback]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -202,9 +285,18 @@ export default function LibraryPage() {
           </div>
         )}
 
+        {/* Keyboard Navigation Hint */}
+        {filtered.length > 0 && !loading && (
+          <div className="mb-4 text-xs text-[#666] flex items-center gap-2">
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">↑↓</span> navigate
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Esc</span> stop
+          </div>
+        )}
+
         {filtered.length > 0 ? (
           <div className="space-y-2">
-            {filtered.map((sample) => (
+            {filtered.map((sample, index) => (
               <div
                 key={sample.id}
                 draggable={!!sample.signed_url}
@@ -218,13 +310,35 @@ export default function LibraryPage() {
                     e.dataTransfer.effectAllowed = "copy";
                   }
                 }}
-                className={`rounded-lg bg-[#1a1a1a] border ${
-                  selectedIds.has(sample.id) ? "border-[#00FF88]" : "border-[#2a2a2a]"
-                } hover:border-[#00FF88]/50 transition-all p-4 flex items-center gap-4 ${
-                  sample.signed_url ? "cursor-grab active:cursor-grabbing" : ""
-                }`}
+                className={`rounded-lg bg-[#1a1a1a] border transition-all p-4 flex items-center gap-4 ${
+                  isKeyboardSelected(index)
+                    ? "border-[#00FF88] ring-1 ring-[#00FF88]/50 bg-[#1a1a1a]/80"
+                    : playingId === sample.id
+                    ? "border-[#00FF88]/40"
+                    : selectedIds.has(sample.id)
+                    ? "border-[#00FF88]"
+                    : "border-[#2a2a2a] hover:border-[#00FF88]/50"
+                } ${sample.signed_url ? "cursor-grab active:cursor-grabbing" : ""}`}
                 title={sample.signed_url ? "Drag to your DAW or desktop" : ""}
               >
+                {/* Play Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePlay(sample);
+                  }}
+                  disabled={isLoadingAudio}
+                  className="flex-shrink-0 w-10 h-10 rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] flex items-center justify-center transition"
+                >
+                  {isLoadingAudio && playingId === null ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : playingId === sample.id ? (
+                    <Pause className="w-4 h-4 fill-current" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                  )}
+                </button>
+
                 {/* Checkbox */}
                 <button
                   onClick={(e) => {

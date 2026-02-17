@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Play, Pause, Download, Heart, Check, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ interface SampleCardProps {
   isOwned?: boolean;
   isFavorited?: boolean;
   userRating?: number;
+  isSelected?: boolean;
   onPurchase?: (sample: Sample) => void;
   onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
   onPlay?: (sampleId: string) => void;
@@ -54,6 +55,31 @@ interface SampleCardProps {
 let globalAudio: HTMLAudioElement | null = null;
 let globalPlayingId: string | null = null;
 let globalSetters: Map<string, (playing: boolean) => void> = new Map();
+let globalToggleFns: Map<string, () => Promise<void>> = new Map();
+
+// Export function to get currently playing sample ID
+export function getGlobalPlayingId(): string | null {
+  return globalPlayingId;
+}
+
+// Export function to toggle play for a specific sample
+export async function toggleGlobalPlay(sampleId: string): Promise<void> {
+  const toggleFn = globalToggleFns.get(sampleId);
+  if (toggleFn) {
+    await toggleFn();
+  }
+}
+
+// Export function to stop all playback
+export function stopGlobalPlayback(): void {
+  const audio = getGlobalAudio();
+  if (audio && globalPlayingId) {
+    const setter = globalSetters.get(globalPlayingId);
+    setter?.(false);
+    audio.pause();
+    globalPlayingId = null;
+  }
+}
 
 function getGlobalAudio() {
   if (!globalAudio && typeof window !== "undefined") {
@@ -75,9 +101,18 @@ export function SampleCard({
   isOwned: isOwnedProp, 
   isFavorited: isFavoritedProp,
   userRating: userRatingProp,
+  isSelected = false,
   onPurchase,
   onFavoriteChange,
 }: SampleCardProps) {
+  const cardRef = React.useRef<HTMLDivElement>(null);
+
+  // Scroll into view when selected
+  React.useEffect(() => {
+    if (isSelected && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [isSelected]);
   const [isHovered, setIsHovered] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -100,54 +135,13 @@ export function SampleCard({
     }
   }, [isFavoritedProp]);
 
-  // Register this card's setter for global audio control
-  useEffect(() => {
-    globalSetters.set(sample.id, setIsPlaying);
-    return () => {
-      globalSetters.delete(sample.id);
-      if (globalPlayingId === sample.id) {
-        getGlobalAudio()?.pause();
-        globalPlayingId = null;
-      }
-      if (progressRef.current) cancelAnimationFrame(progressRef.current);
-    };
-  }, [sample.id]);
-
-  // Track progress
-  useEffect(() => {
-    const audio = getGlobalAudio();
-    if (!audio) return;
-
-    const updateProgress = () => {
-      if (globalPlayingId === sample.id && audio.duration) {
-        setProgress((audio.currentTime / audio.duration) * 100);
-      }
-      if (isPlaying) {
-        progressRef.current = requestAnimationFrame(updateProgress);
-      }
-    };
-
-    if (isPlaying) {
-      progressRef.current = requestAnimationFrame(updateProgress);
-    } else {
-      if (progressRef.current) cancelAnimationFrame(progressRef.current);
-      if (globalPlayingId !== sample.id) setProgress(0);
-    }
-
-    return () => {
-      if (progressRef.current) cancelAnimationFrame(progressRef.current);
-    };
-  }, [isPlaying, sample.id]);
-
-  const togglePlay = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
+  // Create toggle function for this sample
+  const togglePlayFn = useCallback(async () => {
     const audio = getGlobalAudio();
     if (!audio) return;
 
     // If this sample is currently playing, pause it
-    if (globalPlayingId === sample.id && isPlaying) {
+    if (globalPlayingId === sample.id) {
       audio.pause();
       setIsPlaying(false);
       globalPlayingId = null;
@@ -183,6 +177,53 @@ export function SampleCard({
     } finally {
       setIsLoading(false);
     }
+  }, [sample.id]);
+
+  // Register this card's setter and toggle function for global audio control
+  useEffect(() => {
+    globalSetters.set(sample.id, setIsPlaying);
+    globalToggleFns.set(sample.id, togglePlayFn);
+    return () => {
+      globalSetters.delete(sample.id);
+      globalToggleFns.delete(sample.id);
+      if (globalPlayingId === sample.id) {
+        getGlobalAudio()?.pause();
+        globalPlayingId = null;
+      }
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [sample.id, togglePlayFn]);
+
+  // Track progress
+  useEffect(() => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    const updateProgress = () => {
+      if (globalPlayingId === sample.id && audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+      if (isPlaying) {
+        progressRef.current = requestAnimationFrame(updateProgress);
+      }
+    };
+
+    if (isPlaying) {
+      progressRef.current = requestAnimationFrame(updateProgress);
+    } else {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+      if (globalPlayingId !== sample.id) setProgress(0);
+    }
+
+    return () => {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [isPlaying, sample.id]);
+
+  const togglePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await togglePlayFn();
   };
 
   const handlePurchase = async (e: React.MouseEvent) => {
@@ -239,7 +280,7 @@ export function SampleCard({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={cardRef}>
       {/* Progress bar */}
       {isPlaying && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2a2a2a] z-10 rounded-b-lg overflow-hidden">
@@ -252,7 +293,9 @@ export function SampleCard({
 
       <div
         className={`rounded-lg border transition-all duration-300 flex items-center p-3 gap-4 ${
-          isPlaying
+          isSelected
+            ? "bg-[#1a1a1a]/80 border-[#00FF88] ring-1 ring-[#00FF88]/50"
+            : isPlaying
             ? "bg-[#1a1a1a] border-[#00FF88]/40"
             : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#00FF88]/50"
         }`}
@@ -270,7 +313,7 @@ export function SampleCard({
             className="w-full h-full object-cover"
           />
 
-          {(isHovered || isPlaying || isLoading) && (
+          {(isHovered || isPlaying || isLoading || isSelected) && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
               <button
                 className="rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] w-8 h-8 flex items-center justify-center transition"

@@ -5,9 +5,10 @@ import Link from "next/link";
 import { Search, Music, Loader2, Users, ChevronRight, Heart, CheckSquare, Square, ShoppingCart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
+import { SampleCard, Sample, toggleGlobalPlay, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { useUser } from "@/lib/hooks/useUser";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -103,6 +104,30 @@ export default function MarketplacePage() {
   const selectedCost = samples
     .filter(s => selectedIds.has(s.id) && !purchasedIds.has(s.id))
     .reduce((sum, s) => sum + s.credit_price, 0);
+
+  // Keyboard navigation for samples
+  const handleKeyboardPlay = useCallback((index: number) => {
+    const sample = samples[index];
+    if (sample) {
+      toggleGlobalPlay(sample.id);
+    }
+  }, [samples]);
+
+  const { selectedIndex, isSelected: isKeyboardSelected } = useKeyboardNavigation(samples, {
+    enabled: samples.length > 0 && !loading,
+    onPlay: handleKeyboardPlay,
+  });
+
+  // Handle Escape to stop playback
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "ArrowLeft") {
+        stopGlobalPlayback();
+      }
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, []);
 
   const fetchSamples = useCallback(
     async (offset = 0, append = false) => {
@@ -410,6 +435,15 @@ export default function MarketplacePage() {
         {/* Filters */}
         <SampleFilters onFilterChange={handleFilterChange} />
 
+        {/* Keyboard Navigation Hint */}
+        {samples.length > 0 && !loading && (
+          <div className="mb-4 text-xs text-[#666] flex items-center gap-2">
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">↑↓</span> navigate
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Esc</span> stop
+          </div>
+        )}
+
         {/* Results */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -464,7 +498,7 @@ export default function MarketplacePage() {
             </div>
           ) : samples.length > 0 ? (
             <div className="space-y-2">
-              {samples.map((sample) => (
+              {samples.map((sample, index) => (
                 <div key={sample.id} className="flex items-center gap-2">
                   {/* Selection checkbox */}
                   {user && !purchasedIds.has(sample.id) && (
@@ -491,6 +525,7 @@ export default function MarketplacePage() {
                       isOwned={purchasedIds.has(sample.id)}
                       isFavorited={favoritedIds.has(sample.id)}
                       userRating={userRatings[sample.id]}
+                      isSelected={isKeyboardSelected(index)}
                       onPurchase={handlePurchase}
                       onFavoriteChange={handleFavoriteChange}
                     />
