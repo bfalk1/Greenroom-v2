@@ -148,13 +148,23 @@ export default function CreatorDashboardPage() {
               — Manage your samples and track earnings
             </p>
           </div>
-          <Button
-            onClick={() => router.push("/creator/upload")}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Upload Sample
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => router.push("/creator/batch-upload")}
+              variant="outline"
+              className="border-[#00FF88] text-[#00FF88] hover:bg-[#00FF88]/10"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Batch Upload
+            </Button>
+            <Button
+              onClick={() => router.push("/creator/upload")}
+              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Upload Sample
+            </Button>
+          </div>
         </div>
 
         {/* Stats */}
