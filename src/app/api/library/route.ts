@@ -66,7 +66,8 @@ export async function GET() {
         const filename = `${artistName} - ${sampleName}${keyPart}${bpmPart}.wav`;
         
         // Directory path for organized downloads
-        const downloadPath = `Greenroom/${artistName}/${sampleName}${keyPart}${bpmPart}.wav`;
+        // No "Greenroom" prefix - user extracts to their own Greenroom folder
+        const downloadPath = `${artistName}/${sampleName}${keyPart}${bpmPart}.wav`;
 
         return {
           id: p.sample.id,
