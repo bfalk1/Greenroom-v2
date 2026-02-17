@@ -225,14 +225,16 @@ export default function AccountPage() {
               <div className="text-right">
                 <span
                   className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                    subscription.status === "ACTIVE"
+                    subscription.cancelAtPeriodEnd
+                      ? "bg-orange-900/30 text-orange-400"
+                      : subscription.status === "ACTIVE"
                       ? "bg-green-900/30 text-green-400"
                       : subscription.status === "PAST_DUE"
                       ? "bg-yellow-900/30 text-yellow-400"
                       : "bg-red-900/30 text-red-400"
                   }`}
                 >
-                  {subscription.status}
+                  {subscription.cancelAtPeriodEnd ? "CANCELLING" : subscription.status}
                 </span>
               </div>
             </div>
