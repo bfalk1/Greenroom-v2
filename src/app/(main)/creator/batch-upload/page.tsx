@@ -375,17 +375,18 @@ export default function BatchUploadPage() {
           </div>
         </div>
 
-        {/* Default Settings */}
+        {/* Batch Settings */}
         {samples.length > 0 && (
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 mb-6">
-            <h3 className="text-white font-medium mb-3">Default Settings</h3>
+          <div className="bg-[#00FF88]/5 border border-[#00FF88]/30 rounded-lg p-4 mb-6">
+            <h3 className="text-[#00FF88] font-semibold mb-1">🎛️ Batch Settings — Apply to All Samples</h3>
+            <p className="text-[#a1a1a1] text-xs mb-4">Set defaults and apply to all samples at once, or edit each sample individually below.</p>
             <div className="flex flex-wrap gap-4 items-end">
               <div>
                 <label className="block text-xs text-[#a1a1a1] mb-1">Genre</label>
                 <select
                   value={defaultGenre}
                   onChange={(e) => setDefaultGenre(e.target.value)}
-                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-1.5 text-white text-sm"
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
                 >
                   {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
@@ -395,18 +396,16 @@ export default function BatchUploadPage() {
                 <select
                   value={defaultInstrument}
                   onChange={(e) => setDefaultInstrument(e.target.value)}
-                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-1.5 text-white text-sm"
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
                 >
                   {INSTRUMENTS.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
               </div>
               <Button
                 onClick={applyDefaultsToAll}
-                variant="outline"
-                size="sm"
-                className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+                className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
               >
-                Apply to All
+                Apply to All Samples
               </Button>
             </div>
           </div>
@@ -416,9 +415,12 @@ export default function BatchUploadPage() {
         {samples.length > 0 && (
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden mb-6">
             <div className="p-4 border-b border-[#2a2a2a] flex justify-between items-center">
-              <h3 className="text-white font-medium">
-                {samples.length} Samples ({doneCount} uploaded, {pendingCount} pending)
-              </h3>
+              <div>
+                <h3 className="text-white font-medium">
+                  ✏️ Edit Individual Samples — {samples.length} total ({doneCount} uploaded, {pendingCount} pending)
+                </h3>
+                <p className="text-[#666] text-xs">Click any field to edit that sample&apos;s metadata</p>
+              </div>
               <Button
                 onClick={() => setSamples([])}
                 variant="ghost"
