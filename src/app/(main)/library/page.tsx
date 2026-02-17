@@ -199,19 +199,42 @@ export default function LibraryPage() {
   );
 }
 
+// Store the directory handle globally so it persists across downloads
+let greenroomDirHandle: FileSystemDirectoryHandle | null = null;
+
+async function getOrPickDirectory(): Promise<FileSystemDirectoryHandle | null> {
+  // Return cached handle if we have one
+  if (greenroomDirHandle) {
+    // Verify we still have permission
+    const permission = await greenroomDirHandle.queryPermission({ mode: "readwrite" });
+    if (permission === "granted") {
+      return greenroomDirHandle;
+    }
+  }
+  
+  // Ask user to pick a directory
+  try {
+    // @ts-expect-error - File System Access API
+    greenroomDirHandle = await window.showDirectoryPicker({
+      mode: "readwrite",
+      startIn: "downloads",
+    });
+    return greenroomDirHandle;
+  } catch {
+    return null; // User cancelled or API not supported
+  }
+}
+
 function DownloadButton({ sampleId, filename, downloadPath }: { 
   sampleId: string; 
   filename: string;
-  downloadPath: string;
+  downloadPath: string; // e.g., "Greenroom/ArtistName/Sample.wav"
 }) {
   const [downloading, setDownloading] = useState(false);
 
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      // Dynamically import JSZip (client-side only)
-      const JSZip = (await import("jszip")).default;
-      
       // Fetch the file through our API
       const res = await fetch(`/api/downloads/${sampleId}`);
 
@@ -222,14 +245,40 @@ function DownloadButton({ sampleId, filename, downloadPath }: {
 
       const blob = await res.blob();
       
-      // Create ZIP with folder structure: Greenroom/ArtistName/file.wav
+      // Try File System Access API first (Chrome/Edge)
+      // @ts-expect-error - Check if API is available
+      if (typeof window.showDirectoryPicker === "function") {
+        const dirHandle = await getOrPickDirectory();
+        
+        if (dirHandle) {
+          // Parse the path: Greenroom/ArtistName/file.wav
+          const pathParts = downloadPath.split("/");
+          let currentDir = dirHandle;
+          
+          // Create nested directories (Greenroom/ArtistName)
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: true });
+          }
+          
+          // Write the file
+          const fileName = pathParts[pathParts.length - 1];
+          const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          
+          toast.success(`Saved: ${downloadPath}`);
+          setDownloading(false);
+          return;
+        }
+      }
+      
+      // Fallback: ZIP download for Safari/Firefox or if user cancelled picker
+      const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
       zip.file(downloadPath, blob);
-      
-      // Generate ZIP
       const zipBlob = await zip.generateAsync({ type: "blob" });
       
-      // Download the ZIP
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = url;
