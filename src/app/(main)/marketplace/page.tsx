@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, Heart } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, Heart, CheckSquare, Square, ShoppingCart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
@@ -31,6 +31,77 @@ export default function MarketplacePage() {
     key: "all",
     sortBy: "popular",
   });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPurchasing, setBulkPurchasing] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const getSelectableSamples = () => {
+    return samples.filter(s => !purchasedIds.has(s.id));
+  };
+
+  const selectAllUnowned = () => {
+    const selectable = getSelectableSamples();
+    if (selectedIds.size === selectable.length && selectable.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectable.map(s => s.id)));
+    }
+  };
+
+  const handleBulkPurchase = async () => {
+    if (selectedIds.size === 0 || !user) return;
+    
+    const selectedSamples = samples.filter(s => selectedIds.has(s.id) && !purchasedIds.has(s.id));
+    const totalCost = selectedSamples.reduce((sum, s) => sum + s.credit_price, 0);
+    
+    if ((user.credits || 0) < totalCost) {
+      toast.error(`Not enough credits. Need ${totalCost}, have ${user.credits || 0}`);
+      return;
+    }
+    
+    setBulkPurchasing(true);
+    let successCount = 0;
+    
+    for (const sample of selectedSamples) {
+      try {
+        const res = await fetch("/api/purchases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sampleId: sample.id }),
+        });
+        
+        if (res.ok) {
+          successCount++;
+          setPurchasedIds(prev => new Set([...prev, sample.id]));
+        }
+      } catch (error) {
+        console.error(`Failed to purchase ${sample.name}:`, error);
+      }
+    }
+    
+    if (successCount > 0) {
+      toast.success(`Purchased ${successCount} samples!`);
+      refreshUser();
+      setSelectedIds(new Set());
+    }
+    
+    setBulkPurchasing(false);
+  };
+
+  const selectedCost = samples
+    .filter(s => selectedIds.has(s.id) && !purchasedIds.has(s.id))
+    .reduce((sum, s) => sum + s.credit_price, 0);
 
   const fetchSamples = useCallback(
     async (offset = 0, append = false) => {
@@ -339,9 +410,44 @@ export default function MarketplacePage() {
 
         {/* Results */}
         <div className="mb-8">
-          <h2 className="text-sm font-semibold text-[#a1a1a1] mb-4">
-            {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-[#a1a1a1]">
+              {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
+            </h2>
+            
+            {/* Selection Controls */}
+            {user && samples.length > 0 && !loading && (
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={selectAllUnowned}
+                  className="flex items-center gap-2 text-sm text-[#a1a1a1] hover:text-white transition"
+                >
+                  {selectedIds.size === getSelectableSamples().length && getSelectableSamples().length > 0 ? (
+                    <CheckSquare className="w-4 h-4 text-[#00FF88]" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  Select All
+                </button>
+                
+                {selectedIds.size > 0 && (
+                  <Button
+                    onClick={handleBulkPurchase}
+                    disabled={bulkPurchasing || selectedCost > (user.credits || 0)}
+                    size="sm"
+                    className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  >
+                    {bulkPurchasing ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <ShoppingCart className="w-4 h-4 mr-2" />
+                    )}
+                    Buy {selectedIds.size} ({selectedCost} cr)
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
 
           {loading ? (
             <div className="space-y-2">
@@ -357,16 +463,37 @@ export default function MarketplacePage() {
           ) : samples.length > 0 ? (
             <div className="space-y-2">
               {samples.map((sample) => (
-                <SampleCard
-                  key={sample.id}
-                  sample={sample}
-                  user={userForCard}
-                  isOwned={purchasedIds.has(sample.id)}
-                  isFavorited={favoritedIds.has(sample.id)}
-                  userRating={userRatings[sample.id]}
-                  onPurchase={handlePurchase}
-                  onFavoriteChange={handleFavoriteChange}
-                />
+                <div key={sample.id} className="flex items-center gap-2">
+                  {/* Selection checkbox */}
+                  {user && !purchasedIds.has(sample.id) && (
+                    <button
+                      onClick={() => toggleSelect(sample.id)}
+                      className="flex-shrink-0 p-1"
+                    >
+                      {selectedIds.has(sample.id) ? (
+                        <CheckSquare className="w-5 h-5 text-[#00FF88]" />
+                      ) : (
+                        <Square className="w-5 h-5 text-[#a1a1a1] hover:text-white" />
+                      )}
+                    </button>
+                  )}
+                  {/* Spacer for owned samples */}
+                  {user && purchasedIds.has(sample.id) && (
+                    <div className="w-7 flex-shrink-0" />
+                  )}
+                  
+                  <div className={`flex-1 ${selectedIds.has(sample.id) ? "ring-1 ring-[#00FF88] rounded-lg" : ""}`}>
+                    <SampleCard
+                      sample={sample}
+                      user={userForCard}
+                      isOwned={purchasedIds.has(sample.id)}
+                      isFavorited={favoritedIds.has(sample.id)}
+                      userRating={userRatings[sample.id]}
+                      onPurchase={handlePurchase}
+                      onFavoriteChange={handleFavoriteChange}
+                    />
+                  </div>
+                </div>
               ))}
 
               {/* Load More */}

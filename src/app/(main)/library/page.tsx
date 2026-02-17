@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Music, Download, Loader2 } from "lucide-react";
+import { Search, Music, Download, Loader2, CheckSquare, Square, Package } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
+import JSZip from "jszip";
 
 interface LibrarySample {
   id: string;
@@ -38,6 +39,68 @@ export default function LibraryPage() {
   const [filtered, setFiltered] = useState<LibrarySample[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map(s => s.id)));
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedIds.size === 0) return;
+    
+    setBulkDownloading(true);
+    try {
+      const selectedSamples = filtered.filter(s => selectedIds.has(s.id));
+      const zip = new JSZip();
+      
+      for (const sample of selectedSamples) {
+        toast.loading(`Fetching ${sample.name}...`, { id: `dl-${sample.id}` });
+        const res = await fetch(`/api/downloads/${sample.id}`);
+        if (res.ok) {
+          const blob = await res.blob();
+          zip.file(sample.download_path, blob);
+          toast.success(`Added ${sample.name}`, { id: `dl-${sample.id}` });
+        } else {
+          toast.error(`Failed: ${sample.name}`, { id: `dl-${sample.id}` });
+        }
+      }
+      
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Greenroom_${selectedSamples.length}_samples.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success(`Downloaded ${selectedSamples.length} samples!`);
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error("Bulk download error:", error);
+      toast.error("Bulk download failed");
+    } finally {
+      setBulkDownloading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -95,7 +158,7 @@ export default function LibraryPage() {
         </div>
 
         {samples.length > 0 && (
-          <div className="mb-6">
+          <div className="mb-6 space-y-4">
             <div className="relative">
               <Search className="absolute left-4 top-3.5 w-5 h-5 text-[#a1a1a1]" />
               <Input
@@ -105,6 +168,36 @@ export default function LibraryPage() {
                 onChange={(e) => handleSearch(e.target.value)}
                 className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
               />
+            </div>
+            
+            {/* Selection Controls */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={selectAll}
+                className="flex items-center gap-2 text-sm text-[#a1a1a1] hover:text-white transition"
+              >
+                {selectedIds.size === filtered.length && filtered.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-[#00FF88]" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                {selectedIds.size === filtered.length && filtered.length > 0 ? "Deselect All" : "Select All"}
+              </button>
+              
+              {selectedIds.size > 0 && (
+                <Button
+                  onClick={handleBulkDownload}
+                  disabled={bulkDownloading}
+                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                >
+                  {bulkDownloading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Package className="w-4 h-4 mr-2" />
+                  )}
+                  Download {selectedIds.size} Selected
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -125,11 +218,28 @@ export default function LibraryPage() {
                     e.dataTransfer.effectAllowed = "copy";
                   }
                 }}
-                className={`rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#00FF88]/50 transition-all p-4 flex items-center gap-4 ${
+                className={`rounded-lg bg-[#1a1a1a] border ${
+                  selectedIds.has(sample.id) ? "border-[#00FF88]" : "border-[#2a2a2a]"
+                } hover:border-[#00FF88]/50 transition-all p-4 flex items-center gap-4 ${
                   sample.signed_url ? "cursor-grab active:cursor-grabbing" : ""
                 }`}
                 title={sample.signed_url ? "Drag to your DAW or desktop" : ""}
               >
+                {/* Checkbox */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelect(sample.id);
+                  }}
+                  className="flex-shrink-0"
+                >
+                  {selectedIds.has(sample.id) ? (
+                    <CheckSquare className="w-5 h-5 text-[#00FF88]" />
+                  ) : (
+                    <Square className="w-5 h-5 text-[#a1a1a1] hover:text-white" />
+                  )}
+                </button>
+
                 {/* Cover */}
                 <div className="w-14 h-14 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden">
                   <img
