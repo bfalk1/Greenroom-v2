@@ -226,6 +226,8 @@ export function SampleCard({
     await togglePlayFn();
   };
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handlePurchase = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -239,6 +241,37 @@ export function SampleCard({
       // error handled by parent
     } finally {
       setIsPurchasing(false);
+    }
+  };
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!user || !isOwned || isDownloading) return;
+
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`/api/downloads/${sample.id}`);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Download failed");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sample.name}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Downloaded "${sample.name}" 🎵`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Download failed";
+      toast.error(message);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -384,26 +417,26 @@ export function SampleCard({
 
         {/* Price & Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="bg-[#00FF88]/10 text-[#00FF88] px-3 py-1 rounded-full text-xs font-bold">
-            {sample.credit_price} cr
-          </div>
+          {!isOwned && (
+            <div className="bg-[#00FF88]/10 text-[#00FF88] px-3 py-1 rounded-full text-xs font-bold">
+              {sample.credit_price} cr
+            </div>
+          )}
           <Button
-            onClick={handlePurchase}
-            disabled={isPurchasing || isOwned || !user}
+            onClick={isOwned ? handleDownload : handlePurchase}
+            disabled={isPurchasing || isDownloading || !user}
             className={`text-sm font-medium h-8 px-4 ${
               isOwned
-                ? "bg-[#1a1a1a] text-[#00FF88] border border-[#00FF88]/30 hover:bg-[#1a1a1a]"
+                ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
                 : "bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50"
             }`}
           >
-            {isPurchasing ? (
+            {isPurchasing || isDownloading ? (
               <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-            ) : isOwned ? (
-              <Check className="w-3.5 h-3.5 mr-1" />
             ) : (
               <Download className="w-3.5 h-3.5 mr-1" />
             )}
-            {isPurchasing ? "..." : isOwned ? "Owned" : "Get"}
+            {isPurchasing ? "..." : isDownloading ? "..." : isOwned ? "Download" : "Get"}
           </Button>
         </div>
       </div>
