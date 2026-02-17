@@ -396,6 +396,9 @@ export default function CreatorEarningsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Paid
                     </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-[#a1a1a1] uppercase">
+                      Invoice
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -431,6 +434,16 @@ export default function CreatorEarningsPage() {
                         {payout.paidAt
                           ? new Date(payout.paidAt).toLocaleDateString()
                           : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <a
+                          href={`/api/creator/payouts/${payout.id}/invoice`}
+                          download
+                          className="text-[#00FF88] hover:text-[#00cc6a] text-sm flex items-center justify-end gap-1"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download
+                        </a>
                       </td>
                     </tr>
                   ))}
