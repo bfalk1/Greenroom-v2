@@ -21,7 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
-import { CSVExport } from "@/components/admin/CSVExport";
+import { ExportPanel } from "@/components/admin/ExportPanel";
 import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { toast } from "sonner";
@@ -1054,7 +1054,7 @@ export default function AdminDashboardPage() {
             <div className="space-y-6">
               <UserSearchPanel />
               <AuditLogPanel />
-              <CSVExport />
+              <ExportPanel />
             </div>
           )}
 
