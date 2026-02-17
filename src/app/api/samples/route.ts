@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const instrumentType = searchParams.get("instrumentType") || "";
     const sampleType = searchParams.get("sampleType") || "";
     const key = searchParams.get("key") || "";
+    const scale = searchParams.get("scale") || "";
     const bpmMin = searchParams.get("bpmMin");
     const bpmMax = searchParams.get("bpmMax");
     const sortBy = searchParams.get("sortBy") || "popular";
@@ -51,8 +52,17 @@ export async function GET(request: NextRequest) {
       where.sampleType = sampleType as "LOOP" | "ONE_SHOT";
     }
 
-    if (key && key !== "all") {
-      where.key = key;
+    // Handle key and scale filtering
+    // Key format in DB: "C Major", "A Minor", etc.
+    if (key && key !== "all" && scale && scale !== "all") {
+      // Both key and scale specified: exact match
+      where.key = `${key} ${scale}`;
+    } else if (key && key !== "all") {
+      // Only key (note) specified: match keys starting with that note
+      where.key = { startsWith: key };
+    } else if (scale && scale !== "all") {
+      // Only scale specified: match keys ending with Major/Minor
+      where.key = { endsWith: scale };
     }
 
     if (bpmMin || bpmMax) {

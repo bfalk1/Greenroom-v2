@@ -25,25 +25,17 @@ const GENRES = [
   "Classical",
 ];
 
-const KEYS = [
-  "C",
-  "C#",
-  "D",
-  "D#",
-  "E",
-  "F",
-  "F#",
-  "G",
-  "G#",
-  "A",
-  "A#",
-  "B",
-];
+const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const SCALES = ["Major", "Minor"];
+
+// Generate all key combinations
+const KEYS = NOTES.flatMap(note => SCALES.map(scale => `${note} ${scale}`));
 
 interface FilterState {
   genre: string;
   sampleType: string;
   key: string;
+  scale: string;
   sortBy: string;
 }
 
@@ -55,28 +47,33 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
   const [genre, setGenre] = useState("all");
   const [sampleType, setSampleType] = useState("all");
   const [key, setKey] = useState("all");
+  const [scale, setScale] = useState("all");
   const [sortBy, setSortBy] = useState("popular");
 
   const handleChange = (field: string, value: string) => {
     let newGenre = genre;
     let newType = sampleType;
     let newKey = key;
+    let newScale = scale;
     let newSort = sortBy;
 
     if (field === "genre") newGenre = value;
     if (field === "type") newType = value;
     if (field === "key") newKey = value;
+    if (field === "scale") newScale = value;
     if (field === "sort") newSort = value;
 
     setGenre(newGenre);
     setSampleType(newType);
     setKey(newKey);
+    setScale(newScale);
     setSortBy(newSort);
 
     onFilterChange({
       genre: newGenre,
       sampleType: newType,
       key: newKey,
+      scale: newScale,
       sortBy: newSort,
     });
   };
@@ -128,11 +125,25 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
         </SelectTrigger>
         <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
           <SelectItem value="all">All Keys</SelectItem>
-          {KEYS.map((k) => (
+          {NOTES.map((k) => (
             <SelectItem key={k} value={k}>
               {k}
             </SelectItem>
           ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={scale}
+        onValueChange={(v) => handleChange("scale", v)}
+      >
+        <SelectTrigger className="w-28 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+          <SelectValue placeholder="Scale" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="all">Maj / Min</SelectItem>
+          <SelectItem value="Major">Major</SelectItem>
+          <SelectItem value="Minor">Minor</SelectItem>
         </SelectContent>
       </Select>
 

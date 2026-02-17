@@ -29,6 +29,7 @@ export default function MarketplacePage() {
     genre: "all",
     sampleType: "all",
     key: "all",
+    scale: "all",
     sortBy: "popular",
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -114,6 +115,7 @@ export default function MarketplacePage() {
         if (filters.genre !== "all") params.set("genre", filters.genre);
         if (filters.sampleType !== "all") params.set("sampleType", filters.sampleType);
         if (filters.key !== "all") params.set("key", filters.key);
+        if (filters.scale !== "all") params.set("scale", filters.scale);
         params.set("sortBy", filters.sortBy);
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
@@ -289,7 +291,7 @@ export default function MarketplacePage() {
     : null;
 
   // Check if we're in a filtered/search state
-  const isFiltered = searchQuery || filters.genre !== "all" || filters.sampleType !== "all" || filters.key !== "all";
+  const isFiltered = searchQuery || filters.genre !== "all" || filters.sampleType !== "all" || filters.key !== "all" || filters.scale !== "all";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
