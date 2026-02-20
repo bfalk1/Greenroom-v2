@@ -15,8 +15,21 @@ import {
 import { CreditPackages } from "@/components/account/CreditPackages";
 import { ProfilePictureUpload } from "@/components/account/ProfilePictureUpload";
 import { BannerImageUpload } from "@/components/account/BannerImageUpload";
+import { SocialLinksEditor } from "@/components/account/SocialLinksEditor";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
+
+interface SocialLinks {
+  instagram?: string;
+  tiktok?: string;
+  twitter?: string;
+  x?: string;
+  spotify?: string;
+  soundcloud?: string;
+  apple_music?: string;
+  youtube?: string;
+  website?: string;
+}
 
 interface CreditTransaction {
   id: string;
@@ -40,7 +53,9 @@ export default function AccountPage() {
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
+    bio: "",
   });
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
   const [saving, setSaving] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [creditBalance, setCreditBalance] = useState<number>(0);
@@ -55,7 +70,13 @@ export default function AccountPage() {
       setFormData({
         full_name: user.full_name || "",
         username: user.username || "",
+        bio: (user as { bio?: string }).bio || "",
       });
+      // Load social links from user data
+      const links = (user as { social_links?: SocialLinks }).social_links;
+      if (links) {
+        setSocialLinks(links);
+      }
     }
   }, [user]);
 
@@ -104,14 +125,18 @@ export default function AccountPage() {
       const res = await fetch("/api/user/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          social_links: socialLinks,
+        }),
       });
 
       if (res.ok) {
         toast.success("Profile updated successfully!");
         refreshUser();
       } else {
-        toast.error("Failed to update profile.");
+        const data = await res.json();
+        toast.error(data.error || "Failed to update profile.");
       }
     } catch (error) {
       console.error("Error saving profile:", error);
@@ -417,6 +442,34 @@ export default function AccountPage() {
                 className="bg-[#0a0a0a] border-[#2a2a2a] text-[#a1a1a1] cursor-not-allowed capitalize"
               />
             </div>
+
+            {/* Bio - for creators */}
+            {user.is_creator && (
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  Bio
+                </label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) =>
+                    setFormData({ ...formData, bio: e.target.value })
+                  }
+                  placeholder="Tell fans about yourself..."
+                  rows={4}
+                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88] resize-none"
+                />
+              </div>
+            )}
+
+            {/* Social Links - for creators */}
+            {user.is_creator && (
+              <div className="pt-4 border-t border-[#2a2a2a]">
+                <SocialLinksEditor
+                  socialLinks={socialLinks}
+                  onChange={setSocialLinks}
+                />
+              </div>
+            )}
 
             <div className="flex gap-3 pt-4">
               <Button

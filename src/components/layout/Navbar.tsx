@@ -50,9 +50,10 @@ export function Navbar() {
                 {navLink("/marketplace", "Marketplace")}
                 {navLink("/library", "Library")}
                 {!hasActiveSub && navLink("/pricing", "Pricing")}
-                {user.role !== "CREATOR" && user.role !== "ADMIN" && navLink("/creator/apply", "Become a Creator")}
-                {user.is_creator && navLink("/creator/dashboard", "Dashboard")}
-                {user.is_creator && navLink("/creator/earnings", "Earnings")}
+                {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
+                {/* Only show creator dashboard/earnings for CREATOR role, not for ADMIN/MODERATOR */}
+                {user.role === "CREATOR" && navLink("/creator/dashboard", "Dashboard")}
+                {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
                 {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                   navLink("/mod/samples", "Moderation")}
                 {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
@@ -131,17 +132,18 @@ export function Navbar() {
                 Pricing
               </Link>
             )}
-            {user.role !== "CREATOR" && user.role !== "ADMIN" && (
+            {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && (
               <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Become a Creator
               </Link>
             )}
-            {user.is_creator && (
+            {/* Only show creator dashboard/earnings for CREATOR role */}
+            {user.role === "CREATOR" && (
               <Link href="/creator/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Dashboard
               </Link>
             )}
-            {user.is_creator && (
+            {user.role === "CREATOR" && (
               <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Earnings
               </Link>

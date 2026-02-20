@@ -72,24 +72,72 @@ const KEYS = [
   "B Minor",
 ];
 
-// Recommended filename format: SampleName_Key_BPM.wav
-// Examples: Dark_Trap_Loop_Cm_140.wav, Smooth_Piano_Chords_Gmaj_90.wav
+// Recommended filename format: SampleName_Type_Genre_Key_BPM.wav
+// Examples: Dark_Trap_Loop_Cm_140.wav, Kick_OneShot_Hip_Hop.wav
 const FILENAME_PATTERN = /^[A-Za-z0-9_\-\s]+\.wav$/;
+
+// Keywords that indicate sample type
+const LOOP_KEYWORDS = ['loop', 'loops', 'melody', 'chord', 'progression', 'beat', 'pattern', 'stem'];
+const ONESHOT_KEYWORDS = ['oneshot', 'one-shot', 'one shot', 'hit', 'stab', 'kick', 'snare', 'clap', 'hihat', 'hi-hat', 'perc', 'fx', 'shot'];
+
+// Genre detection keywords
+const GENRE_KEYWORDS: Record<string, string[]> = {
+  'Hip-Hop': ['hiphop', 'hip hop', 'hip-hop', 'rap', 'boom bap', 'boombap'],
+  'Trap': ['trap'],
+  'R&B': ['rnb', 'r&b', 'r and b'],
+  'Electronic': ['electronic', 'edm', 'electronica'],
+  'Lo-Fi': ['lofi', 'lo-fi', 'lo fi', 'chillhop'],
+  'House': ['house', 'deep house', 'tech house'],
+  'Techno': ['techno'],
+  'Drill': ['drill', 'uk drill'],
+  'Pop': ['pop'],
+  'Rock': ['rock'],
+  'Jazz': ['jazz'],
+  'Afrobeats': ['afro', 'afrobeats', 'afrobeat', 'amapiano'],
+  'Latin': ['latin', 'reggaeton'],
+  'Ambient': ['ambient', 'chill'],
+};
 
 // Parse metadata from filename
 function parseFilename(filename: string): { 
   name: string | null; 
   key: string | null; 
   bpm: string | null;
+  sampleType: "LOOP" | "ONE_SHOT" | null;
+  genre: string | null;
   isValid: boolean;
   warning: string | null;
 } {
   const baseName = filename.replace(/\.wav$/i, "");
   const parts = baseName.split(/[_\-\s]+/);
+  const lowerBaseName = baseName.toLowerCase();
   
   let detectedBpm: string | null = null;
   let detectedKey: string | null = null;
+  let detectedType: "LOOP" | "ONE_SHOT" | null = null;
+  let detectedGenre: string | null = null;
   const nameParts: string[] = [];
+  
+  // Detect sample type from full filename
+  const isOneShot = ONESHOT_KEYWORDS.some(kw => lowerBaseName.includes(kw.replace(/\s+/g, '')) || lowerBaseName.includes(kw.replace(/\s+/g, '_')));
+  const isLoop = LOOP_KEYWORDS.some(kw => lowerBaseName.includes(kw));
+  
+  if (isOneShot && !isLoop) {
+    detectedType = "ONE_SHOT";
+  } else if (isLoop && !isOneShot) {
+    detectedType = "LOOP";
+  }
+  
+  // Detect genre from full filename
+  for (const [genre, keywords] of Object.entries(GENRE_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (lowerBaseName.includes(kw.replace(/\s+/g, '')) || lowerBaseName.includes(kw.replace(/\s+/g, '_'))) {
+        detectedGenre = genre;
+        break;
+      }
+    }
+    if (detectedGenre) break;
+  }
   
   // Key patterns: Am, Cmaj, C#min, Db, etc.
   const keyPatterns = [
@@ -126,6 +174,22 @@ function parseFilename(filename: string): {
       }
     }
     
+    // Skip type keywords from name
+    const lowerPart = part.toLowerCase();
+    if (LOOP_KEYWORDS.includes(lowerPart) || ONESHOT_KEYWORDS.includes(lowerPart)) {
+      continue;
+    }
+    
+    // Skip genre keywords from name
+    let isGenreKeyword = false;
+    for (const keywords of Object.values(GENRE_KEYWORDS)) {
+      if (keywords.some(kw => kw.replace(/\s+/g, '').toLowerCase() === lowerPart)) {
+        isGenreKeyword = true;
+        break;
+      }
+    }
+    if (isGenreKeyword) continue;
+    
     nameParts.push(part);
   }
   
@@ -135,15 +199,17 @@ function parseFilename(filename: string): {
   
   let warning: string | null = null;
   if (hasSpecialChars) {
-    warning = "Filename contains special characters. Recommended format: SampleName_Key_BPM.wav";
-  } else if (!detectedBpm && !detectedKey && nameParts.length === parts.length) {
-    warning = "Consider naming format: SampleName_Key_BPM.wav (e.g., Dark_Loop_Am_120.wav)";
+    warning = "Filename contains special characters. Recommended format: SampleName_Type_Genre_Key_BPM.wav";
+  } else if (!detectedBpm && !detectedKey && !detectedType && nameParts.length === parts.length) {
+    warning = "Consider naming format: SampleName_Loop_HipHop_Am_120.wav";
   }
   
   return {
     name: nameParts.length > 0 ? nameParts.join(" ") : null,
     key: detectedKey,
     bpm: detectedBpm,
+    sampleType: detectedType,
+    genre: detectedGenre,
     isValid,
     warning,
   };
@@ -193,22 +259,37 @@ export default function CreatorUploadPage() {
     setFilenameWarning(parsed.warning);
     
     // Auto-fill form fields from filename if not already set
+    const updates: Partial<typeof formData> = {};
+    
     if (parsed.name && !formData.name) {
-      setFormData((prev) => ({ ...prev, name: parsed.name! }));
+      updates.name = parsed.name;
     }
     if (parsed.key && !formData.key) {
       // Match to our KEYS array
       const matchedKey = KEYS.find(k => k.toLowerCase() === parsed.key!.toLowerCase());
       if (matchedKey) {
-        setFormData((prev) => ({ ...prev, key: matchedKey }));
+        updates.key = matchedKey;
       }
     }
     if (parsed.bpm && !formData.bpm) {
-      setFormData((prev) => ({ ...prev, bpm: parsed.bpm! }));
+      updates.bpm = parsed.bpm;
+    }
+    if (parsed.sampleType && formData.sampleType === "LOOP") {
+      // Only auto-fill if still default
+      updates.sampleType = parsed.sampleType;
+    }
+    if (parsed.genre && !formData.genre) {
+      // Match to our GENRES array
+      const matchedGenre = GENRES.find(g => g.toLowerCase() === parsed.genre!.toLowerCase());
+      if (matchedGenre) {
+        updates.genre = matchedGenre;
+      }
     }
     
-    if (parsed.name || parsed.key || parsed.bpm) {
-      toast.success("Auto-filled fields from filename 🎵");
+    if (Object.keys(updates).length > 0) {
+      setFormData((prev) => ({ ...prev, ...updates }));
+      const fields = Object.keys(updates).join(", ");
+      toast.success(`Auto-filled: ${fields} 🎵`);
     }
     
     setAudioFile(file);
@@ -510,7 +591,9 @@ export default function CreatorUploadPage() {
               Audio File (WAV) <span className="text-red-500">*</span>
             </label>
             <p className="text-xs text-[#666] mb-2">
-              💡 Recommended format: <code className="bg-[#2a2a2a] px-1 rounded">SampleName_Key_BPM.wav</code> (e.g., Dark_Loop_Am_120.wav)
+              💡 Smart naming: <code className="bg-[#2a2a2a] px-1 rounded">Name_Type_Genre_Key_BPM.wav</code> auto-fills fields!
+              <br />
+              <span className="text-[#555]">Examples: Dark_Loop_Trap_Am_140.wav, Kick_OneShot_HipHop.wav</span>
             </p>
             <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
               {audioFile ? (

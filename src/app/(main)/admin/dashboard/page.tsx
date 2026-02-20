@@ -17,6 +17,8 @@ import {
   Shield,
   Trash2,
   Plus,
+  Flag,
+  Percent,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
@@ -24,6 +26,8 @@ import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
 import { ExportPanel } from "@/components/admin/ExportPanel";
 import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
+import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
+import { CreatorPayoutSettings } from "@/components/admin/CreatorPayoutSettings";
 import { toast } from "sonner";
 
 interface Stats {
@@ -623,6 +627,28 @@ export default function AdminDashboardPage() {
             )}
           </button>
           <button
+            onClick={() => setActiveTab("flagged")}
+            className={`px-4 py-3 font-medium border-b-2 transition ${
+              activeTab === "flagged"
+                ? "border-[#00FF88] text-[#00FF88]"
+                : "border-transparent text-[#a1a1a1] hover:text-white"
+            }`}
+          >
+            <Flag className="w-4 h-4 inline mr-2" />
+            Flagged Accounts
+          </button>
+          <button
+            onClick={() => setActiveTab("creator-splits")}
+            className={`px-4 py-3 font-medium border-b-2 transition ${
+              activeTab === "creator-splits"
+                ? "border-[#00FF88] text-[#00FF88]"
+                : "border-transparent text-[#a1a1a1] hover:text-white"
+            }`}
+          >
+            <Percent className="w-4 h-4 inline mr-2" />
+            Creator Splits
+          </button>
+          <button
             onClick={() => setActiveTab("tools")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "tools"
@@ -1047,6 +1073,18 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "flagged" && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
+              <FlaggedAccountsPanel />
+            </div>
+          )}
+
+          {activeTab === "creator-splits" && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
+              <CreatorPayoutSettings platformDefaultRate={platformSettings.creatorPayoutRate} />
             </div>
           )}
 

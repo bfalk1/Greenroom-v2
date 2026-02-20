@@ -16,6 +16,7 @@ export async function GET(_request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
+      select: { role: true, customPayoutRate: true },
     });
 
     if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
@@ -24,6 +25,15 @@ export async function GET(_request: NextRequest) {
         { status: 403 }
       );
     }
+
+    // Get platform settings for payout rate calculation
+    const settings = await prisma.platformSetting.findUnique({
+      where: { id: "default" },
+      select: { creatorPayoutRate: true, creditValueCents: true },
+    });
+
+    const payoutRate = dbUser.customPayoutRate ?? settings?.creatorPayoutRate ?? 70;
+    const creditValueCents = settings?.creditValueCents ?? 10;
 
     const samples = await prisma.sample.findMany({
       where: { creatorId: authUser.id },
@@ -36,31 +46,45 @@ export async function GET(_request: NextRequest) {
             ratings: true,
           },
         },
+        purchases: {
+          select: {
+            creditsSpent: true,
+          },
+        },
       },
     });
 
-    const mapped = samples.map((s) => ({
-      id: s.id,
-      name: s.name,
-      slug: s.slug,
-      genre: s.genre,
-      instrumentType: s.instrumentType,
-      sampleType: s.sampleType,
-      key: s.key,
-      bpm: s.bpm,
-      creditPrice: s.creditPrice,
-      tags: s.tags,
-      coverImageUrl: s.coverImageUrl,
-      status: s.status,
-      downloadCount: s.downloadCount,
-      ratingAvg: s.ratingAvg,
-      ratingCount: s.ratingCount,
-      purchases: s._count.purchases,
-      downloads: s._count.downloads,
-      createdAt: s.createdAt.toISOString(),
-    }));
+    const mapped = samples.map((s) => {
+      // Calculate total credits spent on this sample
+      const totalCredits = s.purchases.reduce((sum, p) => sum + p.creditsSpent, 0);
+      // Calculate earnings: credits * credit value * payout rate
+      const earningsUsd = (totalCredits * creditValueCents * payoutRate) / 10000;
 
-    return NextResponse.json({ samples: mapped });
+      return {
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        genre: s.genre,
+        instrumentType: s.instrumentType,
+        sampleType: s.sampleType,
+        key: s.key,
+        bpm: s.bpm,
+        creditPrice: s.creditPrice,
+        tags: s.tags,
+        coverImageUrl: s.coverImageUrl,
+        status: s.status,
+        downloadCount: s.downloadCount,
+        ratingAvg: s.ratingAvg,
+        ratingCount: s.ratingCount,
+        purchases: s._count.purchases,
+        downloads: s._count.downloads,
+        totalCredits,
+        earningsUsd,
+        createdAt: s.createdAt.toISOString(),
+      };
+    });
+
+    return NextResponse.json({ samples: mapped, payoutRate });
   } catch (error) {
     console.error("GET /api/creator/samples error:", error);
     return NextResponse.json(

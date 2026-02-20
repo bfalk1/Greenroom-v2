@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/mod/samples — list samples needing review (MODERATOR/ADMIN only)
+// GET /api/mod/samples — list samples with search, filters, stats
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const {
@@ -23,34 +23,101 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // Optional status filter — defaults to DRAFT + REVIEW
   const { searchParams } = new URL(req.url);
   const statusFilter = searchParams.get("status");
+  const search = searchParams.get("search");
+  const view = searchParams.get("view"); // "pending", "all", "lowest-rated"
+  const limit = parseInt(searchParams.get("limit") || "50");
+  const offset = parseInt(searchParams.get("offset") || "0");
 
-  let where: Record<string, unknown>;
-  if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED"].includes(statusFilter)) {
-    where = { status: statusFilter };
+  // Build where clause
+  const where: Record<string, unknown> = {};
+  
+  if (view === "lowest-rated") {
+    // Show published samples with low ratings
+    where.status = "PUBLISHED";
+    where.ratingCount = { gt: 0 };
+    where.ratingAvg = { lt: 3 };
+  } else if (view === "all") {
+    // No status filter - show all
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { genre: { contains: search, mode: "insensitive" } },
+        { instrumentType: { contains: search, mode: "insensitive" } },
+        { tags: { has: search.toLowerCase() } },
+      ];
+    }
   } else {
-    where = { status: { in: ["DRAFT", "REVIEW"] } };
+    // Default: pending review
+    if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED"].includes(statusFilter)) {
+      where.status = statusFilter;
+    } else {
+      where.status = { in: ["DRAFT", "REVIEW"] };
+    }
   }
 
-  const samples = await prisma.sample.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      creator: {
-        select: {
-          id: true,
-          fullName: true,
-          artistName: true,
-          username: true,
-          email: true,
+  // Add search to pending view too
+  if (search && view !== "all") {
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      { genre: { contains: search, mode: "insensitive" } },
+      { creator: { artistName: { contains: search, mode: "insensitive" } } },
+      { creator: { email: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+
+  const orderBy = view === "lowest-rated" 
+    ? { ratingAvg: "asc" as const }
+    : { createdAt: "desc" as const };
+
+  const [samples, total] = await Promise.all([
+    prisma.sample.findMany({
+      where,
+      orderBy,
+      take: limit,
+      skip: offset,
+      include: {
+        creator: {
+          select: {
+            id: true,
+            fullName: true,
+            artistName: true,
+            username: true,
+            email: true,
+            isWhitelisted: true,
+            isFlagged: true,
+          },
         },
       },
+    }),
+    prisma.sample.count({ where }),
+  ]);
+
+  // Get sample stats
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+  const [samplesThisMonth, samplesThisYear, totalSamples] = await Promise.all([
+    prisma.sample.count({
+      where: { createdAt: { gte: startOfMonth } },
+    }),
+    prisma.sample.count({
+      where: { createdAt: { gte: startOfYear } },
+    }),
+    prisma.sample.count(),
+  ]);
+
+  return NextResponse.json({ 
+    samples, 
+    total,
+    stats: {
+      samplesThisMonth,
+      samplesThisYear,
+      totalSamples,
     },
   });
-
-  return NextResponse.json({ samples });
 }
 
 // PATCH /api/mod/samples — approve/reject OR edit any sample metadata (MODERATOR/ADMIN)
@@ -224,6 +291,113 @@ export async function DELETE(req: NextRequest) {
       targetType: "Sample",
       targetId: sampleId,
       metadata: JSON.stringify({ name: sample.name, creatorId: sample.creatorId }),
+    },
+  });
+
+  return NextResponse.json({ success: true });
+}
+
+// DELETE /api/mod/samples — delete a sample (soft delete)
+export async function DELETE(req: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { id: true, role: true },
+  });
+
+  if (!dbUser || (dbUser.role !== "MODERATOR" && dbUser.role !== "ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const sampleId = searchParams.get("sampleId");
+
+  if (!sampleId) {
+    return NextResponse.json({ error: "sampleId required" }, { status: 400 });
+  }
+
+  const sample = await prisma.sample.findUnique({ where: { id: sampleId } });
+  if (!sample) {
+    return NextResponse.json({ error: "Sample not found" }, { status: 404 });
+  }
+
+  // Soft delete
+  await prisma.sample.update({
+    where: { id: sampleId },
+    data: { isActive: false, status: "DRAFT" },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: dbUser.id,
+      action: "SAMPLE_DELETED",
+      targetType: "Sample",
+      targetId: sampleId,
+      metadata: { name: sample.name, creatorId: sample.creatorId },
+    },
+  });
+
+  return NextResponse.json({ success: true });
+}
+
+// POST /api/mod/samples — flag a creator account for admin review
+export async function POST(req: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { id: true, role: true },
+  });
+
+  if (!dbUser || (dbUser.role !== "MODERATOR" && dbUser.role !== "ADMIN")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const { creatorId, reason } = body;
+
+  if (!creatorId) {
+    return NextResponse.json({ error: "creatorId required" }, { status: 400 });
+  }
+
+  const creator = await prisma.user.findUnique({ where: { id: creatorId } });
+  if (!creator) {
+    return NextResponse.json({ error: "Creator not found" }, { status: 404 });
+  }
+
+  // Flag the account
+  await prisma.user.update({
+    where: { id: creatorId },
+    data: {
+      isFlagged: true,
+      flagReason: reason || "Flagged by moderator for review",
+      flaggedAt: new Date(),
+      flaggedBy: dbUser.id,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      actorId: dbUser.id,
+      action: "USER_FLAGGED",
+      targetType: "User",
+      targetId: creatorId,
+      metadata: { reason },
     },
   });
 

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
   try {
@@ -69,12 +69,140 @@ export async function GET() {
         artist_name: user.artistName,
         avatar_url: user.avatarUrl,
         profile_completed: user.profileCompleted,
+        social_links: user.socialLinks,
+        bio: user.bio,
+        banner_url: user.bannerUrl,
       },
     });
   } catch (error) {
     console.error("Error in /api/user/me:", error);
     return NextResponse.json(
       { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/user/me - Update user profile
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const {
+      full_name,
+      username,
+      bio,
+      social_links,
+      avatar_url,
+      banner_url,
+    } = body;
+
+    // Validate username if provided
+    if (username) {
+      // Check for valid characters
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        return NextResponse.json(
+          { error: "Username can only contain letters, numbers, and underscores" },
+          { status: 400 }
+        );
+      }
+
+      if (username.length < 3 || username.length > 30) {
+        return NextResponse.json(
+          { error: "Username must be between 3 and 30 characters" },
+          { status: 400 }
+        );
+      }
+
+      // Check uniqueness
+      const existing = await prisma.user.findFirst({
+        where: {
+          username: { equals: username, mode: "insensitive" },
+          id: { not: authUser.id },
+        },
+      });
+
+      if (existing) {
+        return NextResponse.json(
+          { error: "Username is already taken" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate social links structure if provided
+    if (social_links) {
+      const validKeys = [
+        "instagram",
+        "tiktok",
+        "twitter",
+        "x",
+        "spotify",
+        "soundcloud",
+        "apple_music",
+        "youtube",
+        "website",
+      ];
+      
+      for (const key of Object.keys(social_links)) {
+        if (!validKeys.includes(key)) {
+          return NextResponse.json(
+            { error: `Invalid social link type: ${key}` },
+            { status: 400 }
+          );
+        }
+        
+        // Validate URL format if value is provided
+        const value = social_links[key];
+        if (value && typeof value === "string" && value.trim()) {
+          try {
+            new URL(value);
+          } catch {
+            return NextResponse.json(
+              { error: `Invalid URL for ${key}` },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    }
+
+    const updateData: Record<string, unknown> = {};
+    
+    if (full_name !== undefined) updateData.fullName = full_name;
+    if (username !== undefined) updateData.username = username;
+    if (bio !== undefined) updateData.bio = bio;
+    if (social_links !== undefined) updateData.socialLinks = social_links;
+    if (avatar_url !== undefined) updateData.avatarUrl = avatar_url;
+    if (banner_url !== undefined) updateData.bannerUrl = banner_url;
+
+    const user = await prisma.user.update({
+      where: { id: authUser.id },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: user.id,
+        full_name: user.fullName,
+        username: user.username,
+        bio: user.bio,
+        social_links: user.socialLinks,
+        avatar_url: user.avatarUrl,
+        banner_url: user.bannerUrl,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    return NextResponse.json(
+      { error: "Failed to update profile" },
       { status: 500 }
     );
   }

@@ -25,6 +25,8 @@ interface CreatorSample {
   ratingCount: number;
   purchases: number;
   downloads: number;
+  totalCredits: number;
+  earningsUsd: number;
   createdAt: string;
 }
 
@@ -214,6 +216,9 @@ export default function CreatorDashboardPage() {
                       Rating
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Earnings
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Status
                     </th>
                     <th className="px-6 py-4 text-right text-xs font-medium text-[#a1a1a1] uppercase">
@@ -253,6 +258,11 @@ export default function CreatorDashboardPage() {
                             ({sample.ratingCount})
                           </span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-[#00FF88] font-medium">
+                          ${sample.earningsUsd?.toFixed(2) ?? "0.00"}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span

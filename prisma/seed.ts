@@ -1,6 +1,14 @@
 import { PrismaClient } from "@prisma/client";
+import { createClient } from "@supabase/supabase-js";
 
 const prisma = new PrismaClient();
+
+// Supabase admin client for creating auth users
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 async function main() {
   console.log("🌱 Seeding database...");
@@ -56,34 +64,68 @@ async function main() {
   // ─────────────────────────────────────────────
   console.log("\n🎵 Seeding sample data...");
 
-  // Create test creator users
-  const creators = [
-    {
-      email: "creator1@greenroom.test",
-      username: "djphoenix",
-      artistName: "DJ Phoenix",
-      role: "CREATOR" as const,
-      bio: "Electronic music producer from LA",
-    },
-    {
-      email: "creator2@greenroom.test",
-      username: "beatmakerpro",
-      artistName: "BeatMaker Pro",
-      role: "CREATOR" as const,
-      bio: "Trap & hip hop beats",
-    },
-    {
-      email: "creator3@greenroom.test",
-      username: "synthwave_studio",
-      artistName: "SynthWave Studio",
-      role: "CREATOR" as const,
-      bio: "Ambient textures and lush pads",
-    },
+  // Create creator users
+  const creatorNames = [
+    "Ekali", "Montell2099", "Dabow", "Lizdek", "Midnight Mafia", "Jawns",
+    "Rickyxsan", "Cerdin", "Odea", "Juelz", "Control Freak", "SSOS",
+    "Capshun", "Quix", "Tisoki", "Tynan", "Hekler", "Gravedgr",
+    "Kumarion", "MSFT", "Blvde Runner", "Henry Fong", "Drezo", "ALRT",
+    "Axel Boy", "Kompany", "Cyclops", "Jiqui", "Celo", "Brokn", "So Sus", "Badlike"
   ];
+
+  const creators = creatorNames.map((name) => {
+    const username = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return {
+      email: `${username}@greenroom.test`,
+      username,
+      artistName: name,
+      role: "CREATOR" as const,
+      bio: `Producer & artist`,
+    };
+  });
 
   const createdCreators: { id: string; artistName: string }[] = [];
 
   for (const c of creators) {
+    // First, try to create auth user (or get existing)
+    const password = c.username; // Simple password = username
+    
+    let authUserId: string;
+    
+    // Check if user already exists in our DB
+    const existingUser = await prisma.user.findUnique({ where: { email: c.email } });
+    
+    if (existingUser) {
+      authUserId = existingUser.id;
+    } else {
+      // Create auth user in Supabase
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: c.email,
+        password,
+        email_confirm: true, // Auto-confirm email
+      });
+      
+      if (authError) {
+        // If user already exists in auth, try to get them
+        if (authError.message.includes("already been registered")) {
+          const { data: users } = await supabaseAdmin.auth.admin.listUsers();
+          const existing = users?.users.find(u => u.email === c.email);
+          if (existing) {
+            authUserId = existing.id;
+          } else {
+            console.error(`  ❌ Failed to create/find auth user for ${c.artistName}: ${authError.message}`);
+            continue;
+          }
+        } else {
+          console.error(`  ❌ Failed to create auth user for ${c.artistName}: ${authError.message}`);
+          continue;
+        }
+      } else {
+        authUserId = authData.user.id;
+      }
+    }
+    
+    // Create/update database user with matching ID
     const user = await prisma.user.upsert({
       where: { email: c.email },
       update: {
@@ -94,6 +136,7 @@ async function main() {
         profileCompleted: true,
       },
       create: {
+        id: authUserId,
         email: c.email,
         username: c.username,
         artistName: c.artistName,
@@ -104,7 +147,7 @@ async function main() {
       },
     });
     createdCreators.push({ id: user.id, artistName: c.artistName! });
-    console.log(`  ✅ Creator: ${c.artistName}`);
+    console.log(`  ✅ Creator: ${c.artistName} (${c.email} / pass: ${password})`);
   }
 
   // Sample data
@@ -118,7 +161,7 @@ async function main() {
       bpm: 120,
       creditPrice: 3,
       tags: ["house", "deep", "groove", "drums"],
-      creatorIdx: 0,
+      creatorIdx: 0, // Will be randomized
       downloadCount: 45,
       ratingAvg: 4.5,
       ratingCount: 12,
@@ -322,7 +365,8 @@ async function main() {
   ];
 
   for (const s of sampleData) {
-    const creator = createdCreators[s.creatorIdx];
+    // Pick a random creator from the pool
+    const creator = createdCreators[Math.floor(Math.random() * createdCreators.length)];
     const slug =
       s.name
         .toLowerCase()
