@@ -297,57 +297,6 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ success: true });
 }
 
-// DELETE /api/mod/samples — delete a sample (soft delete)
-export async function DELETE(req: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { id: true, role: true },
-  });
-
-  if (!dbUser || (dbUser.role !== "MODERATOR" && dbUser.role !== "ADMIN")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { searchParams } = new URL(req.url);
-  const sampleId = searchParams.get("sampleId");
-
-  if (!sampleId) {
-    return NextResponse.json({ error: "sampleId required" }, { status: 400 });
-  }
-
-  const sample = await prisma.sample.findUnique({ where: { id: sampleId } });
-  if (!sample) {
-    return NextResponse.json({ error: "Sample not found" }, { status: 404 });
-  }
-
-  // Soft delete
-  await prisma.sample.update({
-    where: { id: sampleId },
-    data: { isActive: false, status: "DRAFT" },
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      actorId: dbUser.id,
-      action: "SAMPLE_DELETED",
-      targetType: "Sample",
-      targetId: sampleId,
-      metadata: { name: sample.name, creatorId: sample.creatorId },
-    },
-  });
-
-  return NextResponse.json({ success: true });
-}
-
 // POST /api/mod/samples — flag a creator account for admin review
 export async function POST(req: NextRequest) {
   const supabase = await createClient();

@@ -13,16 +13,16 @@ export async function getCreatorPayoutConfig(creatorId: string) {
   // Get creator's custom rate if set
   const creator = await prisma.user.findUnique({
     where: { id: creatorId },
-    select: { payoutRate: true },
+    select: { customPayoutRate: true },
   });
 
-  const centsPerCredit = creator?.payoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
+  const centsPerCredit = creator?.customPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
 
   return {
     defaultRate: DEFAULT_PAYOUT_CENTS_PER_CREDIT,
-    customRate: creator?.payoutRate,
+    customRate: creator?.customPayoutRate,
     centsPerCredit,
-    isCustomRate: creator?.payoutRate !== null && creator?.payoutRate !== undefined,
+    isCustomRate: creator?.customPayoutRate !== null && creator?.customPayoutRate !== undefined,
   };
 }
 
