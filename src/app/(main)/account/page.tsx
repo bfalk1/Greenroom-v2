@@ -372,14 +372,7 @@ export default function AccountPage() {
             <ProfilePictureUpload
               userId={user.id}
               currentUrl={user.avatar_url}
-              onUploadSuccess={async (url) => {
-                await fetch("/api/user/me", {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ avatar_url: url }),
-                });
-                refreshUser();
-              }}
+              onUploadSuccess={() => refreshUser()}
             />
           </div>
 

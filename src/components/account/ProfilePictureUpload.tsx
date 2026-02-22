@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, X } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
 interface ProfilePictureUploadProps {
@@ -19,7 +18,6 @@ export function ProfilePictureUpload({
 }: ProfilePictureUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(currentUrl || null);
-  const supabase = createClient();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -37,34 +35,26 @@ export function ProfilePictureUpload({
 
     setUploading(true);
     try {
-      // Generate unique filename
-      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const filename = `${userId}-${Date.now()}.${ext}`;
-      const path = filename;
+      const formData = new FormData();
+      formData.append("file", file);
 
-      // Upload to Supabase storage
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: true,
-        });
+      const res = await fetch("/api/upload/avatar", {
+        method: "POST",
+        body: formData,
+      });
 
-      if (uploadError) {
-        throw uploadError;
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Upload failed");
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(path);
-
-      setPreview(publicUrl);
-      onUploadSuccess(publicUrl);
+      const { url } = await res.json();
+      setPreview(url);
+      onUploadSuccess(url);
       toast.success("Profile picture updated!");
     } catch (error) {
       console.error("Upload failed:", error);
-      toast.error("Failed to upload image");
+      toast.error(error instanceof Error ? error.message : "Failed to upload image");
     } finally {
       setUploading(false);
     }
