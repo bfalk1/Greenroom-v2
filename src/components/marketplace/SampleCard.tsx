@@ -384,6 +384,7 @@ export function SampleCard({
         {/* Metadata */}
         <div className="hidden md:flex items-center gap-6 text-xs text-[#a1a1a1]">
           <span className="font-medium">{sample.genre}</span>
+          {sample.instrument_type && <span>{sample.instrument_type}</span>}
           <span>{sample.key || "—"}</span>
           {sample.bpm && <span>{sample.bpm} BPM</span>}
         </div>
