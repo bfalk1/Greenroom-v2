@@ -60,9 +60,19 @@ export function ProfilePictureUpload({
     }
   };
 
-  const handleRemove = () => {
-    setPreview(null);
-    onUploadSuccess("");
+  const handleRemove = async () => {
+    try {
+      await fetch("/api/user/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar_url: null }),
+      });
+      setPreview(null);
+      onUploadSuccess("");
+      toast.success("Profile picture removed");
+    } catch (error) {
+      toast.error("Failed to remove picture");
+    }
   };
 
   return (
