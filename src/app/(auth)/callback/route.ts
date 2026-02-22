@@ -11,10 +11,17 @@ export async function GET(request: Request) {
     const { error, data } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
-      // Check if user exists in our DB
+      // Check if user exists in our DB (by ID first, then by email for seeded accounts)
       let user = await prisma.user.findUnique({
         where: { id: data.user.id },
       });
+
+      if (!user && data.user.email) {
+        // Check by email (handles seeded accounts where Prisma ID might differ from auth ID)
+        user = await prisma.user.findUnique({
+          where: { email: data.user.email },
+        });
+      }
 
       if (!user) {
         // First time — create user record
