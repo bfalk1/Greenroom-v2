@@ -323,7 +323,7 @@ export default function MarketplacePage() {
     : null;
 
   // Check if we're in a filtered/search state
-  const isFiltered = searchQuery || filters.genre !== "all" || filters.sampleType !== "all" || filters.key !== "all" || filters.scale !== "all";
+  const isFiltered = searchQuery || filters.genre !== "all" || filters.instrumentType !== "all" || filters.sampleType !== "all" || filters.key !== "all";
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
