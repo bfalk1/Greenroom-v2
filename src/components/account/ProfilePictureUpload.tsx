@@ -40,11 +40,11 @@ export function ProfilePictureUpload({
       // Generate unique filename
       const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
       const filename = `${userId}-${Date.now()}.${ext}`;
-      const path = `avatars/${filename}`;
+      const path = filename;
 
       // Upload to Supabase storage
       const { error: uploadError } = await supabase.storage
-        .from("public")
+        .from("avatars")
         .upload(path, file, {
           cacheControl: "3600",
           upsert: true,
@@ -56,7 +56,7 @@ export function ProfilePictureUpload({
 
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from("public")
+        .from("avatars")
         .getPublicUrl(path);
 
       setPreview(publicUrl);
