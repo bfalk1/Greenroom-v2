@@ -11,7 +11,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Find or create user in our DB
+    // Find user in our DB (by ID first, then by email for seeded accounts)
     let user = await prisma.user.findUnique({
       where: { id: authUser.id },
       include: {
@@ -21,6 +21,19 @@ export async function GET() {
         },
       },
     });
+
+    if (!user && authUser.email) {
+      // Check by email (handles seeded accounts where Prisma ID might differ)
+      user = await prisma.user.findUnique({
+        where: { email: authUser.email },
+        include: {
+          creditBalance: true,
+          subscription: {
+            include: { tier: true },
+          },
+        },
+      });
+    }
 
     if (!user) {
       // First time login — create user record
