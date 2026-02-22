@@ -162,8 +162,8 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
         </SelectTrigger>
         <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] max-h-64 overflow-y-auto">
           <SelectItem value="all">All Keys</SelectItem>
-          <SelectItem value="Major">All Major</SelectItem>
-          <SelectItem value="Minor">All Minor</SelectItem>
+          <SelectItem value="Major">Major</SelectItem>
+          <SelectItem value="Minor">Minor</SelectItem>
           <div className="h-px bg-[#2a2a2a] my-1" />
           {KEYS.map((k) => (
             <SelectItem key={k} value={k}>
