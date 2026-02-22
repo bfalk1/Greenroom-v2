@@ -7,7 +7,7 @@ async function reset() {
   
   // Get sample IDs from test creators
   const samples = await prisma.sample.findMany({
-    where: { creator: { email: { endsWith: "@greenroom.test" } } },
+    where: { creator: { email: { endsWith: "@greenroom.fm" } } },
     select: { id: true }
   });
   const sampleIds = samples.map(s => s.id);
@@ -28,7 +28,7 @@ async function reset() {
   
   // Delete test users
   const deletedUsers = await prisma.user.deleteMany({
-    where: { email: { endsWith: "@greenroom.test" } }
+    where: { email: { endsWith: "@greenroom.fm" } }
   });
   console.log(`  Deleted ${deletedUsers.count} users`);
   

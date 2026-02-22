@@ -76,7 +76,7 @@ async function main() {
   const creators = creatorNames.map((name) => {
     const username = name.toLowerCase().replace(/[^a-z0-9]/g, "");
     return {
-      email: `${username}@greenroom.test`,
+      email: `${username}@greenroom.fm`,
       username,
       artistName: name,
       role: "CREATOR" as const,

@@ -11,7 +11,7 @@ async function cleanup() {
   const { data } = await supabase.auth.admin.listUsers();
   if (data?.users) {
     for (const user of data.users) {
-      if (user.email?.endsWith('@greenroom.test')) {
+      if (user.email?.endsWith('@greenroom.fm')) {
         await supabase.auth.admin.deleteUser(user.id);
         console.log('  Deleted:', user.email);
       }
