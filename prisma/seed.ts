@@ -164,8 +164,22 @@ async function main() {
     console.log(`  ✅ Creator: ${c.artistName} (${c.email} / pass: ${password})`);
   }
 
-  // Sample data
-  const sampleData = [
+  console.log(`\n✅ Created ${createdCreators.length} creators`);
+  console.log("\n🎉 Seeding complete!");
+}
+
+main()
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (e) => {
+    console.error(e);
+    await prisma.$disconnect();
+    process.exit(1);
+  });
+
+/* Sample data removed - creators upload their own samples */
+const _sampleDataRemoved = [
     {
       name: "Deep House Groove 120",
       genre: "House",
