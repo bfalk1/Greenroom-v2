@@ -28,6 +28,7 @@ export default function MarketplacePage() {
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [filters, setFilters] = useState({
     genre: "all",
+    instrumentType: "all",
     sampleType: "all",
     key: "all",
     scale: "all",
@@ -138,6 +139,7 @@ export default function MarketplacePage() {
         const params = new URLSearchParams();
         if (searchQuery) params.set("search", searchQuery);
         if (filters.genre !== "all") params.set("genre", filters.genre);
+        if (filters.instrumentType !== "all") params.set("instrumentType", filters.instrumentType);
         if (filters.sampleType !== "all") params.set("sampleType", filters.sampleType);
         if (filters.key !== "all") params.set("key", filters.key);
         if (filters.scale !== "all") params.set("scale", filters.scale);
