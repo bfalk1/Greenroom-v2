@@ -216,6 +216,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Increment genre usage count
+    const normalizedGenre = genre.toLowerCase().replace(/\s+/g, " ");
+    await prisma.genre.upsert({
+      where: { normalizedName: normalizedGenre },
+      update: { usageCount: { increment: 1 } },
+      create: {
+        name: genre,
+        normalizedName: normalizedGenre,
+        isCustom: true,
+        usageCount: 1,
+      },
+    });
+
     return NextResponse.json({ sample }, { status: 201 });
   } catch (error) {
     console.error("POST /api/samples error:", error);

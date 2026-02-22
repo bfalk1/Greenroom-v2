@@ -8,31 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, ChevronDown, X } from "lucide-react";
+import { Filter, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
-
-const GENRES = [
-  "Hip Hop",
-  "R&B",
-  "Pop",
-  "Electronic",
-  "Trap",
-  "Lo-Fi",
-  "Rock",
-  "Jazz",
-  "Latin",
-  "Afrobeats",
-  "House",
-  "Drill",
-  "Ambient",
-  "Indie",
-  "Techno",
-  "Classical",
-  "Reggaeton",
-  "Soul",
-  "Funk",
-  "Country",
-];
 
 const INSTRUMENTS = [
   "Drums",
@@ -179,6 +156,19 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
   const [sampleType, setSampleType] = useState("all");
   const [key, setKey] = useState("all");
   const [sortBy, setSortBy] = useState("popular");
+  const [genres, setGenres] = useState<string[]>([]);
+
+  // Fetch genres from API
+  useEffect(() => {
+    fetch("/api/genres")
+      .then(res => res.json())
+      .then(data => {
+        if (data.genres) {
+          setGenres(data.genres.map((g: { name: string }) => g.name));
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   const handleChange = (field: string, value: string) => {
     let newGenre = genre;
@@ -218,7 +208,7 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       <SearchableSelect
         value={genre}
         onChange={(v) => handleChange("genre", v)}
-        options={GENRES}
+        options={genres}
         placeholder="Genre"
         allLabel="All Genres"
         className="w-36"

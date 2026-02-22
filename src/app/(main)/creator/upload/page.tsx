@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { GenreInput } from "@/components/creator/GenreInput";
 
 const GENRES = [
   "Hip Hop",
@@ -474,19 +475,11 @@ export default function CreatorUploadPage() {
               <label className="block text-sm font-medium text-white mb-2">
                 Genre <span className="text-red-500">*</span>
               </label>
-              <select
+              <GenreInput
                 value={formData.genre}
-                onChange={(e) => handleChange("genre", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+                onChange={(v) => handleChange("genre", v)}
                 required
-              >
-                <option value="">Select Genre</option>
-                {GENRES.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
