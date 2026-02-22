@@ -146,6 +146,20 @@ async function main() {
         credits: 0,
       },
     });
+    // Create approved CreatorApplication
+    await prisma.creatorApplication.upsert({
+      where: { userId: user.id },
+      update: { status: "APPROVED" },
+      create: {
+        userId: user.id,
+        artistName: c.artistName,
+        bio: c.bio,
+        sampleZipUrl: "seeded-creator",
+        status: "APPROVED",
+        reviewedAt: new Date(),
+      },
+    });
+    
     createdCreators.push({ id: user.id, artistName: c.artistName! });
     console.log(`  ✅ Creator: ${c.artistName} (${c.email} / pass: ${password})`);
   }
