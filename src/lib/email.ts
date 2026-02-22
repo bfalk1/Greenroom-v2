@@ -1,7 +1,17 @@
 import { Resend } from "resend";
 
-// Initialize Resend
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy-initialize Resend to avoid build errors when API key is missing
+let resend: Resend | null = null;
+
+function getResend() {
+  if (!resend) {
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error("RESEND_API_KEY environment variable is not set");
+    }
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+}
 
 // Admin email for contact form and notifications
 export const ADMIN_EMAIL = "admin@greenroom.fm";
@@ -16,7 +26,7 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await getResend().emails.send({
     from: FROM_EMAIL,
     to: options.to,
     replyTo: options.replyTo,
