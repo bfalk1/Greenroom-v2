@@ -136,7 +136,7 @@ export async function PATCH(
         action: "CREATOR_SETTINGS_UPDATED",
         targetType: "User",
         targetId: id,
-        metadata: updateData,
+        metadata: updateData as Record<string, string | number | boolean | null>,
       },
     });
 
