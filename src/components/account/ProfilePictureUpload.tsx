@@ -3,47 +3,76 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 interface ProfilePictureUploadProps {
-  user: { creator_avatar_url?: string | null };
-  onUploadSuccess: (url?: string) => void;
+  userId: string;
+  currentUrl?: string | null;
+  onUploadSuccess: (url: string) => void;
 }
 
 export function ProfilePictureUpload({
-  user,
+  userId,
+  currentUrl,
   onUploadSuccess,
 }: ProfilePictureUploadProps) {
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(
-    user?.creator_avatar_url || null
-  );
+  const [preview, setPreview] = useState<string | null>(currentUrl || null);
+  const supabase = createClient();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      alert("Please select an image file");
+      toast.error("Please select an image file");
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Image must be smaller than 5MB");
+      toast.error("Image must be smaller than 5MB");
       return;
     }
 
     setUploading(true);
     try {
-      // TODO: Replace with Supabase storage upload
-      const url = URL.createObjectURL(file);
-      setPreview(url);
-      onUploadSuccess?.(url);
+      // Generate unique filename
+      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const filename = `${userId}-${Date.now()}.${ext}`;
+      const path = `avatars/${filename}`;
+
+      // Upload to Supabase storage
+      const { error: uploadError } = await supabase.storage
+        .from("public")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("public")
+        .getPublicUrl(path);
+
+      setPreview(publicUrl);
+      onUploadSuccess(publicUrl);
+      toast.success("Profile picture updated!");
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Failed to upload image");
+      toast.error("Failed to upload image");
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleRemove = () => {
+    setPreview(null);
+    onUploadSuccess("");
   };
 
   return (
@@ -99,7 +128,7 @@ export function ProfilePictureUpload({
           <Button
             variant="outline"
             size="icon"
-            onClick={() => setPreview(null)}
+            onClick={handleRemove}
             className="border-[#2a2a2a] hover:bg-[#1a1a1a]"
           >
             <X className="w-4 h-4" />
