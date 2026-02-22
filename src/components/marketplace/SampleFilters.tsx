@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -8,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter } from "lucide-react";
+import { Filter, ChevronDown, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 const GENRES = [
   "Hip Hop",
@@ -63,6 +64,115 @@ interface SampleFiltersProps {
   onFilterChange: (filters: FilterState) => void;
 }
 
+// Searchable dropdown component
+function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  allLabel,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder: string;
+  allLabel: string;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filteredOptions = options.filter(opt =>
+    opt.toLowerCase().includes(search.toLowerCase())
+  );
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isOpen]);
+
+  const displayValue = value === "all" ? allLabel : value;
+
+  return (
+    <div ref={containerRef} className={`relative ${className}`}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full h-10 px-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-md text-white text-sm hover:border-[#3a3a3a] transition"
+      >
+        <span className={value === "all" ? "text-[#a1a1a1]" : "text-white"}>
+          {displayValue}
+        </span>
+        <ChevronDown className="w-4 h-4 text-[#a1a1a1]" />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-md shadow-lg">
+          <div className="p-2 border-b border-[#2a2a2a]">
+            <Input
+              ref={inputRef}
+              type="text"
+              placeholder={`Search ${placeholder.toLowerCase()}...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm placeholder-[#666]"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => {
+                onChange("all");
+                setIsOpen(false);
+                setSearch("");
+              }}
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition ${
+                value === "all" ? "text-[#00FF88]" : "text-white"
+              }`}
+            >
+              {allLabel}
+            </button>
+            {filteredOptions.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  onChange(opt);
+                  setIsOpen(false);
+                  setSearch("");
+                }}
+                className={`w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition ${
+                  value === opt ? "text-[#00FF88]" : "text-white"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-2 text-sm text-[#666]">No results</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
   const [genre, setGenre] = useState("all");
   const [instrumentType, setInstrumentType] = useState("all");
@@ -105,39 +215,23 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
         <span className="text-sm font-medium text-white">Filter:</span>
       </div>
 
-      <Select
+      <SearchableSelect
         value={genre}
-        onValueChange={(v) => handleChange("genre", v)}
-      >
-        <SelectTrigger className="w-36 bg-[#0a0a0a] border-[#2a2a2a] text-white">
-          <SelectValue placeholder="Genre" />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] max-h-64 overflow-y-auto">
-          <SelectItem value="all">All Genres</SelectItem>
-          {GENRES.map((g) => (
-            <SelectItem key={g} value={g}>
-              {g}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        onChange={(v) => handleChange("genre", v)}
+        options={GENRES}
+        placeholder="Genre"
+        allLabel="All Genres"
+        className="w-36"
+      />
 
-      <Select
+      <SearchableSelect
         value={instrumentType}
-        onValueChange={(v) => handleChange("instrument", v)}
-      >
-        <SelectTrigger className="w-36 bg-[#0a0a0a] border-[#2a2a2a] text-white">
-          <SelectValue placeholder="Instrument" />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] max-h-64 overflow-y-auto">
-          <SelectItem value="all">All Instruments</SelectItem>
-          {INSTRUMENTS.map((i) => (
-            <SelectItem key={i} value={i}>
-              {i}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        onChange={(v) => handleChange("instrument", v)}
+        options={INSTRUMENTS}
+        placeholder="Instrument"
+        allLabel="All Instruments"
+        className="w-36"
+      />
 
       <Select
         value={sampleType}
