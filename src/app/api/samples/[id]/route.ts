@@ -121,6 +121,7 @@ export async function PUT(
       "tags",
       "coverImageUrl",
       "status",
+      "isActive",
     ];
 
     const updateData: Record<string, unknown> = {};
