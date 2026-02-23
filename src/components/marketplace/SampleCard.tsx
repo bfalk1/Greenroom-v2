@@ -12,6 +12,7 @@ export interface Sample {
   name: string;
   creator_id: string;
   artist_name?: string;
+  creator_avatar?: string;
   genre: string;
   instrument_type?: string;
   sample_type?: string;
@@ -340,6 +341,7 @@ export function SampleCard({
           <img
             src={
               sample.cover_art_url ||
+              sample.creator_avatar ||
               "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=200&h=200&fit=crop"
             }
             alt={sample.name}
