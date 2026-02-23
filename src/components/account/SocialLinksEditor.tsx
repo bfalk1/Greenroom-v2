@@ -4,8 +4,6 @@ import React from "react";
 import { Input } from "@/components/ui/input";
 import {
   Instagram,
-  Music2,
-  Globe,
   Youtube,
 } from "lucide-react";
 
@@ -49,7 +47,6 @@ interface SocialLinks {
   soundcloud?: string;
   apple_music?: string;
   youtube?: string;
-  website?: string;
 }
 
 interface SocialLinksEditorProps {
@@ -65,7 +62,6 @@ const SOCIAL_PLATFORMS = [
   { key: "soundcloud", label: "SoundCloud", icon: SoundCloudIcon, placeholder: "https://soundcloud.com/username" },
   { key: "apple_music", label: "Apple Music", icon: AppleMusicIcon, placeholder: "https://music.apple.com/artist/..." },
   { key: "youtube", label: "YouTube", icon: Youtube, placeholder: "https://youtube.com/@channel" },
-  { key: "website", label: "Website", icon: Globe, placeholder: "https://yourwebsite.com" },
 ] as const;
 
 export function SocialLinksEditor({ socialLinks, onChange }: SocialLinksEditorProps) {

@@ -349,16 +349,18 @@ export default function ArtistPage({ params }: ArtistPageProps) {
             )}
             {artist.social_links && Object.keys(artist.social_links).length > 0 && (
               <div className="flex flex-wrap gap-3">
-                {Object.entries(artist.social_links).map(([platform, url]) => (
+                {Object.entries(artist.social_links)
+                  .filter(([platform]) => platform !== "website")
+                  .map(([platform, url]) => (
                   <a
                     key={platform}
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-sm text-[#a1a1a1] hover:text-white hover:border-[#00FF88]/50 transition-colors"
+                    className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#00FF88] hover:bg-[#00FF88]/10 hover:border-[#00FF88]/50 transition-colors"
+                    title={platform}
                   >
                     {getSocialIcon(platform)}
-                    <span className="capitalize">{platform}</span>
                   </a>
                 ))}
               </div>
