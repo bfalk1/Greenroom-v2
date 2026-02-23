@@ -301,7 +301,7 @@ export default function CreatorDashboardPage() {
                             variant="outline"
                             className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
                             onClick={() =>
-                              toast.info("Edit feature coming soon")
+                              router.push(`/creator/edit/${sample.id}`)
                             }
                           >
                             <Edit2 className="w-4 h-4" />

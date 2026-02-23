@@ -46,32 +46,8 @@ const INSTRUMENTS = [
   "Pad",
 ];
 
-const KEYS = [
-  "C Major",
-  "C Minor",
-  "C# Major",
-  "C# Minor",
-  "D Major",
-  "D Minor",
-  "D# Major",
-  "D# Minor",
-  "E Major",
-  "E Minor",
-  "F Major",
-  "F Minor",
-  "F# Major",
-  "F# Minor",
-  "G Major",
-  "G Minor",
-  "G# Major",
-  "G# Minor",
-  "A Major",
-  "A Minor",
-  "A# Major",
-  "A# Minor",
-  "B Major",
-  "B Minor",
-];
+const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const SCALES = ["Major", "Minor"];
 
 // Recommended filename format: SampleName_Type_Genre_Key_BPM.wav
 // Examples: Dark_Trap_Loop_Cm_140.wav, Kick_OneShot_Hip_Hop.wav
@@ -226,7 +202,8 @@ export default function CreatorUploadPage() {
     genre: "",
     instrumentType: "",
     sampleType: "LOOP" as "LOOP" | "ONE_SHOT",
-    key: "",
+    note: "",
+    scale: "",
     bpm: "",
     creditPrice: "1",
     tags: "",
@@ -265,11 +242,14 @@ export default function CreatorUploadPage() {
     if (parsed.name && !formData.name) {
       updates.name = parsed.name;
     }
-    if (parsed.key && !formData.key) {
-      // Match to our KEYS array
-      const matchedKey = KEYS.find(k => k.toLowerCase() === parsed.key!.toLowerCase());
-      if (matchedKey) {
-        updates.key = matchedKey;
+    if (parsed.key && !formData.note) {
+      // Parse key into note and scale (e.g. "C Minor" -> note: "C", scale: "Minor")
+      const parts = parsed.key.split(" ");
+      if (parts.length === 2) {
+        const matchedNote = NOTES.find(n => n.toLowerCase() === parts[0].toLowerCase());
+        const matchedScale = SCALES.find(s => s.toLowerCase() === parts[1].toLowerCase());
+        if (matchedNote) updates.note = matchedNote;
+        if (matchedScale) updates.scale = matchedScale;
       }
     }
     if (parsed.bpm && !formData.bpm) {
@@ -378,7 +358,7 @@ export default function CreatorUploadPage() {
           genre: formData.genre,
           instrumentType: formData.instrumentType,
           sampleType: formData.sampleType,
-          key: formData.key || null,
+          key: formData.note ? (formData.scale ? `${formData.note} ${formData.scale}` : formData.note) : null,
           bpm: formData.bpm || null,
           creditPrice: formData.creditPrice,
           tags: formData.tags,
@@ -501,8 +481,8 @@ export default function CreatorUploadPage() {
             </div>
           </div>
 
-          {/* Type, Key, BPM */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Type, Note, Scale, BPM */}
+          <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-2">
                 Sample Type <span className="text-red-500">*</span>
@@ -518,17 +498,34 @@ export default function CreatorUploadPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                Key
+                Note
               </label>
               <select
-                value={formData.key}
-                onChange={(e) => handleChange("key", e.target.value)}
+                value={formData.note}
+                onChange={(e) => handleChange("note", e.target.value)}
                 className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
               >
-                <option value="">Select Key</option>
-                {KEYS.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
+                <option value="">—</option>
+                {NOTES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                Scale
+              </label>
+              <select
+                value={formData.scale}
+                onChange={(e) => handleChange("scale", e.target.value)}
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+              >
+                <option value="">—</option>
+                {SCALES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
                   </option>
                 ))}
               </select>
