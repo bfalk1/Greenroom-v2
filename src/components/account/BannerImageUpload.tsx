@@ -3,44 +3,74 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 interface BannerImageUploadProps {
-  user: { creator_banner_url?: string | null };
+  userId: string;
+  currentUrl?: string | null;
   onUploadSuccess: (url?: string) => void;
 }
 
 export function BannerImageUpload({
-  user,
+  userId,
+  currentUrl,
   onUploadSuccess,
 }: BannerImageUploadProps) {
   const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState<string | null>(
-    user?.creator_banner_url || null
-  );
+  const [preview, setPreview] = useState<string | null>(currentUrl || null);
+  const supabase = createClient();
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      alert("Please select an image file");
+      toast.error("Please select an image file");
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      alert("Image must be smaller than 10MB");
+      toast.error("Image must be smaller than 10MB");
       return;
     }
 
     setUploading(true);
     try {
-      // TODO: Replace with Supabase storage upload
-      const url = URL.createObjectURL(file);
-      setPreview(url);
-      onUploadSuccess?.(url);
+      // Upload to Supabase storage
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${userId}/banner-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("banners")
+        .upload(filePath, file, { cacheControl: "3600", upsert: true });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("banners")
+        .getPublicUrl(filePath);
+
+      // Update user profile with banner URL
+      const res = await fetch("/api/user/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ banner_url: publicUrl }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update profile");
+      }
+
+      setPreview(publicUrl);
+      onUploadSuccess?.(publicUrl);
+      toast.success("Banner uploaded!");
     } catch (error) {
       console.error("Upload failed:", error);
-      alert("Failed to upload image");
+      toast.error("Failed to upload banner");
     } finally {
       setUploading(false);
     }

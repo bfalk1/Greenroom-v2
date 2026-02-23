@@ -425,7 +425,8 @@ export default function AccountPage() {
                 Banner Image
               </label>
               <BannerImageUpload
-                user={{ creator_banner_url: null }}
+                userId={user.id}
+                currentUrl={user.banner_url}
                 onUploadSuccess={() => refreshUser()}
               />
             </div>

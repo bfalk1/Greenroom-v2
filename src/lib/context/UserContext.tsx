@@ -15,6 +15,7 @@ export interface AppUser {
   username: string | null;
   artist_name: string | null;
   avatar_url: string | null;
+  banner_url: string | null;
   profile_completed: boolean;
 }
 
