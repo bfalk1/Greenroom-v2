@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Package } from "lucide-react";
+import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Package, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
@@ -92,7 +92,61 @@ export default function BatchUploadPage() {
   const [uploading, setUploading] = useState(false);
   const [defaultGenre, setDefaultGenre] = useState("Hip Hop");
   const [defaultInstrument, setDefaultInstrument] = useState("Drums");
+  const [defaultSampleType, setDefaultSampleType] = useState<"LOOP" | "ONE_SHOT">("LOOP");
+  const [defaultCreditPrice, setDefaultCreditPrice] = useState("100");
   const [extractingZip, setExtractingZip] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+
+  // Cleanup audio URL on unmount or when stopping
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
+  }, []);
+
+  const togglePreview = (sample: SampleToUpload) => {
+    // If already playing this sample, stop it
+    if (playingId === sample.id) {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+      setPlayingId(null);
+      return;
+    }
+
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+    }
+
+    // Create new audio from file
+    const url = URL.createObjectURL(sample.file);
+    audioUrlRef.current = url;
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    
+    audio.onended = () => {
+      setPlayingId(null);
+      URL.revokeObjectURL(url);
+      audioUrlRef.current = null;
+    };
+    
+    audio.play();
+    setPlayingId(sample.id);
+  };
 
   const handleFilesSelect = (files: FileList | null) => {
     if (!files) return;
@@ -114,10 +168,10 @@ export default function BatchUploadPage() {
         name: parsed.name,
         genre: defaultGenre,
         instrumentType: defaultInstrument,
-        sampleType: "LOOP",
+        sampleType: defaultSampleType,
         key: parsed.key,
         bpm: parsed.bpm,
-        creditPrice: "1",
+        creditPrice: defaultCreditPrice,
         status: "pending",
       };
     });
@@ -165,10 +219,10 @@ export default function BatchUploadPage() {
           name: parsed.name,
           genre: defaultGenre,
           instrumentType: defaultInstrument,
-          sampleType: "LOOP",
+          sampleType: defaultSampleType,
           key: parsed.key,
           bpm: parsed.bpm,
-          creditPrice: "1",
+          creditPrice: defaultCreditPrice,
           status: "pending",
         };
       });
@@ -198,6 +252,8 @@ export default function BatchUploadPage() {
       ...s,
       genre: defaultGenre,
       instrumentType: defaultInstrument,
+      sampleType: defaultSampleType,
+      creditPrice: defaultCreditPrice,
     })));
     toast.success("Applied defaults to all samples");
   };
@@ -385,13 +441,17 @@ export default function BatchUploadPage() {
             <div className="flex flex-wrap gap-4 items-end">
               <div>
                 <label className="block text-xs text-[#a1a1a1] mb-1">Genre</label>
-                <select
+                <input
+                  type="text"
+                  list="genre-list"
                   value={defaultGenre}
                   onChange={(e) => setDefaultGenre(e.target.value)}
-                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
-                >
-                  {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm w-32"
+                  placeholder="Type or select..."
+                />
+                <datalist id="genre-list">
+                  {GENRES.map(g => <option key={g} value={g} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-xs text-[#a1a1a1] mb-1">Instrument</label>
@@ -402,6 +462,27 @@ export default function BatchUploadPage() {
                 >
                   {INSTRUMENTS.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#a1a1a1] mb-1">Type</label>
+                <select
+                  value={defaultSampleType}
+                  onChange={(e) => setDefaultSampleType(e.target.value as "LOOP" | "ONE_SHOT")}
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
+                >
+                  <option value="LOOP">Loop</option>
+                  <option value="ONE_SHOT">One Shot</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[#a1a1a1] mb-1">Credits</label>
+                <Input
+                  type="number"
+                  value={defaultCreditPrice}
+                  onChange={(e) => setDefaultCreditPrice(e.target.value)}
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-9 w-20"
+                  min="1"
+                />
               </div>
               <Button
                 onClick={applyDefaultsToAll}
@@ -442,13 +523,30 @@ export default function BatchUploadPage() {
                     sample.status === "error" ? "bg-red-500/5" : ""
                   }`}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    {/* Preview Button */}
+                    <button
+                      onClick={() => togglePreview(sample)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-full transition flex-shrink-0 ${
+                        playingId === sample.id 
+                          ? "bg-[#00FF88] text-black" 
+                          : "bg-[#2a2a2a] text-[#a1a1a1] hover:bg-[#3a3a3a] hover:text-white"
+                      }`}
+                      title={playingId === sample.id ? "Stop preview" : "Preview sample"}
+                    >
+                      {playingId === sample.id ? (
+                        <Pause className="w-4 h-4" />
+                      ) : (
+                        <Play className="w-4 h-4 ml-0.5" />
+                      )}
+                    </button>
+                    
                     {/* Status Icon */}
-                    <div className="w-8 flex-shrink-0">
-                      {sample.status === "uploading" && <Loader2 className="w-5 h-5 text-[#00FF88] animate-spin" />}
-                      {sample.status === "done" && <CheckCircle className="w-5 h-5 text-[#00FF88]" />}
-                      {sample.status === "error" && <AlertCircle className="w-5 h-5 text-red-400" />}
-                      {sample.status === "pending" && <Music className="w-5 h-5 text-[#a1a1a1]" />}
+                    <div className="w-6 flex-shrink-0">
+                      {sample.status === "uploading" && <Loader2 className="w-4 h-4 text-[#00FF88] animate-spin" />}
+                      {sample.status === "done" && <CheckCircle className="w-4 h-4 text-[#00FF88]" />}
+                      {sample.status === "error" && <AlertCircle className="w-4 h-4 text-red-400" />}
+                      {sample.status === "pending" && <Music className="w-4 h-4 text-[#666]" />}
                     </div>
                     
                     {/* Name */}
@@ -461,15 +559,19 @@ export default function BatchUploadPage() {
                       />
                     </div>
                     
-                    {/* Genre */}
-                    <select
+                    {/* Genre (typeable) */}
+                    <input
+                      type="text"
+                      list={`genre-list-${sample.id}`}
                       value={sample.genre}
                       onChange={(e) => updateSample(sample.id, "genre", e.target.value)}
                       disabled={sample.status !== "pending"}
-                      className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-white text-sm w-28"
-                    >
-                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
+                      className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-white text-sm w-24"
+                      placeholder="Genre"
+                    />
+                    <datalist id={`genre-list-${sample.id}`}>
+                      {GENRES.map(g => <option key={g} value={g} />)}
+                    </datalist>
                     
                     {/* Instrument */}
                     <select
@@ -479,6 +581,17 @@ export default function BatchUploadPage() {
                       className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-white text-sm w-24"
                     >
                       {INSTRUMENTS.map(i => <option key={i} value={i}>{i}</option>)}
+                    </select>
+                    
+                    {/* Sample Type (Loop/One-Shot) */}
+                    <select
+                      value={sample.sampleType}
+                      onChange={(e) => updateSample(sample.id, "sampleType", e.target.value)}
+                      disabled={sample.status !== "pending"}
+                      className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-white text-sm w-24"
+                    >
+                      <option value="LOOP">Loop</option>
+                      <option value="ONE_SHOT">One Shot</option>
                     </select>
                     
                     {/* Key */}
@@ -497,6 +610,17 @@ export default function BatchUploadPage() {
                       placeholder="BPM"
                       disabled={sample.status !== "pending"}
                       className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-16"
+                    />
+                    
+                    {/* Credit Price */}
+                    <Input
+                      type="number"
+                      value={sample.creditPrice}
+                      onChange={(e) => updateSample(sample.id, "creditPrice", e.target.value)}
+                      placeholder="Credits"
+                      disabled={sample.status !== "pending"}
+                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-16"
+                      min="1"
                     />
                     
                     {/* Remove */}
