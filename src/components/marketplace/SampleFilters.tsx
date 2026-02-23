@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Filter, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { KeySelector } from "@/components/ui/KeySelector";
 
 const INSTRUMENTS = [
   "Drums",
@@ -237,25 +238,12 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
         </SelectContent>
       </Select>
 
-      <Select
-        value={key}
-        onValueChange={(v) => handleChange("key", v)}
-      >
-        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
-          <SelectValue placeholder="Key" />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] max-h-64 overflow-y-auto">
-          <SelectItem value="all">All Keys</SelectItem>
-          <SelectItem value="Major">Major</SelectItem>
-          <SelectItem value="Minor">Minor</SelectItem>
-          <div className="h-px bg-[#2a2a2a] my-1" />
-          {KEYS.map((k) => (
-            <SelectItem key={k} value={k}>
-              {k}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <KeySelector
+        value={key === "all" ? "" : key}
+        onChange={(v) => handleChange("key", v || "all")}
+        placeholder="All Keys"
+        className="w-32"
+      />
 
       <Select
         value={sortBy}

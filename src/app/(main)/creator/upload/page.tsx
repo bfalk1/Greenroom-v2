@@ -9,6 +9,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { GenreInput } from "@/components/creator/GenreInput";
+import { KeySelector } from "@/components/ui/KeySelector";
 
 const GENRES = [
   "Hip Hop",
@@ -202,8 +203,7 @@ export default function CreatorUploadPage() {
     genre: "",
     instrumentType: "",
     sampleType: "LOOP" as "LOOP" | "ONE_SHOT",
-    note: "",
-    scale: "",
+    key: "",
     bpm: "",
     creditPrice: "1",
     tags: "",
@@ -242,15 +242,8 @@ export default function CreatorUploadPage() {
     if (parsed.name && !formData.name) {
       updates.name = parsed.name;
     }
-    if (parsed.key && !formData.note) {
-      // Parse key into note and scale (e.g. "C Minor" -> note: "C", scale: "Minor")
-      const parts = parsed.key.split(" ");
-      if (parts.length === 2) {
-        const matchedNote = NOTES.find(n => n.toLowerCase() === parts[0].toLowerCase());
-        const matchedScale = SCALES.find(s => s.toLowerCase() === parts[1].toLowerCase());
-        if (matchedNote) updates.note = matchedNote;
-        if (matchedScale) updates.scale = matchedScale;
-      }
+    if (parsed.key && !formData.key) {
+      updates.key = parsed.key;
     }
     if (parsed.bpm && !formData.bpm) {
       updates.bpm = parsed.bpm;
@@ -358,7 +351,7 @@ export default function CreatorUploadPage() {
           genre: formData.genre,
           instrumentType: formData.instrumentType,
           sampleType: formData.sampleType,
-          key: formData.note ? (formData.scale ? `${formData.note} ${formData.scale}` : formData.note) : null,
+          key: formData.key || null,
           bpm: formData.bpm || null,
           creditPrice: formData.creditPrice,
           tags: formData.tags,
@@ -481,8 +474,8 @@ export default function CreatorUploadPage() {
             </div>
           </div>
 
-          {/* Type, Note, Scale, BPM */}
-          <div className="grid grid-cols-4 gap-4">
+          {/* Type, Key, BPM */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-2">
                 Sample Type <span className="text-red-500">*</span>
@@ -498,37 +491,12 @@ export default function CreatorUploadPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                Note
+                Key
               </label>
-              <select
-                value={formData.note}
-                onChange={(e) => handleChange("note", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
-              >
-                <option value="">—</option>
-                {NOTES.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Scale
-              </label>
-              <select
-                value={formData.scale}
-                onChange={(e) => handleChange("scale", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
-              >
-                <option value="">—</option>
-                {SCALES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+              <KeySelector
+                value={formData.key}
+                onChange={(v) => handleChange("key", v)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">

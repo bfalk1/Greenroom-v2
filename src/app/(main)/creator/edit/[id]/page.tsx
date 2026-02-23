@@ -8,9 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { GenreInput } from "@/components/creator/GenreInput";
-
-const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-const SCALES = ["Major", "Minor"];
+import { KeySelector } from "@/components/ui/KeySelector";
 const INSTRUMENTS = [
   "Drums", "Bass", "Synth", "Guitar", "Piano", "Vocals", "FX", "Strings", "Brass", "Pad",
 ];
@@ -28,8 +26,7 @@ export default function EditSamplePage() {
     genre: "",
     instrumentType: "",
     sampleType: "LOOP" as "LOOP" | "ONE_SHOT",
-    note: "",
-    scale: "",
+    key: "",
     bpm: "",
     creditPrice: "1",
     tags: "",
@@ -48,22 +45,12 @@ export default function EditSamplePage() {
       const data = await res.json();
       const sample = data.sample;
 
-      // Parse key into note and scale
-      let note = "";
-      let scale = "";
-      if (sample.key) {
-        const parts = sample.key.split(" ");
-        note = parts[0] || "";
-        scale = parts[1] || "";
-      }
-
       setFormData({
         name: sample.name || "",
         genre: sample.genre || "",
         instrumentType: sample.instrument_type || "",
         sampleType: sample.sample_type || "LOOP",
-        note,
-        scale,
+        key: sample.key || "",
         bpm: sample.bpm?.toString() || "",
         creditPrice: sample.credit_price?.toString() || "1",
         tags: Array.isArray(sample.tags) ? sample.tags.join(", ") : "",
@@ -97,7 +84,7 @@ export default function EditSamplePage() {
           genre: formData.genre,
           instrumentType: formData.instrumentType,
           sampleType: formData.sampleType,
-          key: formData.note ? (formData.scale ? `${formData.note} ${formData.scale}` : formData.note) : null,
+          key: formData.key || null,
           bpm: formData.bpm || null,
           creditPrice: formData.creditPrice,
           tags: formData.tags,
@@ -197,8 +184,8 @@ export default function EditSamplePage() {
             </div>
           </div>
 
-          {/* Type, Note, Scale, BPM */}
-          <div className="grid grid-cols-4 gap-4">
+          {/* Type, Key, BPM */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-2">
                 Sample Type
@@ -214,33 +201,12 @@ export default function EditSamplePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                Note
+                Key
               </label>
-              <select
-                value={formData.note}
-                onChange={(e) => handleChange("note", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
-              >
-                <option value="">—</option>
-                {NOTES.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Scale
-              </label>
-              <select
-                value={formData.scale}
-                onChange={(e) => handleChange("scale", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
-              >
-                <option value="">—</option>
-                {SCALES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <KeySelector
+                value={formData.key}
+                onChange={(v) => handleChange("key", v)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
