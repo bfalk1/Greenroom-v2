@@ -110,6 +110,15 @@ export async function PUT(
     }
 
     const body = await request.json();
+
+    // Creators cannot publish their own samples - must go through moderation
+    if (body.status === "PUBLISHED") {
+      return NextResponse.json(
+        { error: "Samples must be approved by a moderator to be published" },
+        { status: 403 }
+      );
+    }
+
     const allowedFields = [
       "name",
       "genre",
@@ -149,6 +158,83 @@ export async function PUT(
     console.error("PUT /api/samples/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update sample" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/samples/[id] — CREATOR can delete own samples only
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    const supabase = await createClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Must be CREATOR role
+    const dbUser = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: { role: true },
+    });
+
+    if (!dbUser || dbUser.role !== "CREATOR") {
+      return NextResponse.json(
+        { error: "Only creators can delete samples" },
+        { status: 403 }
+      );
+    }
+
+    const existing = await prisma.sample.findUnique({ where: { id } });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Sample not found" }, { status: 404 });
+    }
+
+    // Creator can only delete their OWN samples
+    if (existing.creatorId !== authUser.id) {
+      return NextResponse.json(
+        { error: "You can only delete your own samples" },
+        { status: 403 }
+      );
+    }
+
+    // Delete related records first (cascade)
+    // Get purchase IDs for this sample
+    const purchases = await prisma.purchase.findMany({
+      where: { sampleId: id },
+      select: { id: true },
+    });
+    const purchaseIds = purchases.map((p) => p.id);
+
+    // Delete downloads linked to these purchases
+    if (purchaseIds.length > 0) {
+      await prisma.download.deleteMany({
+        where: { purchaseId: { in: purchaseIds } },
+      });
+    }
+
+    // Delete purchases, ratings, favorites for this sample
+    await prisma.purchase.deleteMany({ where: { sampleId: id } });
+    await prisma.rating.deleteMany({ where: { sampleId: id } });
+    await prisma.favorite.deleteMany({ where: { sampleId: id } });
+
+    // Now delete the sample
+    await prisma.sample.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: "Sample deleted" });
+  } catch (error) {
+    console.error("DELETE /api/samples/[id] error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete sample" },
       { status: 500 }
     );
   }

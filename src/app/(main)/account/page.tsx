@@ -11,6 +11,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   CreditCard,
+  Pencil,
+  X,
 } from "lucide-react";
 import { CreditPackages } from "@/components/account/CreditPackages";
 import { ProfilePictureUpload } from "@/components/account/ProfilePictureUpload";
@@ -63,6 +65,12 @@ export default function AccountPage() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(
     null
   );
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailFormData, setEmailFormData] = useState({
+    currentPassword: "",
+    newEmail: "",
+  });
+  const [emailSaving, setEmailSaving] = useState(false);
 
   // Set form data when user loads
   useEffect(() => {
@@ -172,6 +180,41 @@ export default function AccountPage() {
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const handleEmailChange = async () => {
+    if (!emailFormData.currentPassword || !emailFormData.newEmail) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+
+    setEmailSaving(true);
+    try {
+      const res = await fetch("/api/user/email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newEmail: emailFormData.newEmail,
+          currentPassword: emailFormData.currentPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success("Email updated successfully!");
+        setEmailModalOpen(false);
+        setEmailFormData({ currentPassword: "", newEmail: "" });
+        refreshUser();
+      } else {
+        toast.error(data.error || "Failed to update email");
+      }
+    } catch (error) {
+      console.error("Error changing email:", error);
+      toast.error("Failed to update email");
+    } finally {
+      setEmailSaving(false);
+    }
   };
 
   if (userLoading) {
@@ -393,15 +436,22 @@ export default function AccountPage() {
               <label className="block text-sm font-medium text-white mb-2">
                 Email
               </label>
-              <Input
-                type="email"
-                value={user.email}
-                disabled
-                className="bg-[#0a0a0a] border-[#2a2a2a] text-[#a1a1a1] cursor-not-allowed"
-              />
-              <p className="text-xs text-[#a1a1a1] mt-1">
-                Email cannot be changed
-              </p>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  value={user.email}
+                  disabled
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-[#a1a1a1] cursor-not-allowed flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEmailModalOpen(true)}
+                  className="border-[#2a2a2a] hover:bg-[#2a2a2a] text-white px-3"
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
 
             <div>
@@ -502,6 +552,92 @@ export default function AccountPage() {
           </Button>
         </div>
       </div>
+
+      {/* Email Change Modal */}
+      {emailModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-white">Change Email</h3>
+              <button
+                onClick={() => {
+                  setEmailModalOpen(false);
+                  setEmailFormData({ currentPassword: "", newEmail: "" });
+                }}
+                className="text-[#a1a1a1] hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  Current Password
+                </label>
+                <Input
+                  type="password"
+                  value={emailFormData.currentPassword}
+                  onChange={(e) =>
+                    setEmailFormData({
+                      ...emailFormData,
+                      currentPassword: e.target.value,
+                    })
+                  }
+                  placeholder="Enter your current password"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  New Email
+                </label>
+                <Input
+                  type="email"
+                  value={emailFormData.newEmail}
+                  onChange={(e) =>
+                    setEmailFormData({
+                      ...emailFormData,
+                      newEmail: e.target.value,
+                    })
+                  }
+                  placeholder="Enter your new email"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEmailModalOpen(false);
+                    setEmailFormData({ currentPassword: "", newEmail: "" });
+                  }}
+                  className="flex-1 border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleEmailChange}
+                  disabled={emailSaving}
+                  className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold"
+                >
+                  {emailSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Update Email"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

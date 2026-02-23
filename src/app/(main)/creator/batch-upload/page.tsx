@@ -9,6 +9,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import JSZip from "jszip";
+import { KeySelector } from "@/components/ui/KeySelector";
 
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
@@ -93,7 +94,7 @@ export default function BatchUploadPage() {
   const [defaultGenre, setDefaultGenre] = useState("Hip Hop");
   const [defaultInstrument, setDefaultInstrument] = useState("Drums");
   const [defaultSampleType, setDefaultSampleType] = useState<"LOOP" | "ONE_SHOT">("LOOP");
-  const [defaultCreditPrice, setDefaultCreditPrice] = useState("100");
+  const [defaultCreditPrice, setDefaultCreditPrice] = useState("1");
   const [extractingZip, setExtractingZip] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -251,8 +252,6 @@ export default function BatchUploadPage() {
     setSamples(prev => prev.map(s => ({
       ...s,
       genre: defaultGenre,
-      instrumentType: defaultInstrument,
-      sampleType: defaultSampleType,
       creditPrice: defaultCreditPrice,
     })));
     toast.success("Applied defaults to all samples");
@@ -454,27 +453,6 @@ export default function BatchUploadPage() {
                 </datalist>
               </div>
               <div>
-                <label className="block text-xs text-[#a1a1a1] mb-1">Instrument</label>
-                <select
-                  value={defaultInstrument}
-                  onChange={(e) => setDefaultInstrument(e.target.value)}
-                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
-                >
-                  {INSTRUMENTS.map(i => <option key={i} value={i}>{i}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-[#a1a1a1] mb-1">Type</label>
-                <select
-                  value={defaultSampleType}
-                  onChange={(e) => setDefaultSampleType(e.target.value as "LOOP" | "ONE_SHOT")}
-                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-3 py-2 text-white text-sm"
-                >
-                  <option value="LOOP">Loop</option>
-                  <option value="ONE_SHOT">One Shot</option>
-                </select>
-              </div>
-              <div>
                 <label className="block text-xs text-[#a1a1a1] mb-1">Credits</label>
                 <Input
                   type="number"
@@ -595,13 +573,14 @@ export default function BatchUploadPage() {
                     </select>
                     
                     {/* Key */}
-                    <Input
-                      value={sample.key}
-                      onChange={(e) => updateSample(sample.id, "key", e.target.value)}
-                      placeholder="Key"
-                      disabled={sample.status !== "pending"}
-                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-20"
-                    />
+                    <div className="w-24">
+                      <KeySelector
+                        value={sample.key}
+                        onChange={(v) => updateSample(sample.id, "key", v)}
+                        placeholder="Key"
+                        className={sample.status !== "pending" ? "opacity-50 pointer-events-none" : ""}
+                      />
+                    </div>
                     
                     {/* BPM */}
                     <Input

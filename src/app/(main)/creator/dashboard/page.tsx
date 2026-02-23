@@ -74,30 +74,28 @@ export default function CreatorDashboardPage() {
     if (!confirm("Delete this sample? This cannot be undone.")) return;
     try {
       const res = await fetch(`/api/samples/${sampleId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: false, status: "DRAFT" }),
+        method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete");
-      toast.success("Sample removed");
+      toast.success("Sample deleted");
       fetchSamples();
     } catch {
       toast.error("Failed to delete sample");
     }
   };
 
-  const handlePublish = async (sampleId: string) => {
+  const handleSubmitForReview = async (sampleId: string) => {
     try {
       const res = await fetch(`/api/samples/${sampleId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "PUBLISHED" }),
+        body: JSON.stringify({ status: "REVIEW" }),
       });
-      if (!res.ok) throw new Error("Failed to publish");
-      toast.success("Sample published!");
+      if (!res.ok) throw new Error("Failed to submit");
+      toast.success("Sample submitted for review!");
       fetchSamples();
     } catch {
-      toast.error("Failed to publish sample");
+      toast.error("Failed to submit sample");
     }
   };
 
@@ -289,9 +287,9 @@ export default function CreatorDashboardPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handlePublish(sample.id)}
+                              onClick={() => handleSubmitForReview(sample.id)}
                               className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
-                              title="Publish"
+                              title="Submit for Review"
                             >
                               <Eye className="w-4 h-4" />
                             </Button>
