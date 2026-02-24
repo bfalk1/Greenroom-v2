@@ -153,6 +153,7 @@ export async function POST(request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
+      select: { id: true, role: true, isWhitelisted: true },
     });
 
     if (!dbUser || dbUser.role !== "CREATOR") {
@@ -161,6 +162,9 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+
+    // Whitelisted creators get auto-published, others go to review
+    const initialStatus = dbUser.isWhitelisted ? "PUBLISHED" : "REVIEW";
 
     const body = await request.json();
     const {
@@ -211,7 +215,7 @@ export async function POST(request: NextRequest) {
         fileUrl,
         previewUrl: previewUrl || null,
         coverImageUrl: coverImageUrl || null,
-        status: "PUBLISHED",
+        status: initialStatus,
         isActive: true,
       },
     });
