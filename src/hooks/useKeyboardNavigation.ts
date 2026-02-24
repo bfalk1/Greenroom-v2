@@ -46,6 +46,8 @@ export function useKeyboardNavigation<T>(
           setSelectedIndex((prev) => {
             const newIndex = prev <= 0 ? items.length - 1 : prev - 1;
             onSelect?.(newIndex);
+            // Auto-play when navigating
+            onPlay?.(newIndex);
             return newIndex;
           });
           break;
@@ -55,6 +57,8 @@ export function useKeyboardNavigation<T>(
           setSelectedIndex((prev) => {
             const newIndex = prev >= items.length - 1 ? 0 : prev + 1;
             onSelect?.(newIndex);
+            // Auto-play when navigating
+            onPlay?.(newIndex);
             return newIndex;
           });
           break;
