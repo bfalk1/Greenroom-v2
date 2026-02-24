@@ -6,11 +6,12 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.49.1",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "prisma": "^5.22.0"
   }
 }
