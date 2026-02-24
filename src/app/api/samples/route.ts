@@ -233,6 +233,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Trigger preview generation (fire and forget)
+    const workerUrl = process.env.PREVIEW_WORKER_URL;
+    if (workerUrl) {
+      fetch(`${workerUrl}/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.PREVIEW_WORKER_SECRET || ""}`,
+        },
+        body: JSON.stringify({ sampleId: sample.id }),
+      }).catch((err) => {
+        console.error("Failed to trigger preview generation:", err);
+      });
+    }
+
     return NextResponse.json({ sample }, { status: 201 });
   } catch (error) {
     console.error("POST /api/samples error:", error);
