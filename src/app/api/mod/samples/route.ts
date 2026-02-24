@@ -163,6 +163,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (action === "approve") {
+      // Check if preview is ready before allowing approval
+      if (!sample.previewUrl || !sample.previewUrl.startsWith("previews/")) {
+        return NextResponse.json({ 
+          error: "Cannot approve: preview not ready yet. Please wait for preview generation." 
+        }, { status: 400 });
+      }
+
       await prisma.sample.update({
         where: { id: sampleId },
         data: { status: "PUBLISHED" },
