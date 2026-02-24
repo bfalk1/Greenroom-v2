@@ -97,7 +97,7 @@ export function SampleModerationPanel({
 
         <div className="mb-6">
           <p className="text-xs text-[#a1a1a1] mb-2">Preview</p>
-          <AudioPlayer sampleId={sample.id} fileUrl={sample.file_url} />
+          <AudioPlayer sampleId={sample.id} fileUrl={sample.file_url} useFullAudio />
         </div>
 
         {sample.tags && sample.tags.length > 0 && (

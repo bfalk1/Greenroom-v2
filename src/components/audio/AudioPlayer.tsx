@@ -8,9 +8,10 @@ interface AudioPlayerProps {
   fileUrl?: string;
   sampleId?: string;
   duration?: number;
+  useFullAudio?: boolean; // For mod/admin - use full file instead of preview
 }
 
-export function AudioPlayer({ fileUrl, sampleId, duration = 0 }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -34,9 +35,12 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0 }: AudioPlayerProp
   }, []);
 
   const getSignedUrl = async () => {
-    // If we have a sampleId, use the preview API
     if (sampleId) {
-      const res = await fetch(`/api/samples/${sampleId}/preview`);
+      // Use full audio endpoint for mods/admins, preview for regular users
+      const endpoint = useFullAudio 
+        ? `/api/mod/samples/${sampleId}/audio`
+        : `/api/samples/${sampleId}/preview`;
+      const res = await fetch(endpoint);
       const data = await res.json();
       if (data.url) return data.url;
     }
