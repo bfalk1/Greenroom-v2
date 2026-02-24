@@ -72,6 +72,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           username: null,
           artist_name: null,
           avatar_url: null,
+          banner_url: null,
           profile_completed: false,
         });
       }
