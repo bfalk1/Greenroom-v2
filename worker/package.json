@@ -1,0 +1,16 @@
+{
+  "name": "greenroom-preview-worker",
+  "version": "1.0.0",
+  "description": "Generates audio previews for Greenroom samples",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "node-cron": "^3.0.3"
+  }
+}
