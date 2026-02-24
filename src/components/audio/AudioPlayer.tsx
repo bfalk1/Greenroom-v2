@@ -1,18 +1,21 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Play, Pause, Volume2 } from "lucide-react";
+import { Play, Pause, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface AudioPlayerProps {
   fileUrl?: string;
+  sampleId?: string;
   duration?: number;
 }
 
-export function AudioPlayer({ fileUrl, duration = 0 }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, sampleId, duration = 0 }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -30,11 +33,52 @@ export function AudioPlayer({ fileUrl, duration = 0 }: AudioPlayerProps) {
     };
   }, []);
 
-  const togglePlay = () => {
-    if (!fileUrl) {
+  const getSignedUrl = async () => {
+    // If we have a sampleId, use the preview API
+    if (sampleId) {
+      const res = await fetch(`/api/samples/${sampleId}/preview`);
+      const data = await res.json();
+      if (data.url) return data.url;
+    }
+    // Fall back to direct URL if it's already a full URL
+    if (fileUrl?.startsWith("http")) return fileUrl;
+    return null;
+  };
+
+  const togglePlay = async () => {
+    if (!sampleId && !fileUrl) {
       alert("Audio file not available");
       return;
     }
+
+    // If we don't have a signed URL yet, fetch it
+    if (!signedUrl) {
+      setIsLoading(true);
+      try {
+        const url = await getSignedUrl();
+        if (!url) {
+          alert("Failed to load audio");
+          setIsLoading(false);
+          return;
+        }
+        setSignedUrl(url);
+        // Wait for audio to be ready
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.load();
+          await audioRef.current.play();
+          setIsPlaying(true);
+        }
+      } catch (err) {
+        console.error("Failed to play:", err);
+        alert("Failed to play audio");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Already have URL, just toggle play/pause
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
@@ -70,14 +114,17 @@ export function AudioPlayer({ fileUrl, duration = 0 }: AudioPlayerProps) {
 
   return (
     <div className="bg-[#1a1a1a] rounded-lg p-6 border border-[#2a2a2a]">
-      <audio ref={audioRef} src={fileUrl} />
+      <audio ref={audioRef} />
 
       <div className="flex items-center gap-4 mb-4">
         <Button
           onClick={togglePlay}
+          disabled={isLoading}
           className="w-12 h-12 rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] flex items-center justify-center"
         >
-          {isPlaying ? (
+          {isLoading ? (
+            <Loader2 className="w-6 h-6 animate-spin" />
+          ) : isPlaying ? (
             <Pause className="w-6 h-6 fill-current" />
           ) : (
             <Play className="w-6 h-6 fill-current ml-0.5" />

@@ -19,7 +19,7 @@ export async function GET(
     }
 
     const sample = await prisma.sample.findUnique({
-      where: { id, status: "PUBLISHED", isActive: true },
+      where: { id, status: { in: ["PUBLISHED", "REVIEW"] }, isActive: true },
       select: { previewUrl: true, fileUrl: true },
     });
 
