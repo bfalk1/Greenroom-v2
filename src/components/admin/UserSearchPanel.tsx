@@ -29,6 +29,7 @@ interface SearchUser {
   credits: number;
   role: string;
   payoutRate: number | null;
+  isWhitelisted: boolean;
 }
 
 export function UserSearchPanel() {
@@ -41,6 +42,7 @@ export function UserSearchPanel() {
   const [adjusting, setAdjusting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState(false);
   const [updatingPayout, setUpdatingPayout] = useState(false);
+  const [updatingWhitelist, setUpdatingWhitelist] = useState(false);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -175,6 +177,39 @@ export function UserSearchPanel() {
       toast.error(error instanceof Error ? error.message : "Failed to update payout rate");
     } finally {
       setUpdatingPayout(false);
+    }
+  };
+
+  const handleToggleWhitelist = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setUpdatingWhitelist(true);
+      const res = await fetch(`/api/admin/creators/${selectedUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isWhitelisted: !selectedUser.isWhitelisted,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update whitelist");
+      }
+
+      const newStatus = !selectedUser.isWhitelisted;
+      const updatedUser = { ...selectedUser, isWhitelisted: newStatus };
+      
+      setSelectedUser(updatedUser);
+      setSearchResults(results =>
+        results.map(u => u.id === updatedUser.id ? updatedUser : u)
+      );
+      toast.success(newStatus ? "Creator whitelisted - samples auto-publish" : "Creator removed from whitelist");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update whitelist");
+    } finally {
+      setUpdatingWhitelist(false);
     }
   };
 
@@ -316,6 +351,36 @@ export function UserSearchPanel() {
                     Admin: Full access | Moderator: Content moderation | Creator: Can upload samples | User: Standard access
                   </p>
                 </div>
+
+                {/* Whitelist Toggle (Creators only) */}
+                {isCreator && (
+                  <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-[#a1a1a1]">
+                        <Shield className="w-5 h-5 text-[#00FF88]" />
+                        <span>Whitelist Status</span>
+                      </div>
+                      <Button
+                        onClick={handleToggleWhitelist}
+                        disabled={updatingWhitelist}
+                        className={selectedUser.isWhitelisted 
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30" 
+                          : "bg-[#2a2a2a] text-[#a1a1a1] hover:text-white hover:bg-[#3a3a3a]"
+                        }
+                      >
+                        {updatingWhitelist ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : (
+                          <Shield className="w-4 h-4 mr-2" />
+                        )}
+                        {selectedUser.isWhitelisted ? "Whitelisted" : "Not Whitelisted"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-[#a1a1a1]">
+                      Whitelisted creators can upload samples that are automatically published without mod review.
+                    </p>
+                  </div>
+                )}
 
                 {/* Payout Rate (Creators only) */}
                 {(isCreator || selectedUser.payoutRate !== null) && (

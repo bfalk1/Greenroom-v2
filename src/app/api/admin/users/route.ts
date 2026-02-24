@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         credits: true,
         role: true,
         payoutRate: true,
+        isWhitelisted: true,
         createdAt: true,
       },
       take: 20,
@@ -149,9 +150,11 @@ export async function PATCH(request: NextRequest) {
         username: true,
         fullName: true,
         artistName: true,
+        avatarUrl: true,
         credits: true,
         role: true,
         payoutRate: true,
+        isWhitelisted: true,
       },
     });
 
