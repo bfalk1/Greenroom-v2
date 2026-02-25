@@ -359,46 +359,47 @@ export default function ModSamplesPage() {
               samples.map((sample) => {
                 const panelSample = mapSampleForPanel(sample);
                 return (
-                  <div key={sample.id} className="relative">
-                    <SampleModerationPanel
-                      sample={panelSample}
-                      creator={{
-                        full_name:
-                          sample.creator.artistName ||
-                          sample.creator.fullName ||
-                          sample.creator.username ||
-                          "Unknown",
-                      }}
-                      onModerate={() =>
-                        handleSampleModerate(sample.id, "approve")
-                      }
-                    />
-                    <div className="absolute top-4 right-4 flex gap-2">
-                      {sample.creator.isWhitelisted && (
-                        <span className="px-2 py-1 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/30">
-                          <Shield className="w-3 h-3 inline mr-1" />
-                          Whitelisted
-                        </span>
-                      )}
-                      <Button
-                        onClick={() => setEditingSample(panelSample)}
-                        className="bg-[#2a2a2a] hover:bg-[#3a3a3a]"
-                        size="sm"
-                      >
-                        Edit
-                      </Button>
-                      {!sample.creator.isFlagged && (
+                  <SampleModerationPanel
+                    key={sample.id}
+                    sample={panelSample}
+                    creator={{
+                      full_name:
+                        sample.creator.artistName ||
+                        sample.creator.fullName ||
+                        sample.creator.username ||
+                        "Unknown",
+                    }}
+                    onModerate={() =>
+                      handleSampleModerate(sample.id, "approve")
+                    }
+                    actions={
+                      <>
+                        {sample.creator.isWhitelisted && (
+                          <span className="px-2 py-1 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/30">
+                            <Shield className="w-3 h-3 inline mr-1" />
+                            Whitelisted
+                          </span>
+                        )}
                         <Button
-                          onClick={() => setFlaggingCreator(sample.creatorId)}
-                          variant="outline"
+                          onClick={() => setEditingSample(panelSample)}
+                          className="bg-[#2a2a2a] hover:bg-[#3a3a3a]"
                           size="sm"
-                          className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
                         >
-                          <Flag className="w-4 h-4" />
+                          Edit
                         </Button>
-                      )}
-                    </div>
-                  </div>
+                        {!sample.creator.isFlagged && (
+                          <Button
+                            onClick={() => setFlaggingCreator(sample.creatorId)}
+                            variant="outline"
+                            size="sm"
+                            className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+                          >
+                            <Flag className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
                 );
               })
             ) : (

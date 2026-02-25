@@ -22,12 +22,14 @@ interface SampleModerationPanelProps {
   };
   creator?: { full_name: string };
   onModerate: () => void;
+  actions?: React.ReactNode;
 }
 
 export function SampleModerationPanel({
   sample,
   creator,
   onModerate,
+  actions,
 }: SampleModerationPanelProps) {
   const [submitting, setSubmitting] = useState(false);
 
@@ -69,9 +71,9 @@ export function SampleModerationPanel({
               by {creator?.full_name || "Unknown"}
             </p>
           </div>
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-[#2a2a2a] text-[#a1a1a1]">
-            {sample.status}
-          </span>
+          <div className="flex items-center gap-2">
+            {actions}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-6">
