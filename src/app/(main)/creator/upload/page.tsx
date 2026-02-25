@@ -236,10 +236,11 @@ export default function CreatorUploadPage() {
     const parsed = parseFilename(file.name);
     setFilenameWarning(parsed.warning);
     
-    // Auto-fill form fields from filename if not already set
+    // Auto-fill form fields from filename
     const updates: Partial<typeof formData> = {};
     
-    if (parsed.name && !formData.name) {
+    // Always use filename as sample name
+    if (parsed.name) {
       updates.name = parsed.name;
     }
     if (parsed.key && !formData.key) {
