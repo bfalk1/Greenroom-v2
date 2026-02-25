@@ -76,7 +76,7 @@ function parseFilename(filename: string): { name: string; key: string; bpm: stri
   }
   
   return {
-    name: nameParts.join(" ") || baseName,
+    name: baseName, // Use full filename as sample name (like Splice)
     key: detectedKey,
     bpm: detectedBpm,
   };
