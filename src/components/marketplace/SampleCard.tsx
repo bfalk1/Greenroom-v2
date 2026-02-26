@@ -123,8 +123,6 @@ export function SampleCard({
   const [isFavoriting, setIsFavoriting] = useState(false);
   const [progress, setProgress] = useState(0);
   const progressRef = useRef<number | null>(null);
-  const preloadedUrl = useRef<string | null>(null);
-  const preloadAudio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (isOwnedProp !== undefined) {
@@ -137,35 +135,6 @@ export function SampleCard({
       setIsFavorited(isFavoritedProp);
     }
   }, [isFavoritedProp]);
-
-  // Preload audio when sample scrolls into view
-  useEffect(() => {
-    const card = cardRef.current;
-    if (!card) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !preloadedUrl.current) {
-          fetch(`/api/samples/${sample.id}/preview`)
-            .then(res => res.json())
-            .then(data => {
-              if (data.url) {
-                preloadedUrl.current = data.url;
-                // Create hidden audio element to preload
-                preloadAudio.current = new Audio();
-                preloadAudio.current.preload = "auto";
-                preloadAudio.current.src = data.url;
-              }
-            })
-            .catch(() => {});
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(card);
-    return () => observer.disconnect();
-  }, [sample.id]);
 
   // Create toggle function for this sample
   const togglePlayFn = useCallback(async () => {
@@ -187,27 +156,19 @@ export function SampleCard({
       audio.pause();
     }
 
-    // Use preloaded URL if available, otherwise fetch
+    // Fetch preview URL
     setIsLoading(true);
     try {
-      let url = preloadedUrl.current;
-      if (!url) {
-        const res = await fetch(`/api/samples/${sample.id}/preview`);
-        const data = await res.json();
-        if (!res.ok || !data.url) {
-          console.error("Preview failed:", data.error);
-          setIsLoading(false);
-          return;
-        }
-        url = data.url;
-      }
+      const res = await fetch(`/api/samples/${sample.id}/preview`);
+      const data = await res.json();
 
-      if (!url) {
+      if (!res.ok || !data.url) {
+        console.error("Preview failed:", data.error);
         setIsLoading(false);
         return;
       }
 
-      audio.src = url;
+      audio.src = data.url;
       audio.currentTime = 0;
       await audio.play();
       globalPlayingId = sample.id;
