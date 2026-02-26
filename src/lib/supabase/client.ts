@@ -8,7 +8,16 @@ export function createClient() {
   
   client = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        flowType: "pkce",
+        detectSessionInUrl: true,
+        persistSession: true,
+        // Longer timeout for lock acquisition
+        lockAcquireTimeout: 30000,
+      },
+    }
   );
   
   return client;
