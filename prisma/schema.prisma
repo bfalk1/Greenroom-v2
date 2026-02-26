@@ -112,6 +112,8 @@ model User {
   reviewedApplications CreatorApplication[] @relation("Reviewer")
   payouts              CreatorPayout[]
   auditLogs            AuditLog[]
+  sentInvites          CreatorInvite[]    @relation("InvitedBy")
+  usedInvite           CreatorInvite?     @relation("InviteUsedBy")
 
   @@map("users")
 }
@@ -310,6 +312,24 @@ model Follow {
 // CREATOR APPLICATION & PAYOUTS
 // ─────────────────────────────────────────────
 
+model CreatorInvite {
+  id          String    @id @default(uuid()) @db.Uuid
+  email       String    @unique
+  artistName  String    @map("artist_name")
+  message     String?   // Optional personal message from admin
+  invitedBy   String    @map("invited_by") @db.Uuid
+  token       String    @unique @default(uuid()) @db.Uuid
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  usedByUserId String?  @unique @map("used_by_user_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  inviter User  @relation("InvitedBy", fields: [invitedBy], references: [id])
+  usedBy  User? @relation("InviteUsedBy", fields: [usedByUserId], references: [id])
+
+  @@map("creator_invites")
+}
+
 model CreatorApplication {
   id            String            @id @default(uuid()) @db.Uuid
   userId        String            @unique @map("user_id") @db.Uuid
@@ -422,4 +442,17 @@ model InstrumentType {
   @@index([category])
   @@index([usageCount(sort: Desc)])
   @@map("instrument_types")
+}
+
+// ─────────────────────────────────────────────
+// WAITLIST
+// ─────────────────────────────────────────────
+
+model WaitlistEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  source    String?  // Optional: track where signup came from
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("waitlist_entries")
 }

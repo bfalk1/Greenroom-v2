@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GREENROOM - V2 Coming Soon</title>
+  <meta name="description" content="The future of music samples. Built for creators, by creators. Join the waitlist.">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    /* Animated background */
+    .bg-glow {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 800px;
+      height: 800px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 40%, transparent 70%);
+      animation: pulse 4s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .bg-glow-inner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,255,136,0.2) 0%, transparent 60%);
+      animation: pulse 3s ease-in-out infinite 0.5s;
+      pointer-events: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
+      50% { opacity: 0.5; transform: translate(-50%, -50%) scale(1.05); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      max-width: 500px;
+      animation: fadeUp 1s ease-out;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+      max-width: 100%;
+      width: 400px;
+      height: auto;
+      margin-bottom: 30px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-family: monospace;
+      color: #00FF88;
+      background: rgba(0,255,136,0.1);
+      border: 1px solid rgba(0,255,136,0.3);
+      border-radius: 50px;
+      margin-bottom: 24px;
+      animation: fadeUp 1s ease-out 0.2s both;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: #00FF88;
+      border-radius: 50%;
+      animation: dotPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 300;
+      margin-bottom: 12px;
+      animation: fadeUp 1s ease-out 0.3s both;
+    }
+
+    .tagline {
+      color: #666;
+      font-size: 18px;
+      margin-bottom: 40px;
+      animation: fadeUp 1s ease-out 0.4s both;
+    }
+
+    .form-container {
+      animation: fadeUp 1s ease-out 0.5s both;
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    @media (min-width: 480px) {
+      form {
+        flex-direction: row;
+      }
+    }
+
+    input[type="email"] {
+      flex: 1;
+      padding: 14px 20px;
+      font-size: 16px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="email"]:focus {
+      border-color: #00FF88;
+    }
+
+    input[type="email"]::placeholder {
+      color: #666;
+    }
+
+    button {
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      background: #00FF88;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #00cc6a;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .success-message {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #00FF88;
+      font-size: 16px;
+    }
+
+    .success-message.show {
+      display: flex;
+    }
+
+    .success-message svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .error-message {
+      color: #ff6b6b;
+      font-size: 14px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    .error-message.show {
+      display: block;
+    }
+
+    .footer {
+      margin-top: 60px;
+      color: #444;
+      font-size: 14px;
+      animation: fadeUp 1s ease-out 0.7s both;
+    }
+
+    /* Noise texture */
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.015;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <div class="bg-glow-inner"></div>
+  <div class="noise"></div>
+
+  <div class="container">
+    <img src="/greenroom-logo.png" alt="GREENROOM" class="logo">
+
+    <div class="badge">
+      V2 LOADING
+      <span class="pulse-dot"></span>
+    </div>
+
+    <h1>Something new is coming</h1>
+    <p class="tagline">The future of music samples. Built for creators, by creators.</p>
+
+    <div class="form-container">
+      <form id="waitlist-form">
+        <input type="email" id="email" placeholder="Enter your email" required>
+        <button type="submit" id="submit-btn">Join Waitlist</button>
+      </form>
+
+      <div class="success-message" id="success">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+        <span>You're on the list. We'll be in touch soon.</span>
+      </div>
+
+      <div class="error-message" id="error"></div>
+    </div>
+
+    <p class="footer">Premium samples • Instant downloads • Creator payouts</p>
+  </div>
+
+  <script>
+    const form = document.getElementById('waitlist-form');
+    const emailInput = document.getElementById('email');
+    const submitBtn = document.getElementById('submit-btn');
+    const successEl = document.getElementById('success');
+    const errorEl = document.getElementById('error');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const email = emailInput.value.trim();
+      if (!email) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Joining...';
+      errorEl.classList.remove('show');
+
+      try {
+        const res = await fetch('/api/waitlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Something went wrong');
+        }
+
+        form.style.display = 'none';
+        successEl.classList.add('show');
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Join Waitlist';
+      }
+    });
+  </script>
+</body>
+</html>

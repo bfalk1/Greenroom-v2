@@ -23,14 +23,33 @@ export async function GET(request: Request) {
         });
       }
 
+      let isNewUser = false;
+      let hasCreatorInvite = false;
+      let inviteArtistName: string | null = null;
+
       if (!user) {
-        // First time — create user record
+        isNewUser = true;
+
+        // Check for a valid creator invite before creating user
+        if (data.user.email) {
+          const invite = await prisma.creatorInvite.findUnique({
+            where: { email: data.user.email },
+          });
+
+          if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
+            hasCreatorInvite = true;
+            inviteArtistName = invite.artistName;
+          }
+        }
+
+        // Create user record - set as CREATOR if they have a valid invite
         user = await prisma.user.create({
           data: {
             id: data.user.id,
             email: data.user.email || "",
+            artistName: hasCreatorInvite ? inviteArtistName : undefined,
             profileCompleted: false,
-            role: "USER",
+            role: hasCreatorInvite ? "CREATOR" : "USER",
             isActive: true,
           },
         });
@@ -42,10 +61,37 @@ export async function GET(request: Request) {
             balance: 0,
           },
         });
+
+        // If they had an invite, mark it as used and create a pre-approved application
+        if (hasCreatorInvite && data.user.email) {
+          await prisma.creatorInvite.update({
+            where: { email: data.user.email },
+            data: {
+              usedAt: new Date(),
+              usedByUserId: user.id,
+            },
+          });
+
+          // Create an approved CreatorApplication record for consistency
+          await prisma.creatorApplication.create({
+            data: {
+              userId: user.id,
+              artistName: inviteArtistName || "Invited Creator",
+              sampleZipUrl: "", // Not required for invites
+              status: "APPROVED",
+              reviewNote: "Auto-approved via admin invite",
+              reviewedAt: new Date(),
+            },
+          });
+        }
       }
 
       // Redirect based on profile completion
       if (!user.profileCompleted) {
+        // If invited creator, redirect to creator onboarding
+        if (hasCreatorInvite || user.role === "CREATOR") {
+          return NextResponse.redirect(`${origin}/onboarding?creator=true`);
+        }
         return NextResponse.redirect(`${origin}/onboarding`);
       }
 

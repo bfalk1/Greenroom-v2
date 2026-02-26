@@ -28,6 +28,7 @@ import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
 import { CreatorPayoutSettings } from "@/components/admin/CreatorPayoutSettings";
+import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { toast } from "sonner";
 
 interface Stats {
@@ -1090,6 +1091,7 @@ export default function AdminDashboardPage() {
 
           {activeTab === "tools" && (
             <div className="space-y-6">
+              <CreatorInvitePanel />
               <UserSearchPanel />
               <AuditLogPanel />
               <ExportPanel />
