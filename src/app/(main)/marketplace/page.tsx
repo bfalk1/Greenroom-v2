@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Search, Music, Loader2, Users, ChevronRight, Heart, CheckSquare, Square, ShoppingCart } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,6 @@ export default function MarketplacePage() {
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPurchasing, setBulkPurchasing] = useState(false);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -174,33 +173,6 @@ export default function MarketplacePage() {
     },
     [searchQuery, filters]
   );
-
-  // Infinite scroll - load more when sentinel comes into view
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-
-    let timeoutId: NodeJS.Timeout | null = null;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
-          // Debounce to prevent rapid-fire requests
-          if (timeoutId) clearTimeout(timeoutId);
-          timeoutId = setTimeout(() => {
-            fetchSamples(samples.length, true);
-          }, 100);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => {
-      observer.disconnect();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [loading, loadingMore, samples.length, total, fetchSamples]);
 
   const fetchFollowingSamples = useCallback(async () => {
     if (!user) {
@@ -568,15 +540,24 @@ export default function MarketplacePage() {
                 </div>
               ))}
 
-              {/* Infinite scroll sentinel */}
+              {/* Load More */}
               {samples.length < total && (
-                <div ref={loadMoreRef} className="flex justify-center pt-6">
-                  {loadingMore && (
-                    <div className="flex items-center gap-2 text-[#a1a1a1]">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading more samples...
-                    </div>
-                  )}
+                <div className="flex justify-center pt-6">
+                  <Button
+                    onClick={() => fetchSamples(samples.length, true)}
+                    disabled={loadingMore}
+                    variant="outline"
+                    className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] px-8"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      `Load More (${samples.length} of ${total})`
+                    )}
+                  </Button>
                 </div>
               )}
             </div>
