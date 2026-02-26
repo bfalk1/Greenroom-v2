@@ -6,15 +6,11 @@
   <title>GREENROOM - V2 Coming Soon</title>
   <meta name="description" content="The future of music samples. Built for creators, by creators. Join the waitlist.">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
+      background: #050505;
       color: #fff;
       min-height: 100vh;
       display: flex;
@@ -22,283 +18,462 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      overflow: hidden;
+      overflow-x: hidden;
     }
 
-    /* Animated background */
-    .bg-glow {
+    /* Particle canvas */
+    #particles { position: fixed; inset: 0; z-index: 0; }
+    
+    /* Vignette */
+    .vignette {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 800px;
-      height: 800px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(0,255,136,0.15) 0%, rgba(0,255,136,0.05) 40%, transparent 70%);
-      animation: pulse 4s ease-in-out infinite;
+      inset: 0;
+      background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.8) 100%);
       pointer-events: none;
+      z-index: 1;
     }
 
-    .bg-glow-inner {
+    /* Scanline */
+    .scanline {
       position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 500px;
-      height: 500px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(0,255,136,0.2) 0%, transparent 60%);
-      animation: pulse 3s ease-in-out infinite 0.5s;
-      pointer-events: none;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #00FF88;
+      opacity: 0.03;
+      animation: scanline 3s linear infinite;
+      z-index: 2;
     }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
-      50% { opacity: 0.5; transform: translate(-50%, -50%) scale(1.05); }
+    
+    @keyframes scanline {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
     }
 
     .container {
       position: relative;
       z-index: 10;
       text-align: center;
-      max-width: 500px;
+      max-width: 600px;
       animation: fadeUp 1s ease-out;
     }
-
+    
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(30px); }
+      from { opacity: 0; transform: translateY(40px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* Waveform bars */
+    .waveform {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 3px;
+      height: 60px;
+      margin-bottom: 30px;
+    }
+    
+    .wave-bar {
+      width: 3px;
+      background: linear-gradient(to top, #00FF88, rgba(0,255,136,0.3));
+      border-radius: 2px;
+      animation: wave 1.2s ease-in-out infinite;
+    }
+    
+    @keyframes wave {
+      0%, 100% { height: 15%; }
+      50% { height: var(--height, 60%); }
+    }
+
+    /* Logo */
+    .logo-wrapper {
+      position: relative;
+      margin-bottom: 24px;
+      animation: float 6s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-15px) rotate(2deg); }
+    }
+    
+    .logo-glow {
+      position: absolute;
+      inset: -20px;
+      background: rgba(0,255,136,0.2);
+      filter: blur(40px);
+      border-radius: 50%;
+    }
+    
     .logo {
+      position: relative;
       max-width: 100%;
       width: 400px;
       height: auto;
-      margin-bottom: 30px;
+      filter: drop-shadow(0 0 30px rgba(0,255,136,0.5));
     }
 
+    /* Badge */
     .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      font-size: 13px;
+      display: inline-block;
+      padding: 10px 24px;
+      font-size: 12px;
       font-family: monospace;
+      letter-spacing: 0.3em;
       color: #00FF88;
-      background: rgba(0,255,136,0.1);
-      border: 1px solid rgba(0,255,136,0.3);
+      background: #0a0a0a;
+      border: 1px solid rgba(0,255,136,0.5);
       border-radius: 50px;
-      margin-bottom: 24px;
-      animation: fadeUp 1s ease-out 0.2s both;
+      margin-bottom: 32px;
+      animation: borderGlow 2s ease-in-out infinite;
+    }
+    
+    @keyframes borderGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(0,255,136,0.3); }
+      50% { box-shadow: 0 0 40px rgba(0,255,136,0.6); }
     }
 
-    .pulse-dot {
-      width: 8px;
-      height: 8px;
-      background: #00FF88;
-      border-radius: 50%;
-      animation: dotPulse 2s ease-in-out infinite;
-    }
-
-    @keyframes dotPulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.3); }
-    }
-
+    /* Headline */
     h1 {
-      font-size: 28px;
-      font-weight: 300;
-      margin-bottom: 12px;
-      animation: fadeUp 1s ease-out 0.3s both;
+      font-size: clamp(32px, 8vw, 56px);
+      font-weight: 900;
+      line-height: 1.1;
+      margin-bottom: 16px;
+      letter-spacing: -0.02em;
     }
+    
+    .glitch {
+      position: relative;
+      display: inline-block;
+    }
+    
+    .glitch::before,
+    .glitch::after {
+      content: attr(data-text);
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    .glitch::before {
+      color: #00FF88;
+      animation: glitch1 2.5s infinite;
+      clip-path: inset(0 0 0 0);
+      opacity: 0.7;
+    }
+    
+    .glitch::after {
+      color: #ff0088;
+      animation: glitch2 2.5s infinite;
+      clip-path: inset(0 0 0 0);
+      opacity: 0.7;
+    }
+    
+    @keyframes glitch1 {
+      0%, 90%, 100% { transform: translate(0); }
+      92% { transform: translate(-3px, 2px); }
+      94% { transform: translate(3px, -2px); }
+      96% { transform: translate(-2px, 3px); }
+    }
+    
+    @keyframes glitch2 {
+      0%, 90%, 100% { transform: translate(0); }
+      91% { transform: translate(3px, 2px); }
+      93% { transform: translate(-3px, -2px); }
+      95% { transform: translate(2px, 3px); }
+    }
+    
+    .highlight { color: #00FF88; }
 
     .tagline {
       color: #666;
       font-size: 18px;
-      margin-bottom: 40px;
-      animation: fadeUp 1s ease-out 0.4s both;
+      line-height: 1.6;
+      margin-bottom: 48px;
     }
 
-    .form-container {
-      animation: fadeUp 1s ease-out 0.5s both;
-    }
-
+    /* Form */
     form {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      max-width: 450px;
+      margin: 0 auto;
     }
-
-    @media (min-width: 480px) {
-      form {
-        flex-direction: row;
-      }
+    
+    @media (min-width: 500px) {
+      form { flex-direction: row; }
     }
 
     input[type="email"] {
       flex: 1;
-      padding: 14px 20px;
+      padding: 16px 24px;
       font-size: 16px;
-      background: #1a1a1a;
+      background: #111;
       border: 1px solid #2a2a2a;
-      border-radius: 8px;
+      border-radius: 12px;
       color: #fff;
       outline: none;
-      transition: border-color 0.2s;
+      transition: all 0.3s;
     }
-
+    
     input[type="email"]:focus {
       border-color: #00FF88;
+      box-shadow: 0 0 20px rgba(0,255,136,0.2);
     }
-
-    input[type="email"]::placeholder {
-      color: #666;
-    }
+    
+    input[type="email"]::placeholder { color: #444; }
 
     button {
-      padding: 14px 28px;
+      padding: 16px 32px;
       font-size: 16px;
-      font-weight: 600;
+      font-weight: 700;
       background: #00FF88;
       color: #000;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       cursor: pointer;
-      transition: background 0.2s, transform 0.1s;
+      transition: all 0.3s;
       white-space: nowrap;
     }
-
+    
     button:hover {
       background: #00cc6a;
+      box-shadow: 0 0 30px rgba(0,255,136,0.5);
+      transform: translateY(-2px);
     }
+    
+    button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
-    button:active {
-      transform: scale(0.98);
-    }
-
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
-    .success-message {
+    /* Success state */
+    .success {
       display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .success.show { display: flex; }
+    
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(0,255,136,0.2);
+      border: 1px solid rgba(0,255,136,0.5);
+      display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      color: #00FF88;
-      font-size: 16px;
     }
+    
+    .success-icon svg { width: 32px; height: 32px; color: #00FF88; }
+    
+    .success-text { color: #00FF88; font-size: 20px; font-weight: 500; }
+    .success-sub { color: #666; }
 
-    .success-message.show {
+    .error { color: #ff6b6b; margin-top: 16px; display: none; }
+    .error.show { display: block; }
+
+    /* Features */
+    .features {
       display: flex;
-    }
-
-    .success-message svg {
-      width: 20px;
-      height: 20px;
-    }
-
-    .error-message {
-      color: #ff6b6b;
-      font-size: 14px;
-      margin-top: 12px;
-      display: none;
-    }
-
-    .error-message.show {
-      display: block;
-    }
-
-    .footer {
-      margin-top: 60px;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 64px;
+      font-size: 12px;
       color: #444;
-      font-size: 14px;
-      animation: fadeUp 1s ease-out 0.7s both;
+      letter-spacing: 0.1em;
+    }
+    
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .feature-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #00FF88;
     }
 
-    /* Noise texture */
-    .noise {
+    /* Corner decorations */
+    .corner {
       position: fixed;
-      inset: 0;
+      width: 100px;
+      height: 100px;
+      border: 2px solid rgba(0,255,136,0.2);
       pointer-events: none;
-      opacity: 0.015;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      z-index: 5;
     }
+    
+    .corner-tl { top: 32px; left: 32px; border-right: 0; border-bottom: 0; }
+    .corner-br { bottom: 32px; right: 32px; border-left: 0; border-top: 0; }
   </style>
 </head>
 <body>
-  <div class="bg-glow"></div>
-  <div class="bg-glow-inner"></div>
-  <div class="noise"></div>
+  <canvas id="particles"></canvas>
+  <div class="vignette"></div>
+  <div class="scanline"></div>
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-br"></div>
 
   <div class="container">
-    <img src="/greenroom-logo.png" alt="GREENROOM" class="logo">
+    <!-- Waveform -->
+    <div class="waveform" id="waveform"></div>
 
-    <div class="badge">
-      V2 LOADING
-      <span class="pulse-dot"></span>
+    <!-- Logo -->
+    <div class="logo-wrapper">
+      <div class="logo-glow"></div>
+      <img src="/greenroom-logo.png" alt="GREENROOM" class="logo">
     </div>
 
-    <h1>Something new is coming</h1>
-    <p class="tagline">The future of music samples. Built for creators, by creators.</p>
+    <!-- Badge -->
+    <div class="badge">VERSION 2.0</div>
 
-    <div class="form-container">
-      <form id="waitlist-form">
-        <input type="email" id="email" placeholder="Enter your email" required>
-        <button type="submit" id="submit-btn">Join Waitlist</button>
-      </form>
+    <!-- Headline -->
+    <h1>
+      <span class="glitch" data-text="THE FUTURE OF">THE FUTURE OF</span>
+      <br>
+      <span class="highlight">SOUND</span>
+    </h1>
 
-      <div class="success-message" id="success">
+    <p class="tagline">
+      Premium samples. Instant access.<br>
+      Built for creators who move fast.
+    </p>
+
+    <!-- Form -->
+    <form id="form">
+      <input type="email" id="email" placeholder="your@email.com" required>
+      <button type="submit" id="btn">GET EARLY ACCESS</button>
+    </form>
+
+    <div class="success" id="success">
+      <div class="success-icon">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
         </svg>
-        <span>You're on the list. We'll be in touch soon.</span>
       </div>
-
-      <div class="error-message" id="error"></div>
+      <div class="success-text">You're on the list.</div>
+      <div class="success-sub">We'll hit you up when it's time.</div>
     </div>
 
-    <p class="footer">Premium samples • Instant downloads • Creator payouts</p>
+    <div class="error" id="error"></div>
+
+    <!-- Features -->
+    <div class="features">
+      <div class="feature"><span class="feature-dot"></span> EXCLUSIVE DROPS</div>
+      <div class="feature"><span class="feature-dot"></span> INSTANT DOWNLOADS</div>
+      <div class="feature"><span class="feature-dot"></span> CREATOR PAYOUTS</div>
+    </div>
   </div>
 
   <script>
-    const form = document.getElementById('waitlist-form');
-    const emailInput = document.getElementById('email');
-    const submitBtn = document.getElementById('submit-btn');
-    const successEl = document.getElementById('success');
-    const errorEl = document.getElementById('error');
+    // Generate waveform bars
+    const waveform = document.getElementById('waveform');
+    for (let i = 0; i < 40; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'wave-bar';
+      bar.style.setProperty('--height', Math.random() * 50 + 40 + '%');
+      bar.style.animationDelay = i * 0.05 + 's';
+      waveform.appendChild(bar);
+    }
+
+    // Particle animation
+    const canvas = document.getElementById('particles');
+    const ctx = canvas.getContext('2d');
+    
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const particles = [];
+    for (let i = 0; i < 50; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: (Math.random() - 0.5) * 0.5,
+        size: Math.random() * 2 + 1,
+        opacity: Math.random() * 0.5 + 0.1
+      });
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y < 0) p.y = canvas.height;
+        if (p.y > canvas.height) p.y = 0;
+        
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 255, 136, ${p.opacity})`;
+        ctx.fill();
+      });
+
+      // Connect nearby particles
+      particles.forEach((p1, i) => {
+        particles.slice(i + 1).forEach(p2 => {
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 120) {
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = `rgba(0, 255, 136, ${0.08 * (1 - dist / 120)})`;
+            ctx.stroke();
+          }
+        });
+      });
+
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Form handling
+    const form = document.getElementById('form');
+    const email = document.getElementById('email');
+    const btn = document.getElementById('btn');
+    const success = document.getElementById('success');
+    const error = document.getElementById('error');
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
-      const email = emailInput.value.trim();
-      if (!email) return;
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Joining...';
-      errorEl.classList.remove('show');
+      btn.disabled = true;
+      btn.textContent = 'JOINING...';
+      error.classList.remove('show');
 
       try {
         const res = await fetch('/api/waitlist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
+          body: JSON.stringify({ email: email.value.trim() })
         });
-
         const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Something went wrong');
-        }
-
+        if (!res.ok) throw new Error(data.error || 'Something went wrong');
+        
         form.style.display = 'none';
-        successEl.classList.add('show');
+        success.classList.add('show');
       } catch (err) {
-        errorEl.textContent = err.message;
-        errorEl.classList.add('show');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Join Waitlist';
+        error.textContent = err.message;
+        error.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'GET EARLY ACCESS';
       }
     });
   </script>
