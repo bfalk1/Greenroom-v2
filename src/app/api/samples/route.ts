@@ -105,6 +105,14 @@ export async function GET(request: NextRequest) {
       prisma.sample.count({ where }),
     ]);
 
+    // Build public preview URL (previews bucket is public)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const getPublicPreviewUrl = (previewUrl: string | null) => {
+      if (!previewUrl || !previewUrl.startsWith("previews/")) return null;
+      const path = previewUrl.replace("previews/", "");
+      return `${supabaseUrl}/storage/v1/object/public/previews/${path}`;
+    };
+
     // Map to frontend format
     const mapped = samples.map((s) => ({
       id: s.id,
@@ -121,6 +129,7 @@ export async function GET(request: NextRequest) {
       credit_price: s.creditPrice,
       tags: s.tags,
       file_url: s.previewUrl || s.fileUrl,
+      preview_url: getPublicPreviewUrl(s.previewUrl),
       cover_art_url: s.coverImageUrl,
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,

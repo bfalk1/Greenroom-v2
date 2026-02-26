@@ -21,6 +21,7 @@ export interface Sample {
   tags?: string[];
   credit_price: number;
   file_url?: string;
+  preview_url?: string; // Public CDN URL for instant playback
   cover_art_url?: string;
   status?: string;
   average_rating?: number;
@@ -156,19 +157,23 @@ export function SampleCard({
       audio.pause();
     }
 
-    // Fetch preview URL
+    // Use public preview URL directly (no API call needed)
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/samples/${sample.id}/preview`);
-      const data = await res.json();
-
-      if (!res.ok || !data.url) {
-        console.error("Preview failed:", data.error);
-        setIsLoading(false);
-        return;
+      // Use public CDN URL if available, otherwise fall back to API
+      let url = sample.preview_url;
+      if (!url) {
+        const res = await fetch(`/api/samples/${sample.id}/preview`);
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+          console.error("Preview failed:", data.error);
+          setIsLoading(false);
+          return;
+        }
+        url = data.url;
       }
 
-      audio.src = data.url;
+      audio.src = url;
       audio.currentTime = 0;
       await audio.play();
       globalPlayingId = sample.id;
@@ -178,7 +183,7 @@ export function SampleCard({
     } finally {
       setIsLoading(false);
     }
-  }, [sample.id]);
+  }, [sample.id, sample.preview_url]);
 
   // Register this card's setter and toggle function for global audio control
   useEffect(() => {
