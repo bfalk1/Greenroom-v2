@@ -105,25 +105,38 @@ export async function GET(request: NextRequest) {
       prisma.sample.count({ where }),
     ]);
 
-    // Generate signed preview URLs server-side (avoids separate API call per sample)
+    // Batch generate signed preview URLs (single request to Supabase)
     const { createClient: createServiceClient } = await import("@supabase/supabase-js");
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const getSignedPreviewUrl = async (previewUrl: string | null) => {
-      if (!previewUrl || !previewUrl.startsWith("previews/")) return null;
-      const path = previewUrl.replace("previews/", "");
+    // Collect valid preview paths
+    const previewPaths = samples
+      .map(s => s.previewUrl?.startsWith("previews/") ? s.previewUrl.replace("previews/", "") : null);
+    
+    const validPaths = previewPaths.filter((p): p is string => p !== null);
+    
+    // Batch request for all signed URLs at once
+    let signedUrlMap: Record<string, string> = {};
+    if (validPaths.length > 0) {
       const { data } = await serviceClient.storage
         .from("previews")
-        .createSignedUrl(path, 3600);
-      return data?.signedUrl || null;
-    };
+        .createSignedUrls(validPaths, 3600);
+      
+      if (data) {
+        for (const item of data) {
+          if (item.signedUrl && item.path) {
+            signedUrlMap[item.path] = item.signedUrl;
+          }
+        }
+      }
+    }
 
-    // Generate all signed URLs in parallel
-    const previewUrls = await Promise.all(
-      samples.map(s => getSignedPreviewUrl(s.previewUrl))
+    // Map paths back to URLs
+    const previewUrls = previewPaths.map(path => 
+      path ? signedUrlMap[path] || null : null
     );
 
     // Map to frontend format
