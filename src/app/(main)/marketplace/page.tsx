@@ -42,17 +42,26 @@ export default function MarketplacePage() {
     const sentinel = loadMoreRef.current;
     if (!sentinel) return;
 
+    let timeoutId: NodeJS.Timeout | null = null;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
-          fetchSamples(samples.length, true);
+          // Debounce to prevent rapid-fire requests
+          if (timeoutId) clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            fetchSamples(samples.length, true);
+          }, 100);
         }
       },
       { threshold: 0.1 }
     );
 
     observer.observe(sentinel);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [loading, loadingMore, samples.length, total, fetchSamples]);
 
   const toggleSelect = (id: string) => {
