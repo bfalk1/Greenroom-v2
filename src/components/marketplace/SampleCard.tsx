@@ -202,6 +202,11 @@ export function SampleCard({
         url = data.url;
       }
 
+      if (!url) {
+        setIsLoading(false);
+        return;
+      }
+
       audio.src = url;
       audio.currentTime = 0;
       await audio.play();
