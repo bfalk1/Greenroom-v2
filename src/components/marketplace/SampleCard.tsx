@@ -160,9 +160,11 @@ export function SampleCard({
     // Use public preview URL directly (no API call needed)
     setIsLoading(true);
     try {
-      // Use public CDN URL if available, otherwise fall back to API
-      let url = sample.preview_url;
-      if (!url) {
+      // Use signed URL if available, otherwise fall back to API
+      let url: string;
+      if (sample.preview_url) {
+        url = sample.preview_url;
+      } else {
         const res = await fetch(`/api/samples/${sample.id}/preview`);
         const data = await res.json();
         if (!res.ok || !data.url) {
