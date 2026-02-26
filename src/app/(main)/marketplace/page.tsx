@@ -37,33 +37,6 @@ export default function MarketplacePage() {
   const [bulkPurchasing, setBulkPurchasing] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  // Infinite scroll - load more when sentinel comes into view
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-
-    let timeoutId: NodeJS.Timeout | null = null;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
-          // Debounce to prevent rapid-fire requests
-          if (timeoutId) clearTimeout(timeoutId);
-          timeoutId = setTimeout(() => {
-            fetchSamples(samples.length, true);
-          }, 100);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    return () => {
-      observer.disconnect();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [loading, loadingMore, samples.length, total, fetchSamples]);
-
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -201,6 +174,33 @@ export default function MarketplacePage() {
     },
     [searchQuery, filters]
   );
+
+  // Infinite scroll - load more when sentinel comes into view
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
+          // Debounce to prevent rapid-fire requests
+          if (timeoutId) clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            fetchSamples(samples.length, true);
+          }, 100);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [loading, loadingMore, samples.length, total, fetchSamples]);
 
   const fetchFollowingSamples = useCallback(async () => {
     if (!user) {
