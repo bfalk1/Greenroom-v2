@@ -138,23 +138,34 @@ export function SampleCard({
     }
   }, [isFavoritedProp]);
 
-  // Preload audio on hover
+  // Preload audio when sample scrolls into view
   useEffect(() => {
-    if (isHovered && !preloadedUrl.current) {
-      fetch(`/api/samples/${sample.id}/preview`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.url) {
-            preloadedUrl.current = data.url;
-            // Create hidden audio element to preload
-            preloadAudio.current = new Audio();
-            preloadAudio.current.preload = "auto";
-            preloadAudio.current.src = data.url;
-          }
-        })
-        .catch(() => {});
-    }
-  }, [isHovered, sample.id]);
+    const card = cardRef.current;
+    if (!card) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !preloadedUrl.current) {
+          fetch(`/api/samples/${sample.id}/preview`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.url) {
+                preloadedUrl.current = data.url;
+                // Create hidden audio element to preload
+                preloadAudio.current = new Audio();
+                preloadAudio.current.preload = "auto";
+                preloadAudio.current.src = data.url;
+              }
+            })
+            .catch(() => {});
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [sample.id]);
 
   // Create toggle function for this sample
   const togglePlayFn = useCallback(async () => {
