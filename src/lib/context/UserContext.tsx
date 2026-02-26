@@ -40,48 +40,62 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+  const fetchingRef = React.useRef(false);
+  const pendingRef = React.useRef<Promise<void> | null>(null);
 
   const fetchUser = useCallback(async () => {
-    try {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-
-      if (!authUser) {
-        setUser(null);
-        setSupabaseUser(null);
-        setLoading(false);
-        return;
-      }
-
-      setSupabaseUser(authUser);
-
-      const res = await fetch("/api/user/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
-        setUser({
-          id: authUser.id,
-          email: authUser.email || "",
-          credits: 0,
-          subscription_status: "none",
-          is_creator: false,
-          role: "USER",
-          full_name: null,
-          username: null,
-          artist_name: null,
-          avatar_url: null,
-          banner_url: null,
-          profile_completed: false,
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      setUser(null);
-    } finally {
-      setLoading(false);
+    // Deduplicate concurrent calls - return existing promise if already fetching
+    if (fetchingRef.current && pendingRef.current) {
+      return pendingRef.current;
     }
+
+    fetchingRef.current = true;
+    pendingRef.current = (async () => {
+      try {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
+
+        if (!authUser) {
+          setUser(null);
+          setSupabaseUser(null);
+          setLoading(false);
+          return;
+        }
+
+        setSupabaseUser(authUser);
+
+        const res = await fetch("/api/user/me");
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data.user);
+        } else {
+          setUser({
+            id: authUser.id,
+            email: authUser.email || "",
+            credits: 0,
+            subscription_status: "none",
+            is_creator: false,
+            role: "USER",
+            full_name: null,
+            username: null,
+            artist_name: null,
+            avatar_url: null,
+            banner_url: null,
+            profile_completed: false,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        setUser(null);
+      } finally {
+        setLoading(false);
+        fetchingRef.current = false;
+        pendingRef.current = null;
+      }
+    })();
+
+    return pendingRef.current;
   }, []);
 
   useEffect(() => {
