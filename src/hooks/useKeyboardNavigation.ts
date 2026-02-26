@@ -6,13 +6,14 @@ interface UseKeyboardNavigationOptions {
   enabled?: boolean;
   onSelect?: (index: number) => void;
   onPlay?: (index: number) => void;
+  onReachEnd?: () => void;
 }
 
 export function useKeyboardNavigation<T>(
   items: T[],
   options: UseKeyboardNavigationOptions = {}
 ) {
-  const { enabled = true, onSelect, onPlay } = options;
+  const { enabled = true, onSelect, onPlay, onReachEnd } = options;
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   // Auto-select first item when items load
@@ -55,7 +56,12 @@ export function useKeyboardNavigation<T>(
         case "ArrowDown":
           e.preventDefault();
           setSelectedIndex((prev) => {
-            const newIndex = prev >= items.length - 1 ? 0 : prev + 1;
+            // If at end, trigger load more and stay at last item
+            if (prev >= items.length - 1) {
+              onReachEnd?.();
+              return prev;
+            }
+            const newIndex = prev + 1;
             onSelect?.(newIndex);
             // Auto-play when navigating
             onPlay?.(newIndex);
@@ -82,7 +88,7 @@ export function useKeyboardNavigation<T>(
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enabled, items.length, selectedIndex, onSelect, onPlay]);
+  }, [enabled, items.length, selectedIndex, onSelect, onPlay, onReachEnd]);
 
   const isSelected = useCallback(
     (index: number) => index === selectedIndex,

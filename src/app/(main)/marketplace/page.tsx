@@ -117,6 +117,11 @@ export default function MarketplacePage() {
   const { selectedIndex, isSelected: isKeyboardSelected } = useKeyboardNavigation(samples, {
     enabled: samples.length > 0 && !loading,
     onPlay: handleKeyboardPlay,
+    onReachEnd: () => {
+      if (!loadingMore && samples.length < total) {
+        fetchSamples(samples.length, true);
+      }
+    },
   });
 
   // Handle Escape to stop playback
