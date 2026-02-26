@@ -9,15 +9,45 @@ interface AudioPlayerProps {
   sampleId?: string;
   duration?: number;
   useFullAudio?: boolean; // For mod/admin - use full file instead of preview
+  preload?: boolean; // Preload audio on mount
 }
 
-export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false, preload = false }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  const getSignedUrl = async () => {
+    if (sampleId) {
+      const endpoint = useFullAudio 
+        ? `/api/mod/samples/${sampleId}/audio`
+        : `/api/samples/${sampleId}/preview`;
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      if (data.url) return data.url;
+    }
+    if (fileUrl?.startsWith("http")) return fileUrl;
+    return null;
+  };
+
+  // Preload audio on mount if requested
+  useEffect(() => {
+    if (preload && (sampleId || fileUrl) && !signedUrl) {
+      getSignedUrl().then(url => {
+        if (url) {
+          setSignedUrl(url);
+          if (audioRef.current) {
+            audioRef.current.src = url;
+            audioRef.current.preload = "auto";
+            audioRef.current.load();
+          }
+        }
+      });
+    }
+  }, [preload, sampleId, fileUrl]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -33,21 +63,6 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
       audio.removeEventListener("ended", handleEnded);
     };
   }, []);
-
-  const getSignedUrl = async () => {
-    if (sampleId) {
-      // Use full audio endpoint for mods/admins, preview for regular users
-      const endpoint = useFullAudio 
-        ? `/api/mod/samples/${sampleId}/audio`
-        : `/api/samples/${sampleId}/preview`;
-      const res = await fetch(endpoint);
-      const data = await res.json();
-      if (data.url) return data.url;
-    }
-    // Fall back to direct URL if it's already a full URL
-    if (fileUrl?.startsWith("http")) return fileUrl;
-    return null;
-  };
 
   const togglePlay = async () => {
     if (!sampleId && !fileUrl) {

@@ -123,6 +123,8 @@ export function SampleCard({
   const [isFavoriting, setIsFavoriting] = useState(false);
   const [progress, setProgress] = useState(0);
   const progressRef = useRef<number | null>(null);
+  const preloadedUrl = useRef<string | null>(null);
+  const preloadAudio = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (isOwnedProp !== undefined) {
@@ -135,6 +137,24 @@ export function SampleCard({
       setIsFavorited(isFavoritedProp);
     }
   }, [isFavoritedProp]);
+
+  // Preload audio on hover
+  useEffect(() => {
+    if (isHovered && !preloadedUrl.current) {
+      fetch(`/api/samples/${sample.id}/preview`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.url) {
+            preloadedUrl.current = data.url;
+            // Create hidden audio element to preload
+            preloadAudio.current = new Audio();
+            preloadAudio.current.preload = "auto";
+            preloadAudio.current.src = data.url;
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isHovered, sample.id]);
 
   // Create toggle function for this sample
   const togglePlayFn = useCallback(async () => {
@@ -156,19 +176,22 @@ export function SampleCard({
       audio.pause();
     }
 
-    // Fetch preview URL
+    // Use preloaded URL if available, otherwise fetch
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/samples/${sample.id}/preview`);
-      const data = await res.json();
-
-      if (!res.ok || !data.url) {
-        console.error("Preview failed:", data.error);
-        setIsLoading(false);
-        return;
+      let url = preloadedUrl.current;
+      if (!url) {
+        const res = await fetch(`/api/samples/${sample.id}/preview`);
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+          console.error("Preview failed:", data.error);
+          setIsLoading(false);
+          return;
+        }
+        url = data.url;
       }
 
-      audio.src = data.url;
+      audio.src = url;
       audio.currentTime = 0;
       await audio.play();
       globalPlayingId = sample.id;
