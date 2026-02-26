@@ -55,6 +55,8 @@ export async function GET(req: NextRequest) {
     } else {
       where.status = { in: ["DRAFT", "REVIEW"] };
     }
+    // Only show samples with previews ready (starts with "previews/")
+    where.previewUrl = { startsWith: "previews/" };
   }
 
   // Add search to pending view too
