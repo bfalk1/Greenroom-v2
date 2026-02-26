@@ -3,6 +3,110 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 
+// Audio player component with waveform
+function AudioTeaser({ src, title, bpm }: { src: string; title: string; bpm: number }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [bars] = useState(() => Array.from({ length: 32 }, () => Math.random() * 0.7 + 0.3));
+
+  const togglePlay = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateProgress = () => {
+      setProgress((audio.currentTime / audio.duration) * 100 || 0);
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setProgress(0);
+    };
+
+    audio.addEventListener("timeupdate", updateProgress);
+    audio.addEventListener("ended", handleEnded);
+
+    return () => {
+      audio.removeEventListener("timeupdate", updateProgress);
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, []);
+
+  return (
+    <div 
+      className="relative bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-4 cursor-pointer group hover:border-[#00FF88]/30 transition-all"
+      onClick={togglePlay}
+    >
+      <audio ref={audioRef} src={src} preload="metadata" />
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <button className="w-10 h-10 rounded-full bg-[#00FF88] flex items-center justify-center group-hover:scale-110 transition-transform">
+            {isPlaying ? (
+              <svg className="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" />
+                <rect x="14" y="4" width="4" height="16" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 text-black ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+          <div>
+            <p className="text-white font-medium text-sm">{title}</p>
+            <p className="text-[#666] text-xs">{bpm} BPM</p>
+          </div>
+        </div>
+        <div className="px-2 py-1 rounded bg-[#00FF88]/10 border border-[#00FF88]/20">
+          <span className="text-[#00FF88] text-xs font-mono">PREVIEW</span>
+        </div>
+      </div>
+
+      {/* Waveform */}
+      <div className="flex items-center gap-[2px] h-12 relative">
+        {bars.map((height, i) => {
+          const isActive = (i / bars.length) * 100 <= progress;
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-full transition-all duration-100"
+              style={{
+                height: `${height * 100}%`,
+                background: isActive 
+                  ? '#00FF88' 
+                  : isPlaying 
+                    ? 'rgba(0,255,136,0.3)' 
+                    : 'rgba(255,255,255,0.2)',
+                transform: isPlaying ? `scaleY(${1 + Math.sin(Date.now() / 200 + i) * 0.1})` : 'scaleY(1)',
+              }}
+            />
+          );
+        })}
+        
+        {/* Progress overlay */}
+        <div 
+          className="absolute inset-0 bg-gradient-to-r from-transparent to-transparent pointer-events-none"
+          style={{
+            background: `linear-gradient(to right, transparent ${progress}%, rgba(0,0,0,0.3) ${progress}%)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // Floating particle component
 function Particles() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -366,6 +470,23 @@ export default function WaitlistPage() {
           {status === "error" && (
             <p className="mt-4 text-red-400">{message}</p>
           )}
+        </div>
+
+        {/* Audio Teasers */}
+        <div className={`mt-16 w-full max-w-lg transition-all duration-1000 delay-1100 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <p className="text-[#666] text-sm mb-4 text-center tracking-wider">PREVIEW WHAT&apos;S COMING</p>
+          <div className="space-y-3">
+            <AudioTeaser 
+              src="/teaser-1.mp3" 
+              title="Midnight Drive" 
+              bpm={120}
+            />
+            <AudioTeaser 
+              src="/teaser-2.mp3" 
+              title="Neon Dreams" 
+              bpm={95}
+            />
+          </div>
         </div>
 
         {/* Bottom features */}
