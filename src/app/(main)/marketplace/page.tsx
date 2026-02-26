@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Search, Music, Loader2, Users, ChevronRight, Heart, CheckSquare, Square, ShoppingCart } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,25 @@ export default function MarketplacePage() {
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkPurchasing, setBulkPurchasing] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll - load more when sentinel comes into view
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
+          fetchSamples(samples.length, true);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, loadingMore, samples.length, total, fetchSamples]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -540,24 +559,15 @@ export default function MarketplacePage() {
                 </div>
               ))}
 
-              {/* Load More */}
+              {/* Infinite scroll sentinel */}
               {samples.length < total && (
-                <div className="flex justify-center pt-6">
-                  <Button
-                    onClick={handleLoadMore}
-                    disabled={loadingMore}
-                    variant="outline"
-                    className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a] px-8"
-                  >
-                    {loadingMore ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      `Load More (${samples.length} of ${total})`
-                    )}
-                  </Button>
+                <div ref={loadMoreRef} className="flex justify-center pt-6">
+                  {loadingMore && (
+                    <div className="flex items-center gap-2 text-[#a1a1a1]">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading more samples...
+                    </div>
+                  )}
                 </div>
               )}
             </div>
