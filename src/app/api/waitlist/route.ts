@@ -1,27 +1,43 @@
 import { prisma } from "@/lib/prisma";
-import { Resend } from "resend";
 import { NextRequest, NextResponse } from "next/server";
 
-// Add contact to Resend audience
+// Add contact to Resend audience via REST API
 async function addToResendAudience(email: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const audienceId = process.env.RESEND_AUDIENCE_ID;
   
-  if (!apiKey || !audienceId) {
-    console.log("[Waitlist] Resend not configured, skipping audience add");
+  if (!apiKey) {
+    console.log("[Waitlist] RESEND_API_KEY not set, skipping audience add");
+    return;
+  }
+
+  if (!audienceId) {
+    console.log("[Waitlist] RESEND_AUDIENCE_ID not set, skipping audience add");
     return;
   }
 
   try {
-    const resend = new Resend(apiKey);
-    await resend.contacts.create({
-      audienceId,
-      email,
-      unsubscribed: false,
+    const response = await fetch(`https://api.resend.com/audiences/${audienceId}/contacts`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        unsubscribed: false,
+      }),
     });
-    console.log("[Waitlist] Added to Resend audience:", email);
+
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error("[Waitlist] Resend API error:", result);
+      return;
+    }
+
+    console.log("[Waitlist] Added to Resend audience:", email, result);
   } catch (error) {
-    // Don't fail the signup if Resend fails
     console.error("[Waitlist] Failed to add to Resend audience:", error);
   }
 }
