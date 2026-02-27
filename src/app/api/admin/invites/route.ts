@@ -22,21 +22,12 @@ async function sendInviteEmail(invite: {
         <div style="text-align: center; margin-bottom: 24px;">
           <h1 style="color: #00FF88; margin: 0; font-size: 28px;">GREENROOM</h1>
         </div>
-        
         <h2 style="color: #ffffff; margin-bottom: 8px; text-align: center;">You're Invited! 🎵</h2>
         <p style="color: #a1a1a1; margin-bottom: 24px; text-align: center;">Hi ${invite.artistName},</p>
-        
         <div style="background: linear-gradient(135deg, #00FF88 0%, #00cc6a 100%); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
           <p style="color: #000000; margin: 0; font-size: 18px; font-weight: bold;">You've been invited to join GREENROOM as a Creator!</p>
         </div>
-        
-        ${invite.message ? `
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px; border-left: 4px solid #00FF88;">
-          <p style="color: #a1a1a1; margin: 0 0 8px; font-size: 12px; text-transform: uppercase;">Message from the team:</p>
-          <p style="color: #ffffff; margin: 0;">${invite.message}</p>
-        </div>
-        ` : ""}
-        
+        ${invite.message ? `<div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px; border-left: 4px solid #00FF88;"><p style="color: #a1a1a1; margin: 0 0 8px; font-size: 12px; text-transform: uppercase;">Message from the team:</p><p style="color: #ffffff; margin: 0;">${invite.message}</p></div>` : ""}
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
           <p style="color: #ffffff; margin: 0 0 12px;">As a GREENROOM Creator, you can:</p>
           <ul style="color: #a1a1a1; margin: 0; padding-left: 20px;">
@@ -46,15 +37,10 @@ async function sendInviteEmail(invite: {
             <li>Connect with music producers worldwide</li>
           </ul>
         </div>
-        
         <div style="text-align: center; margin-bottom: 24px;">
           <a href="${signupUrl}" style="display: inline-block; background: #00FF88; color: #000000; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">Accept Invite & Sign Up</a>
         </div>
-        
-        <p style="color: #666666; font-size: 12px; text-align: center;">
-          This invite expires in 7 days.<br>
-          © GREENROOM • <a href="https://greenroom.fm" style="color: #666666;">greenroom.fm</a>
-        </p>
+        <p style="color: #666666; font-size: 12px; text-align: center;">This invite expires in 7 days.<br>© GREENROOM</p>
       </div>
     `,
   });
@@ -62,312 +48,262 @@ async function sendInviteEmail(invite: {
 
 // GET - List all creator invites
 export async function GET() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  console.log("[Invites API] GET started");
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    console.log("[Invites API] Auth:", { userId: user?.id, error: authError?.message });
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized", details: authError?.message }, { status: 401 });
+    }
 
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    console.log("[Invites API] DB user:", { found: !!dbUser, role: dbUser?.role });
 
-  const invites = await prisma.creatorInvite.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      inviter: {
-        select: { id: true, email: true, username: true, artistName: true },
+    if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
+      return NextResponse.json({ error: "Forbidden", details: `Role '${dbUser?.role}' not authorized` }, { status: 403 });
+    }
+
+    const invites = await prisma.creatorInvite.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        inviter: { select: { id: true, email: true, username: true, artistName: true } },
+        usedBy: { select: { id: true, email: true, username: true, artistName: true } },
       },
-      usedBy: {
-        select: { id: true, email: true, username: true, artistName: true },
-      },
-    },
-  });
+    });
 
-  return NextResponse.json({ invites });
+    console.log("[Invites API] Found", invites.length, "invites");
+    return NextResponse.json({ invites });
+  } catch (error) {
+    console.error("[Invites API] Error:", error);
+    return NextResponse.json({ error: "Internal server error", details: String(error) }, { status: 500 });
+  }
 }
 
 // POST - Create new creator invite and send email
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const body = await request.json();
-  const { email, artistName, message } = body;
-
-  if (!email || !artistName) {
-    return NextResponse.json(
-      { error: "Email and artist name are required" },
-      { status: 400 }
-    );
-  }
-
-  // Check if email already has an account
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) {
-    return NextResponse.json(
-      { error: "A user with this email already exists" },
-      { status: 400 }
-    );
-  }
-
-  // Check for existing pending invite
-  const existingInvite = await prisma.creatorInvite.findUnique({
-    where: { email },
-  });
-  if (existingInvite && !existingInvite.usedAt && existingInvite.expiresAt > new Date()) {
-    return NextResponse.json(
-      { error: "An active invite already exists for this email" },
-      { status: 400 }
-    );
-  }
-
-  // Delete old expired/used invite if exists
-  if (existingInvite) {
-    await prisma.creatorInvite.delete({ where: { email } });
-  }
-
-  // Create invite (expires in 7 days)
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-
-  const invite = await prisma.creatorInvite.create({
-    data: {
-      email,
-      artistName,
-      message,
-      invitedBy: user.id,
-      expiresAt,
-      emailStatus: "pending",
-    },
-  });
-
-  // Try to send email
-  let emailError: string | null = null;
+  console.log("[Invites API] POST started");
   try {
-    await sendInviteEmail(invite);
-    
-    // Update invite with success status
-    await prisma.creatorInvite.update({
-      where: { id: invite.id },
-      data: {
-        emailStatus: "sent",
-        emailSentAt: new Date(),
-      },
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    console.log("[Invites API] POST Auth:", { userId: user?.id, error: authError?.message });
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized", details: authError?.message }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
+      return NextResponse.json({ error: "Forbidden", details: `Role '${dbUser?.role}'` }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { email, artistName, message } = body;
+    console.log("[Invites API] POST body:", { email, artistName });
+
+    if (!email || !artistName) {
+      return NextResponse.json({ error: "Email and artist name are required" }, { status: 400 });
+    }
+
+    // Check if email already has an account
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return NextResponse.json({ error: "A user with this email already exists" }, { status: 400 });
+    }
+
+    // Check for existing pending invite
+    const existingInvite = await prisma.creatorInvite.findUnique({ where: { email } });
+    if (existingInvite && !existingInvite.usedAt && existingInvite.expiresAt > new Date()) {
+      return NextResponse.json({ error: "An active invite already exists for this email" }, { status: 400 });
+    }
+
+    // Delete old expired/used invite if exists
+    if (existingInvite) {
+      await prisma.creatorInvite.delete({ where: { email } });
+    }
+
+    // Create invite (expires in 7 days)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const invite = await prisma.creatorInvite.create({
+      data: { email, artistName, message, invitedBy: user.id, expiresAt, emailStatus: "pending" },
     });
+    console.log("[Invites API] Created invite:", invite.id);
 
-    // Log success
-    await prisma.auditLog.create({
-      data: {
-        actorId: user.id,
-        action: "CREATOR_INVITED",
-        targetType: "CreatorInvite",
-        targetId: invite.id,
-        metadata: { email, artistName, emailStatus: "sent" },
-      },
-    });
+    // Try to send email
+    try {
+      console.log("[Invites API] Attempting to send email to:", email);
+      await sendInviteEmail(invite);
+      console.log("[Invites API] Email sent successfully");
 
-    return NextResponse.json({ success: true, invite: { ...invite, emailStatus: "sent" } });
+      await prisma.creatorInvite.update({
+        where: { id: invite.id },
+        data: { emailStatus: "sent", emailSentAt: new Date() },
+      });
 
-  } catch (error) {
-    // Extract error message
-    emailError = error instanceof Error ? error.message : "Unknown email error";
-    
-    // Log detailed error
-    console.error("Failed to send invite email:", {
-      inviteId: invite.id,
-      email,
-      artistName,
-      error: emailError,
-      stack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Update invite with failure status (but keep the invite)
-    await prisma.creatorInvite.update({
-      where: { id: invite.id },
-      data: {
-        emailStatus: "failed",
-        emailError: emailError.substring(0, 500), // Truncate long errors
-        retryCount: 1,
-      },
-    });
-
-    // Log the failure
-    await prisma.auditLog.create({
-      data: {
-        actorId: user.id,
-        action: "CREATOR_INVITE_EMAIL_FAILED",
-        targetType: "CreatorInvite",
-        targetId: invite.id,
-        metadata: { 
-          email, 
-          artistName, 
-          emailStatus: "failed",
-          error: emailError.substring(0, 200),
+      await prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "CREATOR_INVITED",
+          targetType: "CreatorInvite",
+          targetId: invite.id,
+          metadata: { email, artistName, emailStatus: "sent" },
         },
-      },
-    });
+      });
 
-    // Return success but with email failure info
-    return NextResponse.json({ 
-      success: true, 
-      invite: { ...invite, emailStatus: "failed", emailError },
-      warning: `Invite created but email failed to send: ${emailError}`,
-    });
+      return NextResponse.json({ success: true, invite: { ...invite, emailStatus: "sent" } });
+    } catch (emailErr) {
+      const emailError = emailErr instanceof Error ? emailErr.message : "Unknown email error";
+      console.error("[Invites API] Email failed:", { inviteId: invite.id, email, error: emailError, stack: emailErr instanceof Error ? emailErr.stack : undefined });
+
+      await prisma.creatorInvite.update({
+        where: { id: invite.id },
+        data: { emailStatus: "failed", emailError: emailError.substring(0, 500), retryCount: 1 },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "CREATOR_INVITE_EMAIL_FAILED",
+          targetType: "CreatorInvite",
+          targetId: invite.id,
+          metadata: { email, artistName, emailStatus: "failed", error: emailError.substring(0, 200) },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        invite: { ...invite, emailStatus: "failed", emailError },
+        warning: `Invite created but email failed: ${emailError}`,
+      });
+    }
+  } catch (error) {
+    console.error("[Invites API] POST error:", error);
+    return NextResponse.json({ error: "Internal server error", details: String(error) }, { status: 500 });
   }
 }
 
 // PATCH - Retry sending email for a failed invite
 export async function PATCH(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const body = await request.json();
-  const { inviteId } = body;
-
-  if (!inviteId) {
-    return NextResponse.json({ error: "Invite ID required" }, { status: 400 });
-  }
-
-  const invite = await prisma.creatorInvite.findUnique({
-    where: { id: inviteId },
-  });
-
-  if (!invite) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
-  }
-
-  if (invite.usedAt) {
-    return NextResponse.json({ error: "Invite already used" }, { status: 400 });
-  }
-
-  if (invite.expiresAt < new Date()) {
-    return NextResponse.json({ error: "Invite expired" }, { status: 400 });
-  }
-
-  if (invite.emailStatus === "sent") {
-    return NextResponse.json({ error: "Email already sent successfully" }, { status: 400 });
-  }
-
-  // Try to resend
+  console.log("[Invites API] PATCH started");
   try {
-    await sendInviteEmail(invite);
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    await prisma.creatorInvite.update({
-      where: { id: invite.id },
-      data: {
-        emailStatus: "sent",
-        emailSentAt: new Date(),
-        emailError: null,
-      },
-    });
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    await prisma.auditLog.create({
-      data: {
-        actorId: user.id,
-        action: "CREATOR_INVITE_RESENT",
-        targetType: "CreatorInvite",
-        targetId: invite.id,
-        metadata: { email: invite.email, retryCount: invite.retryCount + 1 },
-      },
-    });
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
-    return NextResponse.json({ success: true, message: "Email sent successfully" });
+    const body = await request.json();
+    const { inviteId } = body;
 
+    if (!inviteId) {
+      return NextResponse.json({ error: "Invite ID required" }, { status: 400 });
+    }
+
+    const invite = await prisma.creatorInvite.findUnique({ where: { id: inviteId } });
+    if (!invite) {
+      return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    }
+    if (invite.usedAt) {
+      return NextResponse.json({ error: "Invite already used" }, { status: 400 });
+    }
+    if (invite.expiresAt < new Date()) {
+      return NextResponse.json({ error: "Invite expired" }, { status: 400 });
+    }
+    if (invite.emailStatus === "sent") {
+      return NextResponse.json({ error: "Email already sent" }, { status: 400 });
+    }
+
+    try {
+      console.log("[Invites API] Retrying email for:", invite.email);
+      await sendInviteEmail(invite);
+
+      await prisma.creatorInvite.update({
+        where: { id: invite.id },
+        data: { emailStatus: "sent", emailSentAt: new Date(), emailError: null },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: "CREATOR_INVITE_RESENT",
+          targetType: "CreatorInvite",
+          targetId: invite.id,
+          metadata: { email: invite.email, retryCount: invite.retryCount + 1 },
+        },
+      });
+
+      return NextResponse.json({ success: true, message: "Email sent successfully" });
+    } catch (emailErr) {
+      const emailError = emailErr instanceof Error ? emailErr.message : "Unknown error";
+      console.error("[Invites API] Retry failed:", { inviteId, error: emailError });
+
+      await prisma.creatorInvite.update({
+        where: { id: invite.id },
+        data: { emailError: emailError.substring(0, 500), retryCount: invite.retryCount + 1 },
+      });
+
+      return NextResponse.json({ error: `Failed to send email: ${emailError}` }, { status: 500 });
+    }
   } catch (error) {
-    const emailError = error instanceof Error ? error.message : "Unknown error";
-
-    console.error("Failed to resend invite email:", {
-      inviteId: invite.id,
-      email: invite.email,
-      error: emailError,
-      retryCount: invite.retryCount + 1,
-      timestamp: new Date().toISOString(),
-    });
-
-    await prisma.creatorInvite.update({
-      where: { id: invite.id },
-      data: {
-        emailError: emailError.substring(0, 500),
-        retryCount: invite.retryCount + 1,
-      },
-    });
-
-    return NextResponse.json(
-      { error: `Failed to send email: ${emailError}` },
-      { status: 500 }
-    );
+    console.error("[Invites API] PATCH error:", error);
+    return NextResponse.json({ error: "Internal server error", details: String(error) }, { status: 500 });
   }
 }
 
 // DELETE - Cancel/revoke an invite
 export async function DELETE(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const inviteId = searchParams.get("id");
+
+    if (!inviteId) {
+      return NextResponse.json({ error: "Invite ID required" }, { status: 400 });
+    }
+
+    const invite = await prisma.creatorInvite.findUnique({ where: { id: inviteId } });
+    if (!invite) {
+      return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    }
+    if (invite.usedAt) {
+      return NextResponse.json({ error: "Cannot delete used invite" }, { status: 400 });
+    }
+
+    await prisma.creatorInvite.delete({ where: { id: inviteId } });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: "CREATOR_INVITE_REVOKED",
+        targetType: "CreatorInvite",
+        targetId: inviteId,
+        metadata: { email: invite.email },
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[Invites API] DELETE error:", error);
+    return NextResponse.json({ error: "Internal server error", details: String(error) }, { status: 500 });
   }
-
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-  if (!dbUser || !["ADMIN", "MODERATOR"].includes(dbUser.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const inviteId = searchParams.get("id");
-
-  if (!inviteId) {
-    return NextResponse.json({ error: "Invite ID required" }, { status: 400 });
-  }
-
-  const invite = await prisma.creatorInvite.findUnique({
-    where: { id: inviteId },
-  });
-
-  if (!invite) {
-    return NextResponse.json({ error: "Invite not found" }, { status: 404 });
-  }
-
-  if (invite.usedAt) {
-    return NextResponse.json(
-      { error: "Cannot delete used invite" },
-      { status: 400 }
-    );
-  }
-
-  await prisma.creatorInvite.delete({ where: { id: inviteId } });
-
-  await prisma.auditLog.create({
-    data: {
-      actorId: user.id,
-      action: "CREATOR_INVITE_REVOKED",
-      targetType: "CreatorInvite",
-      targetId: inviteId,
-      metadata: { email: invite.email },
-    },
-  });
-
-  return NextResponse.json({ success: true });
 }
