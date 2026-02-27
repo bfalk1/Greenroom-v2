@@ -1,5 +1,30 @@
 import { prisma } from "@/lib/prisma";
+import { Resend } from "resend";
 import { NextRequest, NextResponse } from "next/server";
+
+// Add contact to Resend audience
+async function addToResendAudience(email: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const audienceId = process.env.RESEND_AUDIENCE_ID;
+  
+  if (!apiKey || !audienceId) {
+    console.log("[Waitlist] Resend not configured, skipping audience add");
+    return;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    await resend.contacts.create({
+      audienceId,
+      email,
+      unsubscribed: false,
+    });
+    console.log("[Waitlist] Added to Resend audience:", email);
+  } catch (error) {
+    // Don't fail the signup if Resend fails
+    console.error("[Waitlist] Failed to add to Resend audience:", error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,12 +52,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Add to waitlist
+    // Add to waitlist DB
     await prisma.waitlistEntry.create({
       data: {
         email: normalizedEmail,
       },
     });
+
+    // Add to Resend audience
+    await addToResendAudience(normalizedEmail);
 
     return NextResponse.json({ success: true });
   } catch (error) {
