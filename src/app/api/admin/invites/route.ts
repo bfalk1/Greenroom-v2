@@ -103,18 +103,22 @@ export async function POST(request: NextRequest) {
     console.log("[Invites API] POST body:", { email, artistName });
 
     if (!email || !artistName) {
+      console.log("[Invites API] Missing email or artistName");
       return NextResponse.json({ error: "Email and artist name are required" }, { status: 400 });
     }
 
     // Check if email already has an account
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
+      console.log("[Invites API] User already exists:", { email, userId: existingUser.id });
       return NextResponse.json({ error: "A user with this email already exists" }, { status: 400 });
     }
 
     // Check for existing pending invite
     const existingInvite = await prisma.creatorInvite.findUnique({ where: { email } });
+    console.log("[Invites API] Existing invite check:", { email, found: !!existingInvite, usedAt: existingInvite?.usedAt, expiresAt: existingInvite?.expiresAt });
     if (existingInvite && !existingInvite.usedAt && existingInvite.expiresAt > new Date()) {
+      console.log("[Invites API] Active invite already exists");
       return NextResponse.json({ error: "An active invite already exists for this email" }, { status: 400 });
     }
 
