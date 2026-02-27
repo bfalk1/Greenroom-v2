@@ -31,18 +31,29 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
+  
+  // Log for debugging API auth issues
+  if (pathname.startsWith("/api/")) {
+    console.log("[Middleware]", pathname, { userId: user?.id, authError: authError?.message });
+  }
 
   // Public paths — no auth required
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health", "/api/webhooks"];
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/waitlist", "/api/health", "/api/webhooks", "/api/waitlist"];
   const isPublicPath = publicPaths.some((path) =>
-    pathname === path || pathname.startsWith("/api/webhooks")
+    pathname === path || pathname.startsWith("/api/webhooks") || pathname.startsWith("/api/waitlist")
   );
 
   if (isPublicPath) {
     return supabaseResponse;
+  }
+
+  // API routes should return 401, not redirect
+  if (pathname.startsWith("/api/") && !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Protected routes — redirect to login if not authenticated
