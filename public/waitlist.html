@@ -45,8 +45,15 @@
       max-width: 90vw;
       width: 500px;
       height: auto;
-      margin-bottom: 60px;
+      margin-bottom: 32px;
       filter: drop-shadow(0 0 40px rgba(0,255,136,0.4));
+    }
+
+    .welcome {
+      font-size: clamp(24px, 5vw, 32px);
+      font-weight: 300;
+      color: #fff;
+      margin-bottom: 48px;
     }
 
     form {
@@ -121,6 +128,8 @@
 
   <div class="container">
     <img src="/greenroom-logo.png" alt="GREENROOM" class="logo">
+
+    <h1 class="welcome">Welcome to the Greenroom</h1>
 
     <form id="form">
       <input type="email" id="email" placeholder="your@email.com" required>

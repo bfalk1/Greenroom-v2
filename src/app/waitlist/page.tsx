@@ -138,7 +138,7 @@ export default function WaitlistPage() {
       <div className={`relative z-30 text-center transition-all duration-1000 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
         
         {/* Logo */}
-        <div className={`mb-16 transition-all duration-1000 delay-200 ${mounted ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+        <div className={`mb-8 transition-all duration-1000 delay-200 ${mounted ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
           <Image
             src="/greenroom-logo.png"
             alt="GREENROOM"
@@ -148,6 +148,11 @@ export default function WaitlistPage() {
             priority
           />
         </div>
+
+        {/* Welcome Text */}
+        <h1 className={`text-2xl md:text-3xl text-white font-light mb-12 transition-all duration-1000 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          Welcome to the Greenroom
+        </h1>
 
         {/* Email Signup */}
         <div className={`transition-all duration-1000 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
