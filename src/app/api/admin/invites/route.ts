@@ -21,7 +21,7 @@ async function sendInviteEmail(invite: {
       <div style="font-family: 'GT America', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #000000; padding: 48px 32px;">
         <!-- Logo -->
         <div style="text-align: center; margin-bottom: 32px;">
-          <h1 style="font-family: 'Eurostile', 'Arial Black', Impact, sans-serif; color: #ffffff; margin: 0; font-size: 36px; font-weight: 900; letter-spacing: 2px;">GREENROOM<span style="color: #00FF88;">·</span></h1>
+          <h1 style="font-family: 'Eurostile', 'Arial Black', Impact, sans-serif; color: #ffffff; margin: 0; font-size: 36px; font-weight: 900; letter-spacing: 2px;">GREENROOM<span style="color: #39b54a;">·</span></h1>
         </div>
         
         <!-- Welcome Text -->
@@ -31,9 +31,9 @@ async function sendInviteEmail(invite: {
         <p style="font-family: 'GT America Mono', 'SF Mono', 'Monaco', 'Consolas', monospace; color: #ffffff; text-align: center; font-size: 14px; margin: 0 0 32px 0;">Hi ${invite.artistName},</p>
         
         <!-- Main Headline -->
-        <h2 style="font-family: 'Eurostile', 'Arial Black', Impact, sans-serif; color: #00FF88; text-align: center; font-size: 24px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 40px 0;">YOU'VE BEEN INVITED TO BECOME A CREATOR.</h2>
+        <h2 style="font-family: 'Eurostile', 'Arial Black', Impact, sans-serif; color: #39b54a; text-align: center; font-size: 24px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 40px 0;">YOU'VE BEEN INVITED TO BECOME A CREATOR.</h2>
         
-        ${invite.message ? `<div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 32px; border-left: 4px solid #00FF88;"><p style="font-family: 'GT America Mono', monospace; color: #a1a1a1; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Message from the team:</p><p style="font-family: 'GT America', sans-serif; color: #ffffff; margin: 0; font-size: 14px;">${invite.message}</p></div>` : ""}
+        ${invite.message ? `<div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 32px; border-left: 4px solid #39b54a;"><p style="font-family: 'GT America Mono', monospace; color: #a1a1a1; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Message from the team:</p><p style="font-family: 'GT America', sans-serif; color: #ffffff; margin: 0; font-size: 14px;">${invite.message}</p></div>` : ""}
         
         <!-- Benefits Box -->
         <div style="background: #1a1a1a; border-radius: 12px; padding: 28px 32px; margin-bottom: 40px;">
@@ -48,7 +48,7 @@ async function sendInviteEmail(invite: {
         
         <!-- CTA Button -->
         <div style="text-align: center; margin-bottom: 40px;">
-          <a href="${signupUrl}" style="display: inline-block; background: #00FF88; color: #000000; padding: 18px 48px; border-radius: 8px; text-decoration: none; font-family: 'GT America', -apple-system, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase;">ACCEPT INVITE & SIGN UP</a>
+          <a href="${signupUrl}" style="display: inline-block; background: #39b54a; color: #000000; padding: 18px 48px; border-radius: 8px; text-decoration: none; font-family: 'GT America', -apple-system, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase;">ACCEPT INVITE & SIGN UP</a>
         </div>
         
         <!-- Footer -->
