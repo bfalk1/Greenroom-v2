@@ -313,16 +313,20 @@ model Follow {
 // ─────────────────────────────────────────────
 
 model CreatorInvite {
-  id          String    @id @default(uuid()) @db.Uuid
-  email       String    @unique
-  artistName  String    @map("artist_name")
-  message     String?   // Optional personal message from admin
-  invitedBy   String    @map("invited_by") @db.Uuid
-  token       String    @unique @default(uuid()) @db.Uuid
-  expiresAt   DateTime  @map("expires_at")
-  usedAt      DateTime? @map("used_at")
-  usedByUserId String?  @unique @map("used_by_user_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  artistName   String    @map("artist_name")
+  message      String?   // Optional personal message from admin
+  invitedBy    String    @map("invited_by") @db.Uuid
+  token        String    @unique @default(uuid()) @db.Uuid
+  expiresAt    DateTime  @map("expires_at")
+  usedAt       DateTime? @map("used_at")
+  usedByUserId String?   @unique @map("used_by_user_id") @db.Uuid
+  emailStatus  String    @default("pending") @map("email_status") // pending, sent, failed
+  emailError   String?   @map("email_error")
+  emailSentAt  DateTime? @map("email_sent_at")
+  retryCount   Int       @default(0) @map("retry_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
   inviter User  @relation("InvitedBy", fields: [invitedBy], references: [id])
   usedBy  User? @relation("InviteUsedBy", fields: [usedByUserId], references: [id])

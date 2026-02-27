@@ -13,6 +13,8 @@ import {
   Trash2,
   UserPlus,
   Copy,
+  RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +43,10 @@ interface Invite {
   createdAt: string;
   inviter: Inviter;
   usedBy: UsedBy | null;
+  emailStatus: "pending" | "sent" | "failed";
+  emailError: string | null;
+  emailSentAt: string | null;
+  retryCount: number;
 }
 
 export function CreatorInvitePanel() {
@@ -48,6 +54,7 @@ export function CreatorInvitePanel() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   // Form state
   const [email, setEmail] = useState("");
@@ -140,6 +147,30 @@ export function CreatorInvitePanel() {
     toast.success("Invite link copied!");
   };
 
+  const handleRetryEmail = async (inviteId: string) => {
+    setRetryingId(inviteId);
+    try {
+      const res = await fetch("/api/admin/invites", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inviteId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to retry");
+      }
+
+      toast.success("Email sent successfully!");
+      await fetchInvites();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send email");
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const getInviteStatus = (invite: Invite) => {
     if (invite.usedAt) {
       return (
@@ -161,6 +192,31 @@ export function CreatorInvitePanel() {
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
         <Clock className="w-3 h-3" />
         Pending
+      </span>
+    );
+  };
+
+  const getEmailStatus = (invite: Invite) => {
+    if (invite.emailStatus === "sent") {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-[#00FF88]">
+          <CheckCircle2 className="w-3 h-3" />
+          Email sent
+        </span>
+      );
+    }
+    if (invite.emailStatus === "failed") {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs text-red-400" title={invite.emailError || "Email failed"}>
+          <AlertTriangle className="w-3 h-3" />
+          Email failed {invite.retryCount > 0 && `(${invite.retryCount} retries)`}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-yellow-400">
+        <Clock className="w-3 h-3" />
+        Email pending
       </span>
     );
   };
@@ -286,11 +342,34 @@ export function CreatorInvitePanel() {
                       <> • Signed up as @{invite.usedBy.username || invite.usedBy.artistName}</>
                     )}
                   </p>
+                  <div className="mt-1">
+                    {getEmailStatus(invite)}
+                    {invite.emailError && (
+                      <p className="text-xs text-red-400/70 mt-0.5 truncate max-w-xs" title={invite.emailError}>
+                        {invite.emailError}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 ml-4">
                   {!invite.usedAt && new Date(invite.expiresAt) > new Date() && (
                     <>
+                      {invite.emailStatus === "failed" && (
+                        <Button
+                          onClick={() => handleRetryEmail(invite.id)}
+                          disabled={retryingId === invite.id}
+                          variant="ghost"
+                          className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10"
+                          title="Retry sending email"
+                        >
+                          {retryingId === invite.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                        </Button>
+                      )}
                       <Button
                         onClick={() => copyInviteLink(invite.token)}
                         variant="ghost"
