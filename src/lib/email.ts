@@ -15,7 +15,7 @@ function getResend() {
 
 // Admin email for contact form and notifications
 export const ADMIN_EMAIL = "admin@greenroom.fm";
-const FROM_EMAIL = "GREENROOM <noreply@greenroom.fm>";
+const FROM_EMAIL = "GREENROOM <chris@greenroom.fm>";
 
 interface SendEmailOptions {
   to: string;
