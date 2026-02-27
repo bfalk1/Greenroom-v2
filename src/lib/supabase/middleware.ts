@@ -42,10 +42,12 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Public paths — no auth required
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/waitlist", "/api/health", "/api/webhooks", "/api/waitlist"];
-  const isPublicPath = publicPaths.some((path) =>
-    pathname === path || pathname.startsWith("/api/webhooks") || pathname.startsWith("/api/waitlist")
-  );
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health"];
+  const isPublicPath = 
+    publicPaths.includes(pathname) || 
+    pathname.startsWith("/waitlist") ||
+    pathname.startsWith("/api/waitlist") ||
+    pathname.startsWith("/api/webhooks");
 
   if (isPublicPath) {
     return supabaseResponse;
