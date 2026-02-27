@@ -26,13 +26,28 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
+  // Add unsubscribe link to HTML emails if not already present
+  let html = options.html;
+  if (html && !html.includes("RESEND_UNSUBSCRIBE_URL")) {
+    html = html.replace(
+      /<\/div>\s*$/, 
+      `<p style="color: #444444; font-size: 11px; text-align: center; margin-top: 16px;"><a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #444444;">Unsubscribe</a></p></div>`
+    );
+  }
+
+  // Add unsubscribe to plain text
+  let text = options.text;
+  if (!text.includes("unsubscribe")) {
+    text += "\n\n---\nUnsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}";
+  }
+
   const { data, error } = await getResend().emails.send({
     from: FROM_EMAIL,
     to: options.to,
     replyTo: options.replyTo,
     subject: options.subject,
-    text: options.text,
-    html: options.html,
+    text,
+    html,
   });
 
   if (error) {

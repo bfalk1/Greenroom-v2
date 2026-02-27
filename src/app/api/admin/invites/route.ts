@@ -41,6 +41,9 @@ async function sendInviteEmail(invite: {
           <a href="${signupUrl}" style="display: inline-block; background: #00FF88; color: #000000; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">Accept Invite & Sign Up</a>
         </div>
         <p style="color: #666666; font-size: 12px; text-align: center;">This invite expires in 7 days.<br>© GREENROOM</p>
+        <p style="color: #444444; font-size: 11px; text-align: center; margin-top: 16px;">
+          <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #444444;">Unsubscribe</a>
+        </p>
       </div>
     `,
   });
