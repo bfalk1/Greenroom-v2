@@ -242,6 +242,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enforce credit price limit: max 5 for non-whitelisted creators
+    const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
+    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
+    if (parsedCreditPrice > maxCreditPrice) {
+      return NextResponse.json(
+        { error: `Credit price cannot exceed ${maxCreditPrice}` },
+        { status: 400 }
+      );
+    }
+
     const slug =
       name
         .toLowerCase()
@@ -260,7 +270,7 @@ export async function POST(request: NextRequest) {
         sampleType: sampleType as "LOOP" | "ONE_SHOT",
         key: key || null,
         bpm: bpm ? parseInt(bpm) : null,
-        creditPrice: creditPrice ? parseInt(creditPrice) : 1,
+        creditPrice: parsedCreditPrice,
         tags: tags
           ? (Array.isArray(tags)
               ? tags

@@ -85,6 +85,7 @@ export async function GET() {
         social_links: user.socialLinks,
         bio: user.bio,
         banner_url: user.bannerUrl,
+        is_whitelisted: user.isWhitelisted ?? false,
       },
     });
   } catch (error) {

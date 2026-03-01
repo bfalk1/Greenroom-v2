@@ -17,6 +17,7 @@ export interface AppUser {
   avatar_url: string | null;
   banner_url: string | null;
   profile_completed: boolean;
+  is_whitelisted?: boolean;
 }
 
 interface UserContextType {

@@ -531,14 +531,18 @@ export default function CreatorUploadPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                Credit Price
+                Credit Price {!user?.is_whitelisted && <span className="text-[#666] font-normal">(max 5)</span>}
               </label>
               <Input
                 type="number"
                 min="1"
-                max="50"
+                max={user?.is_whitelisted ? 50 : 5}
                 value={formData.creditPrice}
-                onChange={(e) => handleChange("creditPrice", e.target.value)}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value) || 1;
+                  const max = user?.is_whitelisted ? 50 : 5;
+                  handleChange("creditPrice", String(Math.min(val, max)));
+                }}
                 className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
               />
             </div>

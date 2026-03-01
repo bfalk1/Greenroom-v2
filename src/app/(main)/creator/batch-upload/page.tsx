@@ -595,11 +595,16 @@ export default function BatchUploadPage() {
                     <Input
                       type="number"
                       value={sample.creditPrice}
-                      onChange={(e) => updateSample(sample.id, "creditPrice", e.target.value)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 1;
+                        const max = user?.is_whitelisted ? 50 : 5;
+                        updateSample(sample.id, "creditPrice", String(Math.min(val, max)));
+                      }}
                       placeholder="Credits"
                       disabled={sample.status !== "pending"}
                       className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-16"
                       min="1"
+                      max={user?.is_whitelisted ? 50 : 5}
                     />
                     
                     {/* Remove */}
