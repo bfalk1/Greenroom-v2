@@ -23,7 +23,7 @@ async function deleteUser(identifier: string) {
   }
 
   console.log(`Found user: ${user.email} (${user.id})`)
-  console.log(`Name: ${user.name || 'N/A'}`)
+  console.log(`Name: ${user.fullName || user.artistName || 'N/A'}`)
   console.log(`Role: ${user.role}`)
   console.log('')
 
