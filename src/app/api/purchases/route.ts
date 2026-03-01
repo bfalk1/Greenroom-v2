@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         throw new Error("User not found");
       }
 
-      const userCredits = user.creditBalance?.balance ?? user.credits;
+      const userCredits = user.creditBalance?.balance ?? user.credits ?? 0;
 
       if (userCredits < sample.creditPrice) {
         throw new Error(
