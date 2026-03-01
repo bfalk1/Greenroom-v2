@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendTemplateEmail } from "@/lib/email";
 
 // Template ID from Resend dashboard
-const CREATOR_INVITE_TEMPLATE_ID = process.env.RESEND_CREATOR_INVITE_TEMPLATE_ID || "";
+const CREATOR_INVITE_TEMPLATE_ID = process.env.RESEND_CREATOR_INVITE_TEMPLATE_ID || "creator-invite-copy";
 
 // Helper to send invite email using Resend template
 async function sendInviteEmail(invite: {
@@ -15,10 +15,6 @@ async function sendInviteEmail(invite: {
   token: string;
 }) {
   const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?invite=${invite.token}`;
-
-  if (!CREATOR_INVITE_TEMPLATE_ID) {
-    throw new Error("RESEND_CREATOR_INVITE_TEMPLATE_ID environment variable is not set");
-  }
 
   await sendTemplateEmail({
     to: invite.email,
