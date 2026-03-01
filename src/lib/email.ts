@@ -25,6 +25,14 @@ interface SendEmailOptions {
   replyTo?: string;
 }
 
+interface SendTemplateEmailOptions {
+  to: string;
+  subject: string;
+  templateId: string;
+  variables?: Record<string, string | number>;
+  replyTo?: string;
+}
+
 export async function sendEmail(options: SendEmailOptions) {
   const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/unsubscribe?email=${encodeURIComponent(options.to)}`;
   
@@ -65,6 +73,36 @@ export async function sendEmail(options: SendEmailOptions) {
 
   if (error) {
     console.error("Resend error:", error);
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+// Send email using a Resend template
+export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+
+  const { data, error } = await getResend().emails.send({
+    from: FROM_EMAIL,
+    to: options.to,
+    replyTo: options.replyTo,
+    subject: options.subject,
+    template: {
+      id: options.templateId,
+      variables: {
+        ...options.variables,
+        unsubscribe_url: unsubscribeUrl,
+      },
+    },
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
+  });
+
+  if (error) {
+    console.error("Resend template error:", error);
     throw new Error(error.message);
   }
 
