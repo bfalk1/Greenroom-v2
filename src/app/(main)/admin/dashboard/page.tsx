@@ -646,21 +646,6 @@ export default function AdminDashboardPage() {
           >
             Admin Tools
           </button>
-          <button
-            onClick={() => {
-              setActiveTab("settings");
-              fetchSettings();
-              fetchModerators();
-            }}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "settings"
-                ? "border-[#00FF88] text-[#00FF88]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <Settings className="w-4 h-4 inline mr-2" />
-            Settings
-          </button>
         </div>
 
         {/* Content */}
@@ -1132,95 +1117,6 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {activeTab === "settings" && (
-            <div className="space-y-8">
-              {/* Moderator Whitelist */}
-              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-purple-500/10 rounded-lg">
-                    <Shield className="w-5 h-5 text-purple-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">Moderator Whitelist</h3>
-                    <p className="text-sm text-[#a1a1a1]">Manage users who can moderate content</p>
-                  </div>
-                </div>
-
-                {/* Add Moderator */}
-                <div className="flex gap-3 mb-6">
-                  <Input
-                    type="email"
-                    placeholder="Enter user email to add as moderator..."
-                    value={newModEmail}
-                    onChange={(e) => setNewModEmail(e.target.value)}
-                    className="flex-1 bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
-                    onKeyDown={(e) => e.key === "Enter" && handleAddModerator()}
-                  />
-                  <Button
-                    onClick={handleAddModerator}
-                    disabled={addingMod || !newModEmail.trim()}
-                    className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-                  >
-                    {addingMod ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-
-                {/* Moderator List */}
-                {moderators.length > 0 ? (
-                  <div className="space-y-3">
-                    {moderators.map((mod) => (
-                      <div
-                        key={mod.id}
-                        className="flex items-center justify-between p-4 bg-[#0a0a0a] rounded-lg border border-[#2a2a2a]"
-                      >
-                        <div className="flex items-center gap-3">
-                          {mod.avatarUrl ? (
-                            <img
-                              src={mod.avatarUrl}
-                              alt=""
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
-                              <Shield className="w-5 h-5 text-purple-400" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-white font-medium">
-                              {mod.artistName || mod.fullName || mod.username || "Unknown"}
-                            </p>
-                            <p className="text-xs text-[#a1a1a1]">{mod.email}</p>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={() => handleRemoveModerator(mod.id)}
-                          disabled={removingModId === mod.id}
-                          variant="ghost"
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        >
-                          {removingModId === mod.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Shield className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
-                    <p className="text-[#a1a1a1]">No moderators added yet</p>
-                    <p className="text-xs text-[#666]">Add users by their email address</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Edit Sample Modal */}
