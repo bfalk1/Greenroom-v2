@@ -50,7 +50,7 @@ Discover Greenroom: ${signupUrl}
           <!-- Logo -->
           <tr>
             <td align="center" style="padding: 32px 20px 24px 20px; background-color: #000000;">
-              <h1 style="margin: 0; font-size: 32px; font-weight: 900; letter-spacing: 3px; color: #ffffff; font-family: 'Arial Black', Helvetica, Arial, sans-serif;">GREENROOM<span style="color: #4CAF50;">&#8226;</span></h1>
+              <h1 style="margin: 0; font-size: 36px; font-weight: 900; letter-spacing: 1px; color: #ffffff; font-family: Impact, 'Arial Narrow', Arial, sans-serif; text-transform: uppercase;">GREENROOM<span style="color: #4CAF50;">&#8226;</span></h1>
             </td>
           </tr>
           
@@ -72,11 +72,11 @@ Discover Greenroom: ${signupUrl}
           <!-- Content Section -->
           <tr>
             <td style="padding: 48px 40px; background-color: #000000;">
-              <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #ffffff; text-align: center;">Your Exclusive Creator Invite</h3>
-              <h2 style="margin: 0 0 16px 0; font-size: 32px; font-weight: 400; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif;">Welcome to the Greenroom</h2>
+              <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #ffffff; text-align: center; font-family: Arial, Helvetica, sans-serif;">Your Exclusive Creator Invite</h3>
+              <h2 style="margin: 0 0 16px 0; font-size: 36px; font-weight: 400; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">Welcome to the Greenroom</h2>
               <p style="margin: 0 0 32px 0; font-size: 16px; color: #ffffff; text-align: center; line-height: 1.5;">This is your invite to participate in our early access creator program.</p>
               
-              <h4 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 700; color: #4CAF50; text-align: center;">As a Greenroom creator, you can:</h4>
+              <h4 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 700; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">As a Greenroom creator, you can:</h4>
               
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 40px;">
                 <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Upload your samples on your own schedule</td></tr>
