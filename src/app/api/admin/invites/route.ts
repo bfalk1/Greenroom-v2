@@ -12,7 +12,6 @@ async function sendInviteEmail(invite: {
   token: string;
 }) {
   const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?invite=${invite.token}`;
-  const heroImageUrl = "https://greenroom.fm/email-hero.jpg"; // Hero image with studio equipment
 
   await sendEmail({
     to: invite.email,
@@ -55,15 +54,15 @@ Discover Greenroom: ${signupUrl}
             </td>
           </tr>
           
-          <!-- Hero Image Section -->
+          <!-- Hero Section -->
           <tr>
-            <td style="background-color: #1a1a1a; background-image: url('${heroImageUrl}'); background-size: cover; background-position: center;">
+            <td style="background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 50%, #1a1a1a 100%);">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
-                  <td style="padding: 60px 40px; text-align: center; background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.6));">
-                    <p style="margin: 0 0 16px 0; font-size: 14px; letter-spacing: 8px; color: #ffffff; font-family: monospace;">0 4 . 0 1 . 2 0 2 5</p>
+                  <td style="padding: 60px 40px; text-align: center;">
+                    <p style="margin: 0 0 16px 0; font-size: 14px; letter-spacing: 8px; color: #888888; font-family: monospace;">0 4 . 0 1 . 2 0 2 5</p>
                     <h2 style="margin: 0 0 16px 0; font-size: 48px; font-weight: 400; color: #ffffff; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">A New Era</h2>
-                    <p style="margin: 0; font-size: 16px; color: #ffffff;">The world's first open sample marketplace</p>
+                    <p style="margin: 0; font-size: 16px; color: #cccccc;">The world's first open sample marketplace</p>
                   </td>
                 </tr>
               </table>
