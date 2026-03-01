@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail } from "@/lib/email";
+import { sendTemplateEmail } from "@/lib/email";
 
-// Helper to send invite email
+// Helper to send invite email using Resend template
 async function sendInviteEmail(invite: {
   id: string;
   email: string;
@@ -13,41 +13,15 @@ async function sendInviteEmail(invite: {
 }) {
   const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?invite=${invite.token}`;
 
-  await sendEmail({
+  await sendTemplateEmail({
     to: invite.email,
     subject: `You've been invited to become a GREENROOM Creator`,
-    text: `Hi ${invite.artistName},\n\nYou've been invited to become a GREENROOM Creator!\n\n${invite.message ? `Message from the team: ${invite.message}\n\n` : ""}As a GREENROOM Creator, you can:\n• Upload and sell your samples\n• Earn money from every download\n• Build your audience\n• Connect with music producers worldwide\n\nClick here to sign up: ${signupUrl}\n\nThis invite expires in 7 days.\n\n© GREENROOM`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #000000; padding: 48px 32px;">
-        <div style="text-align: center; margin-bottom: 32px;">
-          <h1 style="color: #ffffff; margin: 0; font-size: 36px; font-weight: 900; letter-spacing: 2px;">GREENROOM<span style="color: #39b54a;">·</span></h1>
-        </div>
-        
-        <p style="color: #ffffff; text-align: center; font-size: 14px; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 24px 0;">WELCOME TO THE GREENROOM</p>
-        
-        <p style="color: #ffffff; text-align: center; font-size: 14px; margin: 0 0 32px 0;">Hi ${invite.artistName},</p>
-        
-        <h2 style="color: #39b54a; text-align: center; font-size: 24px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 40px 0;">YOU'VE BEEN INVITED TO BECOME A CREATOR.</h2>
-        
-        ${invite.message ? `<div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 32px; border-left: 4px solid #39b54a;"><p style="color: #a1a1a1; margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Message from the team:</p><p style="color: #ffffff; margin: 0; font-size: 14px;">${invite.message}</p></div>` : ""}
-        
-        <div style="background: #1a1a1a; border-radius: 12px; padding: 28px 32px; margin-bottom: 40px;">
-          <p style="color: #ffffff; margin: 0 0 20px 0; font-size: 15px;">As a GREENROOM Creator, you can:</p>
-          <ul style="color: #a1a1a1; margin: 0; padding-left: 20px; font-size: 14px; line-height: 2;">
-            <li style="margin-bottom: 4px;">Upload and sell your samples</li>
-            <li style="margin-bottom: 4px;">Earn money from every download</li>
-            <li style="margin-bottom: 4px;">Build your audience</li>
-            <li>Connect with music producers worldwide</li>
-          </ul>
-        </div>
-        
-        <div style="text-align: center; margin-bottom: 40px;">
-          <a href="${signupUrl}" style="display: inline-block; background: #39b54a; color: #000000; padding: 18px 48px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 1px; text-transform: uppercase;">ACCEPT INVITE & SIGN UP</a>
-        </div>
-        
-        <p style="color: #666666; font-size: 12px; text-align: center; margin: 0;">This invite expires in 7 days.<br>© GREENROOM</p>
-      </div>
-    `,
+    templateId: "creator-invite-copy",
+    variables: {
+      artistName: invite.artistName,
+      signupUrl: signupUrl,
+      message: invite.message || "",
+    },
   });
 }
 
