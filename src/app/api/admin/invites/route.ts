@@ -50,7 +50,7 @@ Discover Greenroom: ${signupUrl}
           <!-- Logo -->
           <tr>
             <td align="center" style="padding: 32px 20px 24px 20px; background-color: #000000;">
-              <h1 style="margin: 0; font-size: 36px; font-weight: 900; letter-spacing: 1px; color: #ffffff; font-family: Impact, 'Arial Narrow', Arial, sans-serif; text-transform: uppercase;">GREENROOM<span style="color: #4CAF50;">&#8226;</span></h1>
+              <h1 style="margin: 0; font-size: 40px; font-weight: 800; letter-spacing: 2px; color: #ffffff; font-family: 'Eurostile', 'Bebas Neue', Impact, 'Arial Black', sans-serif; text-transform: uppercase;">GREENROOM<span style="color: #4CAF50; font-size: 32px; vertical-align: middle; margin-left: 2px;">•</span></h1>
             </td>
           </tr>
           
@@ -60,9 +60,9 @@ Discover Greenroom: ${signupUrl}
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td style="padding: 60px 40px; text-align: center;">
-                    <p style="margin: 0 0 16px 0; font-size: 14px; letter-spacing: 8px; color: #888888; font-family: monospace;">0 4 . 0 1 . 2 0 2 5</p>
-                    <h2 style="margin: 0 0 16px 0; font-size: 48px; font-weight: 400; color: #ffffff; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">A New Era</h2>
-                    <p style="margin: 0; font-size: 16px; color: #cccccc;">The world's first open sample marketplace</p>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; letter-spacing: 6px; color: #999999; font-family: 'GT America Mono', 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Consolas', monospace;">0 4 . 0 1 . 2 0 2 5</p>
+                    <h2 style="margin: 0 0 20px 0; font-size: 52px; font-weight: 400; color: #ffffff; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic;">A New Era</h2>
+                    <p style="margin: 0; font-size: 16px; color: #cccccc; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">The world's first open sample marketplace</p>
                   </td>
                 </tr>
               </table>
@@ -72,17 +72,17 @@ Discover Greenroom: ${signupUrl}
           <!-- Content Section -->
           <tr>
             <td style="padding: 48px 40px; background-color: #000000;">
-              <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #ffffff; text-align: center; font-family: Arial, Helvetica, sans-serif;">Your Exclusive Creator Invite</h3>
-              <h2 style="margin: 0 0 16px 0; font-size: 36px; font-weight: 400; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">Welcome to the Greenroom</h2>
-              <p style="margin: 0 0 32px 0; font-size: 16px; color: #ffffff; text-align: center; line-height: 1.5;">This is your invite to participate in our early access creator program.</p>
+              <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 700; color: #ffffff; text-align: center; font-family: 'GT America', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;">Your Exclusive Creator Invite</h3>
+              <h2 style="margin: 0 0 20px 0; font-size: 38px; font-weight: 400; color: #4CAF50; text-align: center; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic;">Welcome to the Greenroom</h2>
+              <p style="margin: 0 0 36px 0; font-size: 16px; color: #ffffff; text-align: center; line-height: 1.6; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">This is your invite to participate in our early access creator program.</p>
               
-              <h4 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 700; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">As a Greenroom creator, you can:</h4>
+              <h4 style="margin: 0 0 24px 0; font-size: 22px; font-weight: 400; color: #4CAF50; text-align: center; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic;">As a Greenroom creator, you can:</h4>
               
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 40px;">
-                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Upload your samples on your own schedule</td></tr>
-                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Earn money from every download</td></tr>
-                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- View detailed download and earnings analytics</td></tr>
-                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Curate your artist page, and use it to promote your own music</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.6; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">- Upload your samples on your own schedule</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.6; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">- Earn money from every download</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.6; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">- View detailed download and earnings analytics</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.6; font-family: 'GT America', -apple-system, BlinkMacSystemFont, Arial, sans-serif;">- Curate your artist page, and use it to promote your own music</td></tr>
               </table>
               
               <!-- CTA Button -->
