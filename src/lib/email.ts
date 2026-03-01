@@ -26,19 +26,28 @@ interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
+  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  
   // Add unsubscribe link to HTML emails if not already present
   let html = options.html;
-  if (html && !html.includes("RESEND_UNSUBSCRIBE_URL")) {
-    html = html.replace(
-      /<\/div>\s*$/, 
-      `<p style="color: #444444; font-size: 11px; text-align: center; margin-top: 16px;"><a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color: #444444;">Unsubscribe</a></p></div>`
-    );
+  if (html) {
+    // Replace Resend template placeholder with actual URL
+    html = html.replace(/\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/g, unsubscribeUrl);
+    
+    // Add unsubscribe link if not present
+    if (!html.includes("unsubscribe") && !html.includes("Unsubscribe")) {
+      html = html.replace(
+        /<\/div>\s*$/, 
+        `<p style="color: #444444; font-size: 11px; text-align: center; margin-top: 16px;"><a href="${unsubscribeUrl}" style="color: #444444;">Unsubscribe</a></p></div>`
+      );
+    }
   }
 
   // Add unsubscribe to plain text
   let text = options.text;
-  if (!text.includes("unsubscribe")) {
-    text += "\n\n---\nUnsubscribe: {{{RESEND_UNSUBSCRIBE_URL}}}";
+  text = text.replace(/\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}/g, unsubscribeUrl);
+  if (!text.toLowerCase().includes("unsubscribe")) {
+    text += `\n\n---\nUnsubscribe: ${unsubscribeUrl}`;
   }
 
   const { data, error } = await getResend().emails.send({
@@ -48,6 +57,10 @@ export async function sendEmail(options: SendEmailOptions) {
     subject: options.subject,
     text,
     html,
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
   });
 
   if (error) {
