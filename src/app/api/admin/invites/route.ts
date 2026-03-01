@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendTemplateEmail } from "@/lib/email";
+import { sendEmail } from "@/lib/email";
 
-// Helper to send invite email using Resend template
+// Helper to send invite email
 async function sendInviteEmail(invite: {
   id: string;
   email: string;
@@ -12,16 +12,105 @@ async function sendInviteEmail(invite: {
   token: string;
 }) {
   const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?invite=${invite.token}`;
+  const heroImageUrl = "https://greenroom.fm/email-hero.jpg"; // Hero image with studio equipment
 
-  await sendTemplateEmail({
+  await sendEmail({
     to: invite.email,
-    subject: `You've been invited to become a GREENROOM Creator`,
-    templateId: "creator-invite-copy",
-    variables: {
-      artistName: invite.artistName,
-      signupUrl: signupUrl,
-      message: invite.message || "",
-    },
+    subject: `Your Exclusive Creator Invite - GREENROOM`,
+    text: `GREENROOM - A New Era
+
+The world's first open sample marketplace
+
+Your Exclusive Creator Invite
+Welcome to the Greenroom
+
+This is your invite to participate in our early access creator program.
+
+As a Greenroom creator, you can:
+- Upload your samples on your own schedule
+- Earn money from every download
+- View detailed download and earnings analytics
+- Curate your artist page, and use it to promote your own music
+
+Discover Greenroom: ${signupUrl}
+
+© GREENROOM`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #000000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #000000;">
+    <tr>
+      <td align="center" style="padding: 0;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
+          
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding: 32px 20px 24px 20px; background-color: #000000;">
+              <h1 style="margin: 0; font-size: 32px; font-weight: 900; letter-spacing: 3px; color: #ffffff; font-family: 'Arial Black', Helvetica, Arial, sans-serif;">GREENROOM<span style="color: #4CAF50;">&#8226;</span></h1>
+            </td>
+          </tr>
+          
+          <!-- Hero Image Section -->
+          <tr>
+            <td style="background-color: #1a1a1a; background-image: url('${heroImageUrl}'); background-size: cover; background-position: center;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="padding: 60px 40px; text-align: center; background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.6));">
+                    <p style="margin: 0 0 16px 0; font-size: 14px; letter-spacing: 8px; color: #ffffff; font-family: monospace;">0 4 . 0 1 . 2 0 2 5</p>
+                    <h2 style="margin: 0 0 16px 0; font-size: 48px; font-weight: 400; color: #ffffff; font-family: Georgia, 'Times New Roman', serif; font-style: italic;">A New Era</h2>
+                    <p style="margin: 0; font-size: 16px; color: #ffffff;">The world's first open sample marketplace</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Content Section -->
+          <tr>
+            <td style="padding: 48px 40px; background-color: #000000;">
+              <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 700; color: #ffffff; text-align: center;">Your Exclusive Creator Invite</h3>
+              <h2 style="margin: 0 0 16px 0; font-size: 32px; font-weight: 400; color: #4CAF50; text-align: center; font-family: Georgia, 'Times New Roman', serif;">Welcome to the Greenroom</h2>
+              <p style="margin: 0 0 32px 0; font-size: 16px; color: #ffffff; text-align: center; line-height: 1.5;">This is your invite to participate in our early access creator program.</p>
+              
+              <h4 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 700; color: #4CAF50; text-align: center;">As a Greenroom creator, you can:</h4>
+              
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 40px;">
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Upload your samples on your own schedule</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Earn money from every download</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- View detailed download and earnings analytics</td></tr>
+                <tr><td style="padding: 8px 0; font-size: 15px; color: #ffffff; line-height: 1.5;">- Curate your artist page, and use it to promote your own music</td></tr>
+              </table>
+              
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center">
+                    <a href="${signupUrl}" style="display: inline-block; background-color: #4CAF50; color: #ffffff; padding: 16px 48px; font-size: 16px; font-weight: 600; text-decoration: none; border-radius: 4px;">Discover Greenroom</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 40px; background-color: #000000; border-top: 1px solid #222;">
+              <p style="margin: 0; font-size: 12px; color: #666666; text-align: center;">© GREENROOM</p>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `,
   });
 }
 
