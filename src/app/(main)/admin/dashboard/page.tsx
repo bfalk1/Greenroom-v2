@@ -18,7 +18,6 @@ import {
   Trash2,
   Plus,
   Flag,
-  Percent,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
@@ -27,7 +26,6 @@ import { ExportPanel } from "@/components/admin/ExportPanel";
 import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
-import { CreatorPayoutSettings } from "@/components/admin/CreatorPayoutSettings";
 import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { toast } from "sonner";
 
@@ -639,17 +637,6 @@ export default function AdminDashboardPage() {
             Flagged Accounts
           </button>
           <button
-            onClick={() => setActiveTab("creator-splits")}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "creator-splits"
-                ? "border-[#00FF88] text-[#00FF88]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <Percent className="w-4 h-4 inline mr-2" />
-            Creator Splits
-          </button>
-          <button
             onClick={() => setActiveTab("tools")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "tools"
@@ -1083,94 +1070,45 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {activeTab === "creator-splits" && (
-            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
-              <CreatorPayoutSettings platformDefaultRate={platformSettings.creatorPayoutRate} />
-            </div>
-          )}
-
           {activeTab === "tools" && (
             <div className="space-y-6">
-              <CreatorInvitePanel />
-              <UserSearchPanel />
-              <AuditLogPanel />
-              <ExportPanel />
-            </div>
-          )}
-
-          {activeTab === "settings" && (
-            <div className="space-y-8">
-              {/* Platform Settings */}
+              {/* Payout Settings */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-2 bg-[#00FF88]/10 rounded-lg">
                     <DollarSign className="w-5 h-5 text-[#00FF88]" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-white">Profit Split</h3>
-                    <p className="text-sm text-[#a1a1a1]">Configure creator payout rates</p>
+                    <h3 className="text-lg font-semibold text-white">Creator Payout Rate</h3>
+                    <p className="text-sm text-[#a1a1a1]">Flat rate paid to creators per credit</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-white mb-2">
-                      Creator Payout Rate (%)
-                    </label>
-                    <p className="text-xs text-[#666] mb-2">
-                      Percentage of credit value that goes to creators
-                    </p>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-white mb-2">
+                    Payout Per Credit (cents)
+                  </label>
+                  <p className="text-xs text-[#666] mb-2">
+                    Amount in cents paid to creator for each credit spent on their sample
+                  </p>
+                  <div className="flex items-center gap-3">
                     <Input
                       type="number"
                       min="0"
-                      max="100"
-                      value={platformSettings.creatorPayoutRate}
-                      onChange={(e) =>
-                        setPlatformSettings((prev) => ({
-                          ...prev,
-                          creatorPayoutRate: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
-                    />
-                    <p className="text-xs text-[#a1a1a1] mt-2">
-                      Platform keeps {100 - platformSettings.creatorPayoutRate}%
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-white mb-2">
-                      Credit Value (cents)
-                    </label>
-                    <p className="text-xs text-[#666] mb-2">
-                      USD value of each credit in cents
-                    </p>
-                    <Input
-                      type="number"
-                      min="1"
                       value={platformSettings.creditValueCents}
                       onChange={(e) =>
                         setPlatformSettings((prev) => ({
                           ...prev,
-                          creditValueCents: parseInt(e.target.value) || 1,
+                          creditValueCents: parseInt(e.target.value) || 0,
                         }))
                       }
-                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                      className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white"
                     />
-                    <p className="text-xs text-[#a1a1a1] mt-2">
-                      1 credit = ${(platformSettings.creditValueCents / 100).toFixed(2)}
-                    </p>
+                    <span className="text-[#a1a1a1]">¢ per credit</span>
                   </div>
-                </div>
-
-                <div className="bg-[#0a0a0a] rounded-lg p-4 mb-6">
-                  <p className="text-sm text-[#a1a1a1]">
-                    <strong className="text-white">Example:</strong> If a sample costs 2 credits:
+                  <p className="text-xs text-[#a1a1a1] mt-2">
+                    Example: A 2-credit sample pays creator ${((platformSettings.creditValueCents * 2) / 100).toFixed(2)}
                   </p>
-                  <ul className="text-sm text-[#a1a1a1] mt-2 space-y-1">
-                    <li>• User pays: 2 × ${(platformSettings.creditValueCents / 100).toFixed(2)} = ${((platformSettings.creditValueCents * 2) / 100).toFixed(2)}</li>
-                    <li>• Creator receives: ${((platformSettings.creditValueCents * 2 * platformSettings.creatorPayoutRate / 100) / 100).toFixed(2)} ({platformSettings.creatorPayoutRate}%)</li>
-                    <li>• Platform keeps: ${((platformSettings.creditValueCents * 2 * (100 - platformSettings.creatorPayoutRate) / 100) / 100).toFixed(2)} ({100 - platformSettings.creatorPayoutRate}%)</li>
-                  </ul>
                 </div>
 
                 <Button
@@ -1183,10 +1121,19 @@ export default function AdminDashboardPage() {
                   ) : (
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                   )}
-                  Save Settings
+                  Save Payout Rate
                 </Button>
               </div>
 
+              <CreatorInvitePanel />
+              <UserSearchPanel />
+              <AuditLogPanel />
+              <ExportPanel />
+            </div>
+          )}
+
+          {activeTab === "settings" && (
+            <div className="space-y-8">
               {/* Moderator Whitelist */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
                 <div className="flex items-center gap-3 mb-6">
