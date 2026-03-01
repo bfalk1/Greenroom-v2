@@ -2,16 +2,239 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, Heart, CheckSquare, Square, ShoppingCart } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, Heart, Play, Pause, Download, ChevronUp, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SampleCard, Sample, toggleGlobalPlay, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
+import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId } from "@/components/marketplace/SampleCard";
+import { SampleCard } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
+import { SampleRating } from "@/components/marketplace/SampleRating";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
+
+// Inline SampleRow component for the table grid
+interface SampleRowProps {
+  sample: Sample;
+  user: { id: string; email?: string; credits?: number; subscription_status?: string; is_creator?: boolean; role?: string } | null;
+  isOwned: boolean;
+  isFavorited: boolean;
+  userRating?: number;
+  isPlaying: boolean;
+  isSelected: boolean;
+  onPurchase: (sample: Sample) => void;
+  onFavoriteChange: (sampleId: string, favorited: boolean) => void;
+  refreshUser: () => void;
+}
+
+function SampleRow({
+  sample,
+  user,
+  isOwned,
+  isFavorited: isFavoritedProp,
+  userRating,
+  isPlaying,
+  isSelected,
+  onPurchase,
+  onFavoriteChange,
+  refreshUser,
+}: SampleRowProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(isFavoritedProp);
+  const [isFavoriting, setIsFavoriting] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsFavorited(isFavoritedProp);
+  }, [isFavoritedProp]);
+
+  useEffect(() => {
+    if (isSelected && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [isSelected]);
+
+  const handlePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsLoading(true);
+    try {
+      await toggleGlobalPlay(sample.id);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePurchase = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!user || isOwned || isPurchasing) return;
+    setIsPurchasing(true);
+    try {
+      await onPurchase(sample);
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!user || !isOwned || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`/api/downloads/${sample.id}`);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sample.name}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded "${sample.name}" 🎵`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Download failed";
+      toast.error(message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleFavorite = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) {
+      toast.error("Please log in to save favorites");
+      return;
+    }
+    if (isFavoriting) return;
+    setIsFavoriting(true);
+    try {
+      const res = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id }),
+      });
+      if (!res.ok) throw new Error("Failed to update favorite");
+      const data = await res.json();
+      setIsFavorited(data.favorited);
+      onFavoriteChange(sample.id, data.favorited);
+      if (data.favorited) toast.success("Added to favorites ❤️");
+    } catch {
+      toast.error("Failed to update favorite");
+    } finally {
+      setIsFavoriting(false);
+    }
+  };
+
+  return (
+    <div
+      ref={rowRef}
+      className={`grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 items-center transition-colors ${
+        isSelected
+          ? "bg-[#00FF88]/10"
+          : isPlaying
+          ? "bg-[#00FF88]/5"
+          : "hover:bg-[#242424]"
+      }`}
+    >
+      {/* Play Button */}
+      <button
+        onClick={handlePlay}
+        className={`w-10 h-10 rounded-full flex items-center justify-center transition ${
+          isPlaying
+            ? "bg-[#00FF88] text-black"
+            : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
+        }`}
+      >
+        {isLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : isPlaying ? (
+          <Pause className="w-4 h-4 fill-current" />
+        ) : (
+          <Play className="w-4 h-4 fill-current ml-0.5" />
+        )}
+      </button>
+
+      {/* Name */}
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-white truncate">{sample.name}</p>
+        <p className="text-xs text-[#666] truncate">{sample.genre}</p>
+      </div>
+
+      {/* Artist - hidden on mobile */}
+      <Link
+        href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+        className="hidden md:block text-sm text-[#a1a1a1] hover:text-[#00FF88] truncate transition"
+      >
+        {sample.artist_name || "Unknown"}
+      </Link>
+
+      {/* Key - hidden on mobile */}
+      <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.key || "—"}</span>
+
+      {/* BPM - hidden on mobile */}
+      <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
+
+      {/* Rating - hidden on mobile */}
+      <div className="hidden md:flex items-center gap-1">
+        <span className="text-sm text-[#a1a1a1]">
+          {sample.average_rating ? sample.average_rating.toFixed(1) : "—"}
+        </span>
+        {sample.total_ratings && sample.total_ratings > 0 && (
+          <span className="text-xs text-[#666]">({sample.total_ratings})</span>
+        )}
+      </div>
+
+      {/* Price */}
+      <div>
+        {isOwned ? (
+          <span className="text-xs text-[#00FF88] font-medium">Owned</span>
+        ) : (
+          <span className="text-sm text-[#00FF88] font-bold">{sample.credit_price} cr</span>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleFavorite}
+          disabled={isFavoriting}
+          className={`p-1.5 rounded transition ${
+            isFavorited ? "text-red-500" : "text-[#3a3a3a] hover:text-red-500"
+          }`}
+        >
+          <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+        </button>
+
+        <Button
+          onClick={isOwned ? handleDownload : handlePurchase}
+          disabled={isPurchasing || isDownloading || !user}
+          size="sm"
+          className={`h-7 px-2 text-xs ${
+            isOwned
+              ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
+          }`}
+        >
+          {isPurchasing || isDownloading ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Download className="w-3 h-3" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
@@ -33,78 +256,55 @@ export default function MarketplacePage() {
     key: "all",
     sortBy: "popular",
   });
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkPurchasing, setBulkPurchasing] = useState(false);
+  const [sortColumn, setSortColumn] = useState<string>("popular");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+  // Track playing state
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlayingId(getGlobalPlayingId());
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
 
-  const getSelectableSamples = () => {
-    return samples.filter(s => !purchasedIds.has(s.id));
-  };
-
-  const selectAllUnowned = () => {
-    const selectable = getSelectableSamples();
-    if (selectedIds.size === selectable.length && selectable.length > 0) {
-      setSelectedIds(new Set());
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(prev => prev === "asc" ? "desc" : "asc");
     } else {
-      setSelectedIds(new Set(selectable.map(s => s.id)));
+      setSortColumn(column);
+      setSortDirection("desc");
     }
+    // Update filters to trigger refetch
+    const sortMap: Record<string, string> = {
+      name: "name",
+      artist: "artist",
+      key: "key",
+      bpm: "bpm",
+      rating: "rating",
+      price: "price",
+      popular: "popular",
+      recent: "recent",
+    };
+    setFilters(prev => ({ ...prev, sortBy: sortMap[column] || "popular" }));
   };
 
-  const handleBulkPurchase = async () => {
-    if (selectedIds.size === 0 || !user) return;
-    
-    const selectedSamples = samples.filter(s => selectedIds.has(s.id) && !purchasedIds.has(s.id));
-    const totalCost = selectedSamples.reduce((sum, s) => sum + s.credit_price, 0);
-    
-    if ((user.credits || 0) < totalCost) {
-      toast.error(`Not enough credits. Need ${totalCost}, have ${user.credits || 0}`);
-      return;
-    }
-    
-    setBulkPurchasing(true);
-    let successCount = 0;
-    
-    for (const sample of selectedSamples) {
-      try {
-        const res = await fetch("/api/purchases", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sampleId: sample.id }),
-        });
-        
-        if (res.ok) {
-          successCount++;
-          setPurchasedIds(prev => new Set([...prev, sample.id]));
-        }
-      } catch (error) {
-        console.error(`Failed to purchase ${sample.name}:`, error);
-      }
-    }
-    
-    if (successCount > 0) {
-      toast.success(`Purchased ${successCount} samples!`);
-      refreshUser();
-      setSelectedIds(new Set());
-    }
-    
-    setBulkPurchasing(false);
-  };
-
-  const selectedCost = samples
-    .filter(s => selectedIds.has(s.id) && !purchasedIds.has(s.id))
-    .reduce((sum, s) => sum + s.credit_price, 0);
+  const SortHeader = ({ column, label }: { column: string; label: string }) => (
+    <button
+      onClick={() => handleSort(column)}
+      className="flex items-center gap-1 text-xs font-medium text-[#a1a1a1] hover:text-white transition group"
+    >
+      {label}
+      <span className={`transition ${sortColumn === column ? "text-[#00FF88]" : "text-[#3a3a3a] group-hover:text-[#666]"}`}>
+        {sortColumn === column ? (
+          sortDirection === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronDown className="w-3 h-3" />
+        )}
+      </span>
+    </button>
+  );
 
   // Keyboard navigation for samples
   const handleKeyboardPlay = useCallback((index: number) => {
@@ -155,6 +355,7 @@ export default function MarketplacePage() {
           }
         }
         params.set("sortBy", filters.sortBy);
+        params.set("sortDir", sortDirection);
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
@@ -177,7 +378,7 @@ export default function MarketplacePage() {
         setLoadingMore(false);
       }
     },
-    [searchQuery, filters]
+    [searchQuery, filters, sortDirection]
   );
 
   // Infinite scroll
@@ -277,13 +478,13 @@ export default function MarketplacePage() {
     setSearchQuery(query);
   };
 
-  // Debounce search
+  // Debounce search and sort changes
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchSamples(0, false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, filters]);
+  }, [searchQuery, filters, sortDirection]);
 
   const handleFilterChange = (newFilters: typeof filters) => {
     setFilters(newFilters);
@@ -475,45 +676,12 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {/* Results */}
+        {/* Results Grid */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-[#a1a1a1]">
               {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
             </h2>
-            
-            {/* Selection Controls */}
-            {user && samples.length > 0 && !loading && (
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={selectAllUnowned}
-                  className="flex items-center gap-2 text-sm text-[#a1a1a1] hover:text-white transition"
-                >
-                  {selectedIds.size === getSelectableSamples().length && getSelectableSamples().length > 0 ? (
-                    <CheckSquare className="w-4 h-4 text-[#00FF88]" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                  Select All
-                </button>
-                
-                {selectedIds.size > 0 && (
-                  <Button
-                    onClick={handleBulkPurchase}
-                    disabled={bulkPurchasing || selectedCost > (user.credits || 0)}
-                    size="sm"
-                    className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-                  >
-                    {bulkPurchasing ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <ShoppingCart className="w-4 h-4 mr-2" />
-                    )}
-                    Buy {selectedIds.size} ({selectedCost} cr)
-                  </Button>
-                )}
-              </div>
-            )}
           </div>
 
           {loading ? (
@@ -523,50 +691,46 @@ export default function MarketplacePage() {
                 .map((_, i) => (
                   <div
                     key={i}
-                    className="h-20 bg-[#1a1a1a] rounded-lg animate-pulse"
+                    className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse"
                   />
                 ))}
             </div>
           ) : samples.length > 0 ? (
-            <div className="space-y-2">
-              {samples.map((sample, index) => (
-                <div key={sample.id} className="flex items-center gap-2">
-                  {/* Selection checkbox */}
-                  {user && !purchasedIds.has(sample.id) && (
-                    <button
-                      onClick={() => toggleSelect(sample.id)}
-                      className="flex-shrink-0 p-1"
-                    >
-                      {selectedIds.has(sample.id) ? (
-                        <CheckSquare className="w-5 h-5 text-[#00FF88]" />
-                      ) : (
-                        <Square className="w-5 h-5 text-[#a1a1a1] hover:text-white" />
-                      )}
-                    </button>
-                  )}
-                  {/* Spacer for owned samples */}
-                  {user && purchasedIds.has(sample.id) && (
-                    <div className="w-7 flex-shrink-0" />
-                  )}
-                  
-                  <div className={`flex-1 ${selectedIds.has(sample.id) ? "ring-1 ring-[#00FF88] rounded-lg" : ""}`}>
-                    <SampleCard
-                      sample={sample}
-                      user={userForCard}
-                      isOwned={purchasedIds.has(sample.id)}
-                      isFavorited={favoritedIds.has(sample.id)}
-                      userRating={userRatings[sample.id]}
-                      isSelected={isKeyboardSelected(index)}
-                      onPurchase={handlePurchase}
-                      onFavoriteChange={handleFavoriteChange}
-                    />
-                  </div>
-                </div>
-              ))}
+            <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+              {/* Table Header */}
+              <div className="grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                <div className="w-10" /> {/* Play button column */}
+                <SortHeader column="name" label="Name" />
+                <div className="hidden md:block"><SortHeader column="artist" label="Artist" /></div>
+                <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
+                <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
+                <div className="hidden md:block"><SortHeader column="rating" label="Rating" /></div>
+                <SortHeader column="price" label="Price" />
+                <div className="text-xs font-medium text-[#a1a1a1]">Actions</div>
+              </div>
+
+              {/* Table Body */}
+              <div className="divide-y divide-[#2a2a2a]">
+                {samples.map((sample, index) => (
+                  <SampleRow
+                    key={sample.id}
+                    sample={sample}
+                    user={userForCard}
+                    isOwned={purchasedIds.has(sample.id)}
+                    isFavorited={favoritedIds.has(sample.id)}
+                    userRating={userRatings[sample.id]}
+                    isPlaying={playingId === sample.id}
+                    isSelected={isKeyboardSelected(index)}
+                    onPurchase={handlePurchase}
+                    onFavoriteChange={handleFavoriteChange}
+                    refreshUser={refreshUser}
+                  />
+                ))}
+              </div>
 
               {/* Infinite scroll sentinel */}
               {samples.length < total && (
-                <div ref={loadMoreRef} className="flex justify-center py-8">
+                <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
                   {loadingMore ? (
                     <div className="flex items-center gap-2 text-[#a1a1a1]">
                       <Loader2 className="w-4 h-4 animate-spin" />

@@ -71,13 +71,32 @@ export async function GET(request: NextRequest) {
       if (bpmMax) where.bpm.lte = parseInt(bpmMax);
     }
 
+    // Parse sort direction from sortBy (e.g., "name_asc" or just "name")
+    const sortDirection = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
+    
     let orderBy: Prisma.SampleOrderByWithRelationInput;
     switch (sortBy) {
-      case "newest":
-        orderBy = { createdAt: "desc" };
+      case "name":
+        orderBy = { name: sortDirection };
+        break;
+      case "artist":
+        orderBy = { creator: { artistName: sortDirection } };
+        break;
+      case "key":
+        orderBy = { key: sortDirection };
+        break;
+      case "bpm":
+        orderBy = { bpm: sortDirection };
+        break;
+      case "price":
+        orderBy = { creditPrice: sortDirection };
         break;
       case "rating":
-        orderBy = { ratingAvg: "desc" };
+        orderBy = { ratingAvg: sortDirection };
+        break;
+      case "newest":
+      case "recent":
+        orderBy = { createdAt: "desc" };
         break;
       case "popular":
       default:
