@@ -217,18 +217,21 @@ function SampleRow({
 
         <Button
           onClick={isOwned ? handleDownload : handlePurchase}
-          disabled={isPurchasing || isDownloading || !user}
+          disabled={isPurchasing || isDownloading || !user || (!isOwned && (user?.credits ?? 0) < sample.credit_price)}
           size="sm"
-          className={`h-7 px-2 text-xs ${
+          className={`h-7 w-7 p-0 ${
             isOwned
               ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              : (user?.credits ?? 0) < sample.credit_price
+              ? "bg-[#2a2a2a] text-[#666] cursor-not-allowed"
               : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
           }`}
+          title={isOwned ? "Download" : (user?.credits ?? 0) < sample.credit_price ? "Not enough credits" : "Get"}
         >
           {isPurchasing || isDownloading ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <Download className="w-3 h-3" />
+            <Download className="w-4 h-4" />
           )}
         </Button>
       </div>
