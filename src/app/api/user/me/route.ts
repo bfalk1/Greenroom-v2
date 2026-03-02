@@ -37,12 +37,32 @@ export async function GET() {
 
     if (!user) {
       // First time login — create user record
+      // Check for pending invite first
+      let role: "USER" | "CREATOR" = "USER";
+      let artistName: string | undefined;
+      
+      if (authUser.email) {
+        const invite = await prisma.creatorInvite.findUnique({
+          where: { email: authUser.email },
+        });
+        if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
+          role = "CREATOR";
+          artistName = invite.artistName;
+          // Mark invite as used
+          await prisma.creatorInvite.update({
+            where: { email: authUser.email },
+            data: { usedAt: new Date(), usedByUserId: authUser.id },
+          });
+        }
+      }
+
       user = await prisma.user.create({
         data: {
           id: authUser.id,
           email: authUser.email || "",
+          artistName,
           profileCompleted: false,
-          role: "USER",
+          role,
           isActive: true,
         },
         include: {
@@ -60,6 +80,65 @@ export async function GET() {
           balance: 0,
         },
       });
+
+      // Create approved application for invited creators
+      if (role === "CREATOR") {
+        await prisma.creatorApplication.create({
+          data: {
+            userId: authUser.id,
+            artistName: artistName || "Invited Creator",
+            sampleZipUrl: "",
+            status: "APPROVED",
+            reviewNote: "Auto-approved via admin invite",
+            reviewedAt: new Date(),
+          },
+        });
+      }
+    } else if (user.role === "USER" && authUser.email) {
+      // Existing user - check if they have a pending invite to upgrade
+      const invite = await prisma.creatorInvite.findUnique({
+        where: { email: authUser.email },
+      });
+      
+      if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
+        // Upgrade to CREATOR
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            role: "CREATOR",
+            artistName: user.artistName || invite.artistName,
+          },
+          include: {
+            creditBalance: true,
+            subscription: {
+              include: { tier: true },
+            },
+          },
+        });
+
+        // Mark invite as used
+        await prisma.creatorInvite.update({
+          where: { email: authUser.email },
+          data: { usedAt: new Date(), usedByUserId: user.id },
+        });
+
+        // Create approved application if doesn't exist
+        const existingApp = await prisma.creatorApplication.findUnique({
+          where: { userId: user.id },
+        });
+        if (!existingApp) {
+          await prisma.creatorApplication.create({
+            data: {
+              userId: user.id,
+              artistName: invite.artistName || "Invited Creator",
+              sampleZipUrl: "",
+              status: "APPROVED",
+              reviewNote: "Auto-approved via admin invite",
+              reviewedAt: new Date(),
+            },
+          });
+        }
+      }
     }
 
     const credits = user.creditBalance?.balance ?? user.credits ?? 0;
