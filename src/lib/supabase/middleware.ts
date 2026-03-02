@@ -47,7 +47,8 @@ export async function updateSession(request: NextRequest) {
     publicPaths.includes(pathname) || 
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
-    pathname.startsWith("/api/webhooks");
+    pathname.startsWith("/api/webhooks") ||
+    pathname === "/api/invites/verify";
 
   if (isPublicPath) {
     return supabaseResponse;
