@@ -1,12 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Music } from "lucide-react";
+import { Music, Sparkles } from "lucide-react";
+
+interface InviteData {
+  email: string;
+  artistName: string;
+  valid: boolean;
+}
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -15,8 +21,40 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [invite, setInvite] = useState<InviteData | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // Check for invite token on mount
+  useEffect(() => {
+    const inviteToken = searchParams.get("invite");
+    if (inviteToken) {
+      setInviteLoading(true);
+      fetch(`/api/invites/verify?token=${encodeURIComponent(inviteToken)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.valid && data.email) {
+            setInvite({
+              email: data.email,
+              artistName: data.artistName || "Creator",
+              valid: true,
+            });
+            setEmail(data.email);
+          } else if (data.error) {
+            // Show error but allow them to sign up as regular user
+            setError(`Invite issue: ${data.error}. You can still create a regular account.`);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to verify invite:", err);
+        })
+        .finally(() => {
+          setInviteLoading(false);
+        });
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,12 +136,28 @@ export default function SignupPage() {
             </div>
           </Link>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Create Your Account
+            {invite?.valid ? "Join as a Creator" : "Create Your Account"}
           </h1>
           <p className="text-[#a1a1a1]">
-            Join GREENROOM and start discovering samples
+            {invite?.valid
+              ? "Complete your creator account setup"
+              : "Join GREENROOM and start discovering samples"}
           </p>
         </div>
+
+        {/* Creator Invite Banner */}
+        {invite?.valid && (
+          <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#00FF88]/10 to-[#00cc6a]/10 border border-[#00FF88]/30">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-5 h-5 text-[#00FF88]" />
+              <span className="font-semibold text-[#00FF88]">Creator Invite</span>
+            </div>
+            <p className="text-sm text-[#a1a1a1]">
+              Welcome, <span className="text-white font-medium">{invite.artistName}</span>! 
+              Complete signup to start uploading samples.
+            </p>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -122,10 +176,18 @@ export default function SignupPage() {
               type="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => !invite?.valid && setEmail(e.target.value)}
+              readOnly={invite?.valid}
               placeholder="you@example.com"
-              className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+              className={`bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] ${
+                invite?.valid ? "opacity-75 cursor-not-allowed" : ""
+              }`}
             />
+            {invite?.valid && (
+              <p className="mt-1 text-xs text-[#666]">
+                Email is locked to your invite
+              </p>
+            )}
           </div>
 
           <div>
