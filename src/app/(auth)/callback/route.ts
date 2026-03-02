@@ -27,20 +27,20 @@ export async function GET(request: Request) {
       let hasCreatorInvite = false;
       let inviteArtistName: string | null = null;
 
+      // Check for a valid creator invite (for both new and existing users)
+      if (data.user.email) {
+        const invite = await prisma.creatorInvite.findUnique({
+          where: { email: data.user.email },
+        });
+
+        if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
+          hasCreatorInvite = true;
+          inviteArtistName = invite.artistName;
+        }
+      }
+
       if (!user) {
         isNewUser = true;
-
-        // Check for a valid creator invite before creating user
-        if (data.user.email) {
-          const invite = await prisma.creatorInvite.findUnique({
-            where: { email: data.user.email },
-          });
-
-          if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
-            hasCreatorInvite = true;
-            inviteArtistName = invite.artistName;
-          }
-        }
 
         // Create user record - set as CREATOR if they have a valid invite
         user = await prisma.user.create({
@@ -61,17 +61,33 @@ export async function GET(request: Request) {
             balance: 0,
           },
         });
+      } else if (hasCreatorInvite && user.role === "USER") {
+        // Existing user with pending invite - upgrade to CREATOR
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            role: "CREATOR",
+            artistName: user.artistName || inviteArtistName,
+          },
+        });
+      }
 
-        // If they had an invite, mark it as used and create a pre-approved application
-        if (hasCreatorInvite && data.user.email) {
-          await prisma.creatorInvite.update({
-            where: { email: data.user.email },
-            data: {
-              usedAt: new Date(),
-              usedByUserId: user.id,
-            },
-          });
+      // If they had an invite, mark it as used and create a pre-approved application
+      if (hasCreatorInvite && data.user.email) {
+        await prisma.creatorInvite.update({
+          where: { email: data.user.email },
+          data: {
+            usedAt: new Date(),
+            usedByUserId: user.id,
+          },
+        });
 
+        // Check if they already have a creator application
+        const existingApp = await prisma.creatorApplication.findUnique({
+          where: { userId: user.id },
+        });
+
+        if (!existingApp) {
           // Create an approved CreatorApplication record for consistency
           await prisma.creatorApplication.create({
             data: {
