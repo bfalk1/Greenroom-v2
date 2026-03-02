@@ -152,9 +152,11 @@ export default function SignupPage() {
               <Sparkles className="w-5 h-5 text-[#00FF88]" />
               <span className="font-semibold text-[#00FF88]">Creator Invite</span>
             </div>
+            <p className="text-sm text-[#a1a1a1] mb-1">
+              Welcome, <span className="text-white font-medium">{invite.artistName}</span>!
+            </p>
             <p className="text-sm text-[#a1a1a1]">
-              Welcome, <span className="text-white font-medium">{invite.artistName}</span>! 
-              Complete signup to start uploading samples.
+              Signing up as <span className="text-white font-medium">{invite.email}</span>
             </p>
           </div>
         )}
@@ -168,27 +170,22 @@ export default function SignupPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-white mb-2">
-              Email
-            </label>
-            <Input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => !invite?.valid && setEmail(e.target.value)}
-              readOnly={invite?.valid}
-              placeholder="you@example.com"
-              className={`bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] ${
-                invite?.valid ? "opacity-75 cursor-not-allowed" : ""
-              }`}
-            />
-            {invite?.valid && (
-              <p className="mt-1 text-xs text-[#666]">
-                Email is locked to your invite
-              </p>
-            )}
-          </div>
+          {/* Only show email field if no valid invite (invite already has email) */}
+          {!invite?.valid && (
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
+                Email
+              </label>
+              <Input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-white mb-2">
@@ -220,10 +217,16 @@ export default function SignupPage() {
 
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || inviteLoading}
             className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold py-3"
           >
-            {loading ? "Creating Account..." : "Sign Up"}
+            {loading
+              ? "Creating Account..."
+              : inviteLoading
+              ? "Verifying Invite..."
+              : invite?.valid
+              ? "Create Creator Account"
+              : "Sign Up"}
           </Button>
         </form>
 
