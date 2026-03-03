@@ -146,23 +146,34 @@ function SampleRow({
           : "hover:bg-[#242424]"
       }`}
     >
-      {/* Play Button */}
-      <button
-        onClick={handlePlay}
-        className={`w-10 h-10 rounded-full flex items-center justify-center transition ${
-          isPlaying
-            ? "bg-[#00FF88] text-black"
-            : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
-        }`}
-      >
-        {isLoading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : isPlaying ? (
-          <Pause className="w-4 h-4 fill-current" />
-        ) : (
-          <Play className="w-4 h-4 fill-current ml-0.5" />
-        )}
-      </button>
+      {/* Cover Art + Play Button */}
+      <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
+        <img
+          src={
+            sample.cover_art_url ||
+            sample.creator_avatar ||
+            "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop"
+          }
+          alt={sample.name}
+          className="w-full h-full object-cover"
+        />
+        <button
+          onClick={handlePlay}
+          className={`absolute inset-0 flex items-center justify-center transition ${
+            isPlaying || isLoading
+              ? "bg-black/60"
+              : "bg-black/0 group-hover:bg-black/60"
+          }`}
+        >
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
+          ) : isPlaying ? (
+            <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
+          ) : (
+            <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
+          )}
+        </button>
+      </div>
 
       {/* Name */}
       <div className="min-w-0">

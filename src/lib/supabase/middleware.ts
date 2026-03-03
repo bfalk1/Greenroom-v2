@@ -48,6 +48,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
+    pathname.startsWith("/api/samples") ||
+    pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify";
 
   if (isPublicPath) {
