@@ -55,13 +55,18 @@ interface SampleCardProps {
 
 // Global audio element shared across all cards
 let globalAudio: HTMLAudioElement | null = null;
-let globalPlayingId: string | null = null;
-let globalSetters: Map<string, (playing: boolean) => void> = new Map();
-let globalToggleFns: Map<string, () => Promise<void>> = new Map();
+export let globalPlayingId: string | null = null;
+export const globalSetters: Map<string, (playing: boolean) => void> = new Map();
+export const globalToggleFns: Map<string, () => Promise<void>> = new Map();
 
 // Export function to get currently playing sample ID
 export function getGlobalPlayingId(): string | null {
   return globalPlayingId;
+}
+
+// Export function to set global playing ID
+export function setGlobalPlayingId(id: string | null): void {
+  globalPlayingId = id;
 }
 
 // Export function to toggle play for a specific sample
@@ -83,7 +88,7 @@ export function stopGlobalPlayback(): void {
   }
 }
 
-function getGlobalAudio() {
+export function getGlobalAudio() {
   if (!globalAudio && typeof window !== "undefined") {
     globalAudio = new Audio();
     globalAudio.addEventListener("ended", () => {

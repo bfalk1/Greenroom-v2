@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Search, Music, Loader2, Users, ChevronRight, Heart, Play, Pause, Download, ChevronUp, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId } from "@/components/marketplace/SampleCard";
+import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { SampleCard } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRating } from "@/components/marketplace/SampleRating";
@@ -42,6 +42,7 @@ function SampleRow({
   refreshUser,
 }: SampleRowProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isPlayingState, setIsPlayingState] = useState(false);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isFavorited, setIsFavorited] = useState(isFavoritedProp);
@@ -58,15 +59,74 @@ function SampleRow({
     }
   }, [isSelected]);
 
-  const handlePlay = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  // Create toggle function for this sample
+  const togglePlayFn = useCallback(async () => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    const currentPlayingId = getGlobalPlayingId();
+
+    // If this sample is currently playing, pause it
+    if (currentPlayingId === sample.id) {
+      audio.pause();
+      setIsPlayingState(false);
+      setGlobalPlayingId(null);
+      return;
+    }
+
+    // Stop any other playing sample
+    if (currentPlayingId && currentPlayingId !== sample.id) {
+      const prevSetter = globalSetters.get(currentPlayingId);
+      prevSetter?.(false);
+      audio.pause();
+    }
+
     setIsLoading(true);
     try {
-      await toggleGlobalPlay(sample.id);
+      let url: string;
+      if (sample.preview_url) {
+        url = sample.preview_url;
+      } else {
+        const res = await fetch(`/api/samples/${sample.id}/preview`);
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+          console.error("Preview failed:", data.error);
+          setIsLoading(false);
+          return;
+        }
+        url = data.url;
+      }
+
+      audio.src = url;
+      audio.currentTime = 0;
+      await audio.play();
+      setGlobalPlayingId(sample.id);
+      setIsPlayingState(true);
+    } catch (err) {
+      console.error("Play error:", err);
     } finally {
       setIsLoading(false);
     }
+  }, [sample.id, sample.preview_url]);
+
+  // Register this row's setter and toggle function for global audio control
+  useEffect(() => {
+    globalSetters.set(sample.id, setIsPlayingState);
+    globalToggleFns.set(sample.id, togglePlayFn);
+    return () => {
+      globalSetters.delete(sample.id);
+      globalToggleFns.delete(sample.id);
+      if (getGlobalPlayingId() === sample.id) {
+        getGlobalAudio()?.pause();
+        setGlobalPlayingId(null);
+      }
+    };
+  }, [sample.id, togglePlayFn]);
+
+  const handlePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    await togglePlayFn();
   };
 
   const handlePurchase = async (e: React.MouseEvent) => {
@@ -141,7 +201,7 @@ function SampleRow({
       className={`grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
           ? "bg-[#00FF88]/10"
-          : isPlaying
+          : isPlayingState
           ? "bg-[#00FF88]/5"
           : "hover:bg-[#242424]"
       }`}
@@ -160,14 +220,14 @@ function SampleRow({
         <button
           onClick={handlePlay}
           className={`absolute inset-0 flex items-center justify-center transition ${
-            isPlaying || isLoading
+            isPlayingState || isLoading
               ? "bg-black/60"
               : "bg-black/0 group-hover:bg-black/60"
           }`}
         >
           {isLoading ? (
             <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
-          ) : isPlaying ? (
+          ) : isPlayingState ? (
             <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
           ) : (
             <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
