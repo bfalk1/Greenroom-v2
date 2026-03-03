@@ -1,6 +1,9 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 
+// Force dynamic rendering - pages use auth/Supabase
+export const dynamic = "force-dynamic";
+
 export default function MainLayout({
   children,
 }: {

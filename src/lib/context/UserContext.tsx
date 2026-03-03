@@ -45,6 +45,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const pendingRef = React.useRef<Promise<void> | null>(null);
 
   const fetchUser = useCallback(async () => {
+    // Skip during SSR/build when Supabase client isn't available
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     // Deduplicate concurrent calls - return existing promise if already fetching
     if (fetchingRef.current && pendingRef.current) {
       return pendingRef.current;
@@ -100,6 +106,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Skip during SSR/build when Supabase client isn't available
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     fetchUser();
 
     const {
@@ -115,9 +127,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchUser]);
+  }, [fetchUser, supabase]);
 
   const logout = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);
