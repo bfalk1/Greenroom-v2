@@ -746,7 +746,7 @@ export default function MarketplacePage() {
             ) : (
               <div 
                 ref={artistSliderRef}
-                className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth"
+                className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide scroll-smooth"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
                 {followedArtists.map((artist) => (
@@ -755,8 +755,8 @@ export default function MarketplacePage() {
                     href={`/artist/${encodeURIComponent(artist.artist_name)}`}
                     className="flex-shrink-0 group"
                   >
-                    <div className="w-32 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 hover:border-[#00FF88]/50 transition-all hover:scale-105">
-                      <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-[#2a2a2a]">
+                    <div className="w-28 hover:scale-105 transition-all">
+                      <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-[#2a2a2a] ring-2 ring-[#2a2a2a] group-hover:ring-[#00FF88]/50 transition-all">
                         {artist.avatar_url ? (
                           <img
                             src={artist.avatar_url}
@@ -765,20 +765,15 @@ export default function MarketplacePage() {
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-[#666]">
-                            <Users className="w-8 h-8" />
-                          </div>
-                        )}
-                        {artist.new_samples > 0 && (
-                          <div className="absolute -top-1 -right-1 bg-[#00FF88] text-black text-xs font-bold px-2 py-0.5 rounded-full">
-                            {artist.new_samples} new
+                            <Users className="w-6 h-6" />
                           </div>
                         )}
                       </div>
-                      <p className="text-white text-sm font-medium text-center truncate group-hover:text-[#00FF88] transition-colors">
+                      <p className="text-white text-xs font-medium text-center truncate group-hover:text-[#00FF88] transition-colors">
                         {artist.artist_name}
                       </p>
-                      <p className="text-[#666] text-xs text-center">
-                        {artist.total_samples} sample{artist.total_samples !== 1 ? "s" : ""}
+                      <p className="text-[#00FF88] text-xs text-center font-medium">
+                        {artist.total_samples} samples
                       </p>
                     </div>
                   </Link>
