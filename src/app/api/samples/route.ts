@@ -83,6 +83,9 @@ export async function GET(request: NextRequest) {
         case "name":
           orderBy = { name: sortDirection };
           break;
+        case "genre":
+          orderBy = { genre: sortDirection };
+          break;
         case "artist":
           orderBy = { creator: { artistName: sortDirection } };
           break;

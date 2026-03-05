@@ -246,13 +246,10 @@ function SampleRow({
         </Link>
       </div>
 
-      {/* Artist - hidden on mobile */}
-      <Link
-        href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-        className="hidden md:block text-sm text-[#a1a1a1] hover:text-[#00FF88] truncate transition"
-      >
-        {sample.artist_name || "Unknown"}
-      </Link>
+      {/* Genre - hidden on mobile */}
+      <span className="hidden md:block text-sm text-[#a1a1a1] truncate">
+        {sample.genre || "—"}
+      </span>
 
       {/* Key - hidden on mobile */}
       <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.key || "—"}</span>
@@ -261,13 +258,13 @@ function SampleRow({
       <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
 
       {/* Rating - hidden on mobile */}
-      <div className="hidden md:block">
-        <SampleRating
-          sample={sample}
-          user={user}
-          isOwned={isOwned}
-          initialRating={userRating}
-        />
+      <div className="hidden md:flex items-center gap-1">
+        <span className="text-sm text-[#a1a1a1]">
+          {sample.average_rating ? sample.average_rating.toFixed(1) : "—"}
+        </span>
+        {sample.total_ratings && sample.total_ratings > 0 && (
+          <span className="text-xs text-[#666]">({sample.total_ratings})</span>
+        )}
       </div>
 
       {/* Price */}
@@ -368,7 +365,7 @@ export default function MarketplacePage() {
     // Update filters to trigger refetch
     const sortMap: Record<string, string> = {
       name: "name",
-      artist: "artist",
+      genre: "genre",
       key: "key",
       bpm: "bpm",
       rating: "rating",
@@ -845,7 +842,7 @@ export default function MarketplacePage() {
               <div className="grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
                 <div className="w-10" /> {/* Play button column */}
                 <SortHeader column="name" label="Name" />
-                <div className="hidden md:block"><SortHeader column="artist" label="Artist" /></div>
+                <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
                 <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
                 <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
                 <div className="hidden md:block"><SortHeader column="rating" label="Rating" /></div>
