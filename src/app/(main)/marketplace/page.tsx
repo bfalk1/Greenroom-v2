@@ -769,11 +769,8 @@ export default function MarketplacePage() {
                           </div>
                         )}
                       </div>
-                      <p className="text-white text-xs font-medium text-center truncate group-hover:text-[#00FF88] transition-colors">
+                      <p className="text-white text-xs font-medium text-center truncate group-hover:text-[#00FF88] transition-colors mt-1">
                         {artist.artist_name}
-                      </p>
-                      <p className="text-[#00FF88] text-xs text-center font-medium">
-                        {artist.total_samples} samples
                       </p>
                     </div>
                   </Link>
