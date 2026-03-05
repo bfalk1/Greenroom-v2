@@ -9,6 +9,7 @@ import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId, getGl
 import { SampleCard } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRating } from "@/components/marketplace/SampleRating";
+import { Waveform } from "@/components/audio/Waveform";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { toast } from "sonner";
@@ -47,7 +48,9 @@ function SampleRow({
   const [isDownloading, setIsDownloading] = useState(false);
   const [isFavorited, setIsFavorited] = useState(isFavoritedProp);
   const [isFavoriting, setIsFavoriting] = useState(false);
+  const [progress, setProgress] = useState(0);
   const rowRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<number | null>(null);
 
   useEffect(() => {
     setIsFavorited(isFavoritedProp);
@@ -120,8 +123,35 @@ function SampleRow({
         getGlobalAudio()?.pause();
         setGlobalPlayingId(null);
       }
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
     };
   }, [sample.id, togglePlayFn]);
+
+  // Track progress for waveform
+  useEffect(() => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    const updateProgress = () => {
+      if (getGlobalPlayingId() === sample.id && audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+      if (isPlayingState) {
+        progressRef.current = requestAnimationFrame(updateProgress);
+      }
+    };
+
+    if (isPlayingState) {
+      progressRef.current = requestAnimationFrame(updateProgress);
+    } else {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+      if (getGlobalPlayingId() !== sample.id) setProgress(0);
+    }
+
+    return () => {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [isPlayingState, sample.id]);
 
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -235,15 +265,30 @@ function SampleRow({
         </button>
       </div>
 
-      {/* Name + Artist */}
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-white truncate">{sample.name}</p>
-        <Link
-          href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-          className="text-xs text-[#666] hover:text-[#00FF88] truncate transition block"
-        >
-          {sample.artist_name || "Unknown"}
-        </Link>
+      {/* Name + Artist + Waveform */}
+      <div className="min-w-0 flex items-center gap-3">
+        <div className="min-w-0 flex-shrink-0">
+          <p className="text-sm font-medium text-white truncate max-w-[200px]">{sample.name}</p>
+          <Link
+            href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+            className="text-xs text-[#666] hover:text-[#00FF88] truncate transition block"
+          >
+            {sample.artist_name || "Unknown"}
+          </Link>
+        </div>
+        {/* Waveform - shows when playing or on hover */}
+        <div className="hidden md:block flex-1 min-w-[100px] max-w-[200px]">
+          <Waveform
+            audioUrl={sample.preview_url}
+            isPlaying={isPlayingState}
+            progress={progress}
+            height={32}
+            barWidth={2}
+            barGap={1}
+            barColor={isPlayingState ? "#2a2a2a" : "#1f1f1f"}
+            progressColor="#00FF88"
+          />
+        </div>
       </div>
 
       {/* Genre - hidden on mobile */}
