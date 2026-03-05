@@ -10,9 +10,10 @@ interface AudioPlayerProps {
   duration?: number;
   useFullAudio?: boolean; // For mod/admin - use full file instead of preview
   preload?: boolean; // Preload audio on mount
+  hideVolume?: boolean; // Hide volume slider
 }
 
-export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false, preload = false }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false, preload = false, hideVolume = false }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -168,18 +169,20 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Volume2 className="w-4 h-4 text-[#a1a1a1]" />
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={volume}
-          onChange={handleVolumeChange}
-          className="w-24 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
-        />
-      </div>
+      {!hideVolume && (
+        <div className="flex items-center gap-3">
+          <Volume2 className="w-4 h-4 text-[#a1a1a1]" />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={handleVolumeChange}
+            className="w-24 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
+          />
+        </div>
+      )}
     </div>
   );
 }
