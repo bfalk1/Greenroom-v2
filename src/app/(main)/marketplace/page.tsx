@@ -235,10 +235,16 @@ function SampleRow({
         </button>
       </div>
 
-      {/* Name */}
+      {/* Name + Artist (mobile shows artist here, desktop shows in separate column) */}
       <div className="min-w-0">
         <p className="text-sm font-medium text-white truncate">{sample.name}</p>
-        <p className="text-xs text-[#666] truncate">{sample.genre}</p>
+        <Link
+          href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+          className="text-xs text-[#666] hover:text-[#00FF88] truncate transition md:hidden block"
+        >
+          {sample.artist_name || "Unknown"}
+        </Link>
+        <p className="text-xs text-[#666] truncate hidden md:block">{sample.genre}</p>
       </div>
 
       {/* Artist - hidden on mobile */}
@@ -256,13 +262,13 @@ function SampleRow({
       <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
 
       {/* Rating - hidden on mobile */}
-      <div className="hidden md:flex items-center gap-1">
-        <span className="text-sm text-[#a1a1a1]">
-          {sample.average_rating ? sample.average_rating.toFixed(1) : "—"}
-        </span>
-        {sample.total_ratings && sample.total_ratings > 0 && (
-          <span className="text-xs text-[#666]">({sample.total_ratings})</span>
-        )}
+      <div className="hidden md:block">
+        <SampleRating
+          sample={sample}
+          user={user}
+          isOwned={isOwned}
+          initialRating={userRating}
+        />
       </div>
 
       {/* Price */}
