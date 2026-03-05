@@ -74,42 +74,58 @@ export async function GET(request: NextRequest) {
     // Parse sort direction from sortBy (e.g., "name_asc" or just "name")
     const sortDirection = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
     
-    let orderBy: Prisma.SampleOrderByWithRelationInput;
-    switch (sortBy) {
-      case "name":
-        orderBy = { name: sortDirection };
-        break;
-      case "artist":
-        orderBy = { creator: { artistName: sortDirection } };
-        break;
-      case "key":
-        orderBy = { key: sortDirection };
-        break;
-      case "bpm":
-        orderBy = { bpm: sortDirection };
-        break;
-      case "price":
-        orderBy = { creditPrice: sortDirection };
-        break;
-      case "rating":
-        orderBy = { ratingAvg: sortDirection };
-        break;
-      case "newest":
-      case "recent":
-        orderBy = { createdAt: "desc" };
-        break;
-      case "popular":
-      default:
-        orderBy = { downloadCount: "desc" };
-        break;
+    // Random sorting flag
+    const useRandomSort = sortBy === "random" || !sortBy;
+    
+    let orderBy: Prisma.SampleOrderByWithRelationInput | undefined;
+    if (!useRandomSort) {
+      switch (sortBy) {
+        case "name":
+          orderBy = { name: sortDirection };
+          break;
+        case "artist":
+          orderBy = { creator: { artistName: sortDirection } };
+          break;
+        case "key":
+          orderBy = { key: sortDirection };
+          break;
+        case "bpm":
+          orderBy = { bpm: sortDirection };
+          break;
+        case "price":
+          orderBy = { creditPrice: sortDirection };
+          break;
+        case "rating":
+          orderBy = { ratingAvg: sortDirection };
+          break;
+        case "newest":
+        case "recent":
+          orderBy = { createdAt: "desc" };
+          break;
+        case "popular":
+          orderBy = { downloadCount: "desc" };
+          break;
+      }
     }
 
-    const [samples, total] = await Promise.all([
-      prisma.sample.findMany({
+    // For random sorting, we use a different approach
+    let samples;
+    let total: number;
+    
+    if (useRandomSort) {
+      // Get total count
+      total = await prisma.sample.count({ where });
+      
+      // For random: fetch using raw SQL with RANDOM() for true randomization
+      // Use a seed based on the current hour to provide some consistency for pagination
+      const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
+      
+      // Fetch with random ordering - we use Prisma but shuffle the results
+      // For better randomization, we fetch a larger pool and shuffle
+      const poolSize = Math.min(total, Math.max(limit * 3, 100));
+      const rawSamples = await prisma.sample.findMany({
         where,
-        orderBy,
-        skip: offset,
-        take: limit,
+        take: poolSize,
         include: {
           creator: {
             select: {
@@ -120,9 +136,42 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-      }),
-      prisma.sample.count({ where }),
-    ]);
+      });
+      
+      // Seeded shuffle for consistent pagination within the hour
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+      };
+      
+      const shuffled = [...rawSamples].sort((a, b) => {
+        const seedA = hourSeed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
+        const seedB = hourSeed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
+        return seededRandom(seedA) - seededRandom(seedB);
+      });
+      
+      samples = shuffled.slice(offset, offset + limit);
+    } else {
+      [samples, total] = await Promise.all([
+        prisma.sample.findMany({
+          where,
+          orderBy,
+          skip: offset,
+          take: limit,
+          include: {
+            creator: {
+              select: {
+                id: true,
+                artistName: true,
+                username: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        }),
+        prisma.sample.count({ where }),
+      ]);
+    }
 
     // Batch generate signed preview URLs (single request to Supabase)
     const { createClient: createServiceClient } = await import("@supabase/supabase-js");

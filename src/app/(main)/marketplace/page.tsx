@@ -333,7 +333,7 @@ export default function MarketplacePage() {
     instrumentType: "all",
     sampleType: "all",
     key: "all",
-    sortBy: "popular",
+    sortBy: "random",
   });
   const [sortColumn, setSortColumn] = useState<string>("popular");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -366,7 +366,7 @@ export default function MarketplacePage() {
       popular: "popular",
       recent: "recent",
     };
-    setFilters(prev => ({ ...prev, sortBy: sortMap[column] || "popular" }));
+    setFilters(prev => ({ ...prev, sortBy: sortMap[column] || "random" }));
   };
 
   const SortHeader = ({ column, label }: { column: string; label: string }) => (

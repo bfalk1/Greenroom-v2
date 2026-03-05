@@ -156,7 +156,7 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
   const [instrumentType, setInstrumentType] = useState("all");
   const [sampleType, setSampleType] = useState("all");
   const [key, setKey] = useState("all");
-  const [sortBy, setSortBy] = useState("popular");
+  const [sortBy, setSortBy] = useState("random");
   const [genres, setGenres] = useState<string[]>([]);
 
   // Fetch genres from API
@@ -253,8 +253,9 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
           <SelectValue placeholder="Sort" />
         </SelectTrigger>
         <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+          <SelectItem value="random">Random</SelectItem>
+          <SelectItem value="newest">Most Recent</SelectItem>
           <SelectItem value="popular">Most Popular</SelectItem>
-          <SelectItem value="newest">Newest</SelectItem>
           <SelectItem value="rating">Top Rated</SelectItem>
         </SelectContent>
       </Select>
