@@ -235,16 +235,15 @@ function SampleRow({
         </button>
       </div>
 
-      {/* Name + Artist (mobile shows artist here, desktop shows in separate column) */}
+      {/* Name + Artist */}
       <div className="min-w-0">
         <p className="text-sm font-medium text-white truncate">{sample.name}</p>
         <Link
           href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-          className="text-xs text-[#666] hover:text-[#00FF88] truncate transition md:hidden block"
+          className="text-xs text-[#666] hover:text-[#00FF88] truncate transition block"
         >
           {sample.artist_name || "Unknown"}
         </Link>
-        <p className="text-xs text-[#666] truncate hidden md:block">{sample.genre}</p>
       </div>
 
       {/* Artist - hidden on mobile */}
