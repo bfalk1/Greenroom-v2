@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, Heart, Play, Pause, Download, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, Heart, Play, Pause, Download, ChevronUp, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
@@ -315,14 +315,24 @@ function SampleRow({
   );
 }
 
+interface FollowedArtist {
+  id: string;
+  artist_name: string;
+  avatar_url: string | null;
+  new_samples: number;
+  total_samples: number;
+}
+
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
   const [samples, setSamples] = useState<Sample[]>([]);
+  const [followedArtists, setFollowedArtists] = useState<FollowedArtist[]>([]);
   const [followingSamples, setFollowingSamples] = useState<Sample[]>([]);
   const [followingCount, setFollowingCount] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingFollowing, setLoadingFollowing] = useState(false);
+  const artistSliderRef = useRef<HTMLDivElement>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
@@ -478,8 +488,9 @@ export default function MarketplacePage() {
     return () => observer.disconnect();
   }, [loading, loadingMore, samples.length, total, fetchSamples]);
 
-  const fetchFollowingSamples = useCallback(async () => {
+  const fetchFollowingData = useCallback(async () => {
     if (!user) {
+      setFollowedArtists([]);
       setFollowingSamples([]);
       setFollowingCount(0);
       return;
@@ -487,11 +498,21 @@ export default function MarketplacePage() {
     
     try {
       setLoadingFollowing(true);
-      const res = await fetch("/api/samples/following?limit=6");
-      if (res.ok) {
-        const data = await res.json();
-        setFollowingSamples(data.samples || []);
+      // Fetch both artists and samples in parallel
+      const [artistsRes, samplesRes] = await Promise.all([
+        fetch("/api/samples/following/artists"),
+        fetch("/api/samples/following?limit=6"),
+      ]);
+      
+      if (artistsRes.ok) {
+        const data = await artistsRes.json();
+        setFollowedArtists(data.artists || []);
         setFollowingCount(data.following || 0);
+      }
+      
+      if (samplesRes.ok) {
+        const data = await samplesRes.json();
+        setFollowingSamples(data.samples || []);
       }
     } catch {
       // silently fail
@@ -544,8 +565,8 @@ export default function MarketplacePage() {
   }, [fetchSamples]);
 
   useEffect(() => {
-    fetchFollowingSamples();
-  }, [fetchFollowingSamples]);
+    fetchFollowingData();
+  }, [fetchFollowingData]);
 
   useEffect(() => {
     fetchPurchases();
@@ -670,8 +691,8 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {/* For You Section - Only show when not searching/filtering and user has follows */}
-        {!isFiltered && user && followingSamples.length > 0 && (
+        {/* For You Section - Horizontal artist slider */}
+        {!isFiltered && user && followedArtists.length > 0 && (
           <div className="mb-10">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -681,45 +702,89 @@ export default function MarketplacePage() {
                 <div>
                   <h2 className="text-lg font-semibold text-white">For You</h2>
                   <p className="text-xs text-[#a1a1a1]">
-                    New from {followingCount} artist{followingCount !== 1 ? "s" : ""} you follow
+                    Updates from {followingCount} artist{followingCount !== 1 ? "s" : ""} you follow
                   </p>
                 </div>
               </div>
-              <Link href="/following">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
-                  className="text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a]"
+                  size="sm"
+                  className="text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a] p-2"
+                  onClick={() => artistSliderRef.current?.scrollBy({ left: -200, behavior: "smooth" })}
                 >
-                  See all
-                  <ChevronRight className="w-4 h-4 ml-1" />
+                  <ChevronLeft className="w-4 h-4" />
                 </Button>
-              </Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a] p-2"
+                  onClick={() => artistSliderRef.current?.scrollBy({ left: 200, behavior: "smooth" })}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+                <Link href="/following">
+                  <Button
+                    variant="ghost"
+                    className="text-[#a1a1a1] hover:text-white hover:bg-[#1a1a1a]"
+                  >
+                    See all samples
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </Link>
+              </div>
             </div>
 
             {loadingFollowing ? (
-              <div className="space-y-2">
-                {Array(3)
+              <div className="flex gap-4 overflow-hidden">
+                {Array(5)
                   .fill(0)
                   .map((_, i) => (
                     <div
                       key={i}
-                      className="h-20 bg-[#1a1a1a] rounded-lg animate-pulse"
+                      className="flex-shrink-0 w-32 h-40 bg-[#1a1a1a] rounded-lg animate-pulse"
                     />
                   ))}
               </div>
             ) : (
-              <div className="space-y-2 pb-6 border-b border-[#2a2a2a]">
-                {followingSamples.map((sample) => (
-                  <SampleCard
-                    key={sample.id}
-                    sample={sample}
-                    user={userForCard}
-                    isOwned={purchasedIds.has(sample.id)}
-                    isFavorited={favoritedIds.has(sample.id)}
-                    userRating={userRatings[sample.id]}
-                    onPurchase={handlePurchase}
-                    onFavoriteChange={handleFavoriteChange}
-                  />
+              <div 
+                ref={artistSliderRef}
+                className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide scroll-smooth"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                {followedArtists.map((artist) => (
+                  <Link
+                    key={artist.id}
+                    href={`/artist/${encodeURIComponent(artist.artist_name)}`}
+                    className="flex-shrink-0 group"
+                  >
+                    <div className="w-32 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 hover:border-[#00FF88]/50 transition-all hover:scale-105">
+                      <div className="relative w-24 h-24 mx-auto mb-3 rounded-full overflow-hidden bg-[#2a2a2a]">
+                        {artist.avatar_url ? (
+                          <img
+                            src={artist.avatar_url}
+                            alt={artist.artist_name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[#666]">
+                            <Users className="w-8 h-8" />
+                          </div>
+                        )}
+                        {artist.new_samples > 0 && (
+                          <div className="absolute -top-1 -right-1 bg-[#00FF88] text-black text-xs font-bold px-2 py-0.5 rounded-full">
+                            {artist.new_samples} new
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-white text-sm font-medium text-center truncate group-hover:text-[#00FF88] transition-colors">
+                        {artist.artist_name}
+                      </p>
+                      <p className="text-[#666] text-xs text-center">
+                        {artist.total_samples} sample{artist.total_samples !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
