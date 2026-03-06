@@ -52,6 +52,15 @@ export async function GET(_request: NextRequest) {
       },
     });
 
+    // Calculate this month's earnings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthCredits = purchases
+      .filter((p) => new Date(p.createdAt) >= startOfMonth)
+      .reduce((sum, p) => sum + p.creditsSpent, 0);
+
     // Get total downloads across all creator's samples
     const totalDownloads = await prisma.download.count({
       where: { sampleId: { in: sampleIds } },
@@ -83,6 +92,12 @@ export async function GET(_request: NextRequest) {
       totalCreditsEarned
     );
 
+    // Calculate this month's earnings in cents
+    const thisMonthEarningsCents = await calculateCreatorEarningsCents(
+      authUser.id,
+      thisMonthCredits
+    );
+
     // Get payout rate info for display
     const earningsInfo = await getCreatorEarningsInfo(authUser.id);
 
@@ -104,6 +119,7 @@ export async function GET(_request: NextRequest) {
         totalPaidOut: totalPaidOutCents / 100,
         pendingPayout: pendingPayoutCents / 100,
         unpaidEarnings: (totalEarningsCents - totalPaidOutCents) / 100,
+        thisMonthEarnings: thisMonthEarningsCents / 100,
       },
       payoutInfo: {
         centsPerCredit: earningsInfo.centsPerCredit,

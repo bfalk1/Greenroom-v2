@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { EarningsChart } from "@/components/creator/EarningsChart";
+import { PayoutProgress } from "@/components/creator/PayoutProgress";
 
 interface EarningsStats {
   totalEarnings: number;
@@ -25,7 +26,11 @@ interface EarningsStats {
   totalPaidOut: number;
   pendingPayout: number;
   unpaidEarnings: number;
+  thisMonthEarnings?: number;
 }
+
+// Minimum payout threshold
+const PAYOUT_THRESHOLD = 10.0;
 
 interface Purchase {
   id: string;
@@ -189,6 +194,17 @@ export default function CreatorEarningsPage() {
         <h1 className="text-3xl font-bold text-white mb-8">
           Creator Earnings
         </h1>
+
+        {/* Payout Progress */}
+        <div className="mb-8">
+          <PayoutProgress
+            currentEarnings={stats?.unpaidEarnings ?? 0}
+            threshold={PAYOUT_THRESHOLD}
+            estimatedMonthlyRevenue={stats?.thisMonthEarnings ?? stats?.unpaidEarnings ?? 0}
+            availableBalance={(stats?.unpaidEarnings ?? 0) - (stats?.pendingPayout ?? 0)}
+            pendingPayout={stats?.pendingPayout ?? 0}
+          />
+        </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
