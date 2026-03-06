@@ -111,6 +111,55 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Helper: shuffle array with seeded randomness for consistency
+    const seededShuffle = <T extends { id: string }>(arr: T[], seed: number): T[] => {
+      const seededRandom = (s: number) => {
+        const x = Math.sin(s) * 10000;
+        return x - Math.floor(x);
+      };
+      return [...arr].sort((a, b) => {
+        const seedA = seed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
+        const seedB = seed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
+        return seededRandom(seedA) - seededRandom(seedB);
+      });
+    };
+
+    // Helper: shuffle items with tied values (for rating/popular sorts)
+    const shuffleTiedGroups = <T extends { id: string }>(
+      arr: T[],
+      getValue: (item: T) => number | null,
+      seed: number
+    ): T[] => {
+      if (arr.length <= 1) return arr;
+      
+      // Group items by their sort value
+      const groups: Map<number | null, T[]> = new Map();
+      for (const item of arr) {
+        const val = getValue(item);
+        if (!groups.has(val)) groups.set(val, []);
+        groups.get(val)!.push(item);
+      }
+      
+      // Shuffle within each group, then flatten in original value order
+      const result: T[] = [];
+      const sortedKeys = [...groups.keys()].sort((a, b) => {
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return b - a; // desc order
+      });
+      
+      for (const key of sortedKeys) {
+        const group = groups.get(key)!;
+        if (group.length > 1) {
+          result.push(...seededShuffle(group, seed));
+        } else {
+          result.push(...group);
+        }
+      }
+      
+      return result;
+    };
+
     // For random sorting, we use a different approach
     let samples;
     let total: number;
@@ -155,12 +204,17 @@ export async function GET(request: NextRequest) {
       
       samples = shuffled.slice(offset, offset + limit);
     } else {
-      [samples, total] = await Promise.all([
+      // For rating/popular sorts, we need to fetch extra to shuffle tied items properly
+      const needsTiebreaker = sortBy === "rating" || sortBy === "popular";
+      const fetchLimit = needsTiebreaker ? Math.min(limit * 3, 150) : limit;
+      const fetchOffset = needsTiebreaker ? 0 : offset;
+      
+      const [rawSamples, count] = await Promise.all([
         prisma.sample.findMany({
           where,
           orderBy,
-          skip: offset,
-          take: limit,
+          skip: fetchOffset,
+          take: needsTiebreaker ? fetchLimit : limit,
           include: {
             creator: {
               select: {
@@ -174,6 +228,20 @@ export async function GET(request: NextRequest) {
         }),
         prisma.sample.count({ where }),
       ]);
+      
+      total = count;
+      
+      if (needsTiebreaker && rawSamples.length > 0) {
+        // Shuffle tied values, then slice for pagination
+        const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
+        const getValue = sortBy === "rating" 
+          ? (s: typeof rawSamples[0]) => s.ratingAvg 
+          : (s: typeof rawSamples[0]) => s.downloadCount;
+        const shuffled = shuffleTiedGroups(rawSamples, getValue, hourSeed);
+        samples = shuffled.slice(offset, offset + limit);
+      } else {
+        samples = rawSamples;
+      }
     }
 
     // Batch generate signed preview URLs (single request to Supabase)
