@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (sampleType && sampleType !== "all") {
-      where.sampleType = sampleType as "LOOP" | "ONE_SHOT";
+      where.sampleType = sampleType.toUpperCase() as "LOOP" | "ONE_SHOT";
     }
 
     // Handle key and scale filtering
