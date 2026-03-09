@@ -268,7 +268,7 @@ function SampleRow({
       </div>
 
       {/* Name + Artist + Waveform */}
-      <div className="min-w-0 flex items-center gap-4">
+      <div className="min-w-0 flex items-center gap-4 flex-1">
         <div className="min-w-0 w-[280px] flex-shrink-0">
           <p className="text-sm font-medium text-white truncate">{sample.name}</p>
           <Link
@@ -278,8 +278,8 @@ function SampleRow({
             {sample.artist_name || "Unknown"}
           </Link>
         </div>
-        {/* Waveform - fixed width for alignment */}
-        <div className="hidden md:block w-[280px] flex-shrink-0">
+        {/* Waveform - fills remaining space */}
+        <div className="hidden md:block flex-1 min-w-[200px] max-w-[400px]">
           <Waveform
             audioUrl={sample.preview_url}
             data={sample.waveform_data || undefined}
