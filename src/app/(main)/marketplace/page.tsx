@@ -230,7 +230,7 @@ function SampleRow({
   return (
     <div
       ref={rowRef}
-      className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_100px_50px_50px_70px_60px] gap-2 md:gap-4 px-3 md:px-4 py-3 items-center transition-colors ${
+      className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_60px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
           ? "bg-[#00FF88]/10"
           : isPlayingState
@@ -306,10 +306,15 @@ function SampleRow({
       <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
 
       {/* Rating - hidden on mobile */}
-      <div className="hidden md:flex items-center gap-1">
-        <span className="text-sm text-[#a1a1a1]">
-          {sample.average_rating ? sample.average_rating.toFixed(1) : "—"}
-        </span>
+      <div className="hidden md:flex items-center justify-center">
+        {sample.average_rating ? (
+          <span className="text-sm text-[#a1a1a1] flex items-center gap-1">
+            <span className="text-yellow-500">★</span>
+            {sample.average_rating.toFixed(1)}
+          </span>
+        ) : (
+          <span className="text-sm text-[#3a3a3a]">—</span>
+        )}
       </div>
 
       {/* Actions */}
@@ -875,7 +880,7 @@ export default function MarketplacePage() {
           ) : samples.length > 0 ? (
             <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
               {/* Table Header */}
-              <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_100px_50px_50px_70px_60px] gap-2 md:gap-4 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+              <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_60px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
                 <div className="w-10" /> {/* Play button column */}
                 <SortHeader column="name" label="Name" />
                 <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
