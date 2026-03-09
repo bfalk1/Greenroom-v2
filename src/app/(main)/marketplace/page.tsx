@@ -285,7 +285,7 @@ function SampleRow({
             height={32}
             barWidth={2}
             barGap={1}
-            barColor={isPlayingState ? "#2a2a2a" : "#1f1f1f"}
+            barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
             progressColor="#00FF88"
           />
         </div>
