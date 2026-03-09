@@ -169,7 +169,10 @@ async function uploadPreview(localPath, remotePath) {
 
 async function processSample(sample) {
   const tmpDir = os.tmpdir();
-  const inputFile = path.join(tmpDir, `${sample.id}_input.wav`);
+  
+  // Preserve original extension from fileUrl - ffmpeg needs correct extension to detect format
+  const originalExt = path.extname(sample.fileUrl) || '.wav';
+  const inputFile = path.join(tmpDir, `${sample.id}_input${originalExt}`);
   const outputFile = path.join(tmpDir, `${sample.id}_preview.mp3`);
   const sampleStartTime = Date.now();
   
@@ -177,6 +180,7 @@ async function processSample(sample) {
     id: sample.id, 
     name: sample.name, 
     fileUrl: sample.fileUrl,
+    originalExt,
     previewUrl: sample.previewUrl,
     tmpDir,
     inputFile,
@@ -195,7 +199,26 @@ async function processSample(sample) {
     // Verify downloaded file
     if (fs.existsSync(inputFile)) {
       const inputStats = fs.statSync(inputFile);
-      debug("Input file stats:", { size: inputStats.size, path: inputFile });
+      // Read first 16 bytes to check file signature
+      const fd = fs.openSync(inputFile, 'r');
+      const headerBuf = Buffer.alloc(16);
+      fs.readSync(fd, headerBuf, 0, 16, 0);
+      fs.closeSync(fd);
+      const headerHex = headerBuf.toString('hex');
+      const headerAscii = headerBuf.toString('ascii').replace(/[^\x20-\x7E]/g, '.');
+      debug("Input file stats:", { 
+        size: inputStats.size, 
+        path: inputFile,
+        headerHex,
+        headerAscii,
+        // Common signatures: RIFF=WAV, ID3/ff fb=MP3, fLaC=FLAC, FORM=AIFF
+        detectedType: headerAscii.startsWith('RIFF') ? 'WAV' :
+                      headerAscii.startsWith('ID3') || headerHex.startsWith('fffb') || headerHex.startsWith('fff3') ? 'MP3' :
+                      headerAscii.startsWith('fLaC') ? 'FLAC' :
+                      headerAscii.startsWith('FORM') ? 'AIFF' :
+                      headerAscii.startsWith('OggS') ? 'OGG' :
+                      'UNKNOWN'
+      });
     } else {
       debug("WARNING: Input file does not exist after download!");
     }
