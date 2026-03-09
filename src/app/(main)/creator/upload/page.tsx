@@ -295,6 +295,12 @@ export default function CreatorUploadPage() {
       return;
     }
 
+    // Validate file size - prevent 0-byte uploads
+    if (audioFile.size === 0) {
+      toast.error("Audio file is empty (0 bytes). Please select a valid audio file.");
+      return;
+    }
+
     setUploading(true);
 
     try {

@@ -272,6 +272,11 @@ export default function BatchUploadPage() {
       ));
       
       try {
+        // Validate file size - skip 0-byte files
+        if (sample.file.size === 0) {
+          throw new Error("File is empty (0 bytes)");
+        }
+
         // Upload audio file
         const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
         const { error: uploadError } = await supabase.storage
