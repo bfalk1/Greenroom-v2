@@ -10,6 +10,7 @@ interface SampleRatingProps {
   user: UserType | null;
   isOwned?: boolean;
   initialRating?: number;
+  compact?: boolean;
   onRatingChange?: (sampleId: string, score: number, stats: { average: number; count: number }) => void;
 }
 
@@ -18,6 +19,7 @@ export function SampleRating({
   user, 
   isOwned = false,
   initialRating,
+  compact = false,
   onRatingChange,
 }: SampleRatingProps) {
   const [userRating, setUserRating] = useState(initialRating || 0);
@@ -84,6 +86,42 @@ export function SampleRating({
   // Display rating (user's rating when rated, or average when not)
   const displayRating = userRating || 0;
   const showingUserRating = userRating > 0;
+
+  // Compact mode for inline display
+  if (compact) {
+    return (
+      <div className="flex items-center gap-0.5">
+        {[1, 2, 3, 4, 5].map((star) => {
+          const isActive = star <= (hoveredRating || displayRating);
+          const isUserRated = showingUserRating && star <= userRating && !hoveredRating;
+          
+          return (
+            <button
+              key={star}
+              disabled={!canRate || submitting}
+              onMouseEnter={() => canRate && setHoveredRating(star)}
+              onMouseLeave={() => setHoveredRating(0)}
+              onClick={() => handleRate(star)}
+              className={`transition-transform ${
+                canRate ? "hover:scale-110 cursor-pointer" : "cursor-default"
+              } disabled:cursor-not-allowed`}
+              title={canRate ? `Rate ${star} star${star !== 1 ? "s" : ""}` : ""}
+            >
+              <Star
+                className={`w-3 h-3 transition-colors ${
+                  isActive
+                    ? isUserRated
+                      ? "fill-[#FFD700] text-[#FFD700]"
+                      : "fill-[#00FF88] text-[#00FF88]"
+                    : "text-[#3a3a3a]"
+                }`}
+              />
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1">
