@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, use } from "react";
+import React, { useState, useEffect, useCallback, use, useRef } from "react";
 import Link from "next/link";
 import { 
   Music, 
@@ -43,13 +43,18 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   const [artist, setArtist] = useState<Artist | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  
+  const PAGE_SIZE = 20;
 
   const fetchArtist = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/artist/${slug}`);
+      const res = await fetch(`/api/artist/${slug}?offset=0&limit=${PAGE_SIZE}`);
       
       if (!res.ok) {
         if (res.status === 404) {
@@ -63,6 +68,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
       const data = await res.json();
       setArtist(data.artist);
       setSamples(data.samples);
+      setHasMore(data.hasMore ?? false);
     } catch (error) {
       console.error("Error fetching artist:", error);
       toast.error("Failed to load artist profile");
@@ -70,6 +76,25 @@ export default function ArtistPage({ params }: ArtistPageProps) {
       setLoading(false);
     }
   }, [slug]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    
+    try {
+      setLoadingMore(true);
+      const res = await fetch(`/api/artist/${slug}?offset=${samples.length}&limit=${PAGE_SIZE}`);
+      
+      if (!res.ok) throw new Error("Failed to load more samples");
+      
+      const data = await res.json();
+      setSamples((prev) => [...prev, ...data.samples]);
+      setHasMore(data.hasMore ?? false);
+    } catch (error) {
+      console.error("Error loading more samples:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [slug, samples.length, loadingMore, hasMore]);
 
   const fetchPurchases = useCallback(async () => {
     if (!user) return;
@@ -91,6 +116,24 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          loadMore();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, loading, loadMore]);
 
   const handleFollow = async () => {
     if (!user) {
@@ -410,6 +453,16 @@ export default function ArtistPage({ params }: ArtistPageProps) {
                   onPurchase={handlePurchase}
                 />
               ))}
+              
+              {/* Infinite scroll sentinel */}
+              <div ref={loadMoreRef} className="flex justify-center py-6">
+                {loadingMore && (
+                  <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+                )}
+                {!hasMore && samples.length > PAGE_SIZE && (
+                  <p className="text-[#666] text-sm">No more samples</p>
+                )}
+              </div>
             </div>
           ) : (
             <div className="text-center py-16 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">

@@ -78,7 +78,12 @@ export async function GET(
       isFollowing = !!follow;
     }
 
-    // Get artist's published samples
+    // Pagination params
+    const { searchParams } = new URL(request.url);
+    const offset = parseInt(searchParams.get("offset") || "0", 10);
+    const limit = parseInt(searchParams.get("limit") || "20", 10);
+
+    // Get artist's published samples with pagination
     const samples = await prisma.sample.findMany({
       where: {
         creatorId: artist.id,
@@ -86,7 +91,8 @@ export async function GET(
         isActive: true,
       },
       orderBy: { downloadCount: "desc" },
-      take: 50,
+      skip: offset,
+      take: limit + 1, // Fetch one extra to check if there's more
       include: {
         creator: {
           select: {
@@ -99,8 +105,11 @@ export async function GET(
       },
     });
 
+    const hasMore = samples.length > limit;
+    const paginatedSamples = hasMore ? samples.slice(0, limit) : samples;
+
     // Map samples to frontend format
-    const mappedSamples = samples.map((s) => ({
+    const mappedSamples = paginatedSamples.map((s) => ({
       id: s.id,
       name: s.name,
       slug: s.slug,
@@ -139,6 +148,7 @@ export async function GET(
         is_following: isFollowing,
       },
       samples: mappedSamples,
+      hasMore,
     });
   } catch (error) {
     console.error("GET /api/artist/[slug] error:", error);
