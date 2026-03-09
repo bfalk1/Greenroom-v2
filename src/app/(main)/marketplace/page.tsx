@@ -267,8 +267,8 @@ function SampleRow({
 
       {/* Name + Artist + Waveform */}
       <div className="min-w-0 flex items-center gap-3">
-        <div className="min-w-0 flex-shrink-0">
-          <p className="text-sm font-medium text-white truncate max-w-[200px]">{sample.name}</p>
+        <div className="min-w-0 w-[180px] flex-shrink-0">
+          <p className="text-sm font-medium text-white truncate">{sample.name}</p>
           <Link
             href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
             className="text-xs text-[#666] hover:text-[#00FF88] truncate transition block"
@@ -276,8 +276,8 @@ function SampleRow({
             {sample.artist_name || "Unknown"}
           </Link>
         </div>
-        {/* Waveform - shows when playing or on hover */}
-        <div className="hidden md:block flex-1 min-w-[100px] max-w-[200px]">
+        {/* Waveform - fixed width for alignment */}
+        <div className="hidden md:block w-[160px] flex-shrink-0">
           <Waveform
             audioUrl={sample.preview_url}
             isPlaying={isPlayingState}
