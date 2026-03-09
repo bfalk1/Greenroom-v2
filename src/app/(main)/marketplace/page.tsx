@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, Heart, Play, Pause, Download, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, Heart, Play, Pause, Download, ChevronUp, ChevronDown, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
@@ -228,7 +228,7 @@ function SampleRow({
   return (
     <div
       ref={rowRef}
-      className={`grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 items-center transition-colors ${
+      className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_100px_50px_50px_70px_60px] gap-2 md:gap-4 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
           ? "bg-[#00FF88]/10"
           : isPlayingState
@@ -266,8 +266,8 @@ function SampleRow({
       </div>
 
       {/* Name + Artist + Waveform */}
-      <div className="min-w-0 flex items-center gap-3">
-        <div className="min-w-0 w-[180px] flex-shrink-0">
+      <div className="min-w-0 flex items-center gap-4">
+        <div className="min-w-0 w-[200px] flex-shrink-0">
           <p className="text-sm font-medium text-white truncate">{sample.name}</p>
           <Link
             href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
@@ -277,7 +277,7 @@ function SampleRow({
           </Link>
         </div>
         {/* Waveform - fixed width for alignment */}
-        <div className="hidden md:block w-[160px] flex-shrink-0">
+        <div className="hidden md:block w-[200px] flex-shrink-0">
           <Waveform
             audioUrl={sample.preview_url}
             isPlaying={isPlayingState}
@@ -307,22 +307,10 @@ function SampleRow({
         <span className="text-sm text-[#a1a1a1]">
           {sample.average_rating ? sample.average_rating.toFixed(1) : "—"}
         </span>
-        {sample.total_ratings && sample.total_ratings > 0 && (
-          <span className="text-xs text-[#666]">({sample.total_ratings})</span>
-        )}
-      </div>
-
-      {/* Price */}
-      <div>
-        {isOwned ? (
-          <span className="text-xs text-[#00FF88] font-medium">Owned</span>
-        ) : (
-          <span className="text-sm text-[#00FF88] font-bold">{sample.credit_price} cr</span>
-        )}
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <button
           onClick={handleFavorite}
           disabled={isFavoriting}
@@ -333,25 +321,33 @@ function SampleRow({
           <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
         </button>
 
-        <Button
-          onClick={isOwned ? handleDownload : handlePurchase}
-          disabled={isPurchasing || isDownloading || !user || (!isOwned && (user?.credits ?? 0) < sample.credit_price)}
-          size="sm"
-          className={`h-7 w-7 p-0 ${
-            isOwned
-              ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-              : (user?.credits ?? 0) < sample.credit_price
-              ? "bg-[#2a2a2a] text-[#666] cursor-not-allowed"
-              : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
-          }`}
-          title={isOwned ? "Download" : (user?.credits ?? 0) < sample.credit_price ? "Not enough credits" : "Get"}
-        >
-          {isPurchasing || isDownloading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Download className="w-4 h-4" />
+        <div className="relative group">
+          <Button
+            onClick={isOwned ? handleDownload : handlePurchase}
+            disabled={isPurchasing || isDownloading || !user || (!isOwned && (user?.credits ?? 0) < sample.credit_price)}
+            size="sm"
+            className={`h-7 w-7 p-0 ${
+              isOwned
+                ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                : (user?.credits ?? 0) < sample.credit_price
+                ? "bg-[#2a2a2a] text-[#666] cursor-not-allowed"
+                : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
+            }`}
+          >
+            {isPurchasing || isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isOwned ? (
+              <Download className="w-4 h-4" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+          </Button>
+          {!isOwned && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-xs text-[#00FF88] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
+              {sample.credit_price} cr
+            </div>
           )}
-        </Button>
+        </div>
       </div>
     </div>
   );
@@ -876,15 +872,14 @@ export default function MarketplacePage() {
           ) : samples.length > 0 ? (
             <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
               {/* Table Header */}
-              <div className="grid grid-cols-[auto_1fr_80px_100px] md:grid-cols-[auto_1fr_120px_80px_80px_100px_80px_100px] gap-2 md:gap-4 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+              <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_100px_50px_50px_70px_60px] gap-2 md:gap-4 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
                 <div className="w-10" /> {/* Play button column */}
                 <SortHeader column="name" label="Name" />
                 <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
                 <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
                 <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
-                <div className="hidden md:block"><SortHeader column="rating" label="Rating" /></div>
-                <SortHeader column="price" label="Price" />
-                <div className="text-xs font-medium text-[#a1a1a1]">Actions</div>
+                <div className="hidden md:block"><SortHeader column="rating" label="★" /></div>
+                <div className="text-xs font-medium text-[#a1a1a1]"></div>
               </div>
 
               {/* Table Body */}
