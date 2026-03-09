@@ -279,13 +279,13 @@ function SampleRow({
           </Link>
         </div>
         {/* Waveform - fixed width for alignment */}
-        <div className="hidden md:block w-[200px] flex-shrink-0">
+        <div className="hidden md:block w-[280px] flex-shrink-0">
           <Waveform
             audioUrl={sample.preview_url}
             data={sample.waveform_data || undefined}
             isPlaying={isPlayingState}
             progress={progress}
-            height={32}
+            height={36}
             barWidth={2}
             barGap={1}
             barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
