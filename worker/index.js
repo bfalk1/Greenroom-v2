@@ -162,6 +162,11 @@ async function downloadFile(storagePath, localPath) {
     console.log(`    ⚠️  ASCII: ${header}`);
   }
   
+  // Skip empty files (0 bytes = failed upload)
+  if (buffer.length === 0) {
+    throw new Error(`File is empty (0 bytes) - upload failed, needs re-upload`);
+  }
+  
   debug(`Downloaded ${sizeMB} MB in ${duration}ms (${(buffer.length / duration * 1000 / 1024 / 1024).toFixed(2)} MB/s)`);
   
   fs.writeFileSync(localPath, buffer);
