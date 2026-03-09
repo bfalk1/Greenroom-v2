@@ -732,7 +732,7 @@ export default function MarketplacePage() {
 
         {/* For You Section - Horizontal artist slider */}
         {!isFiltered && user && followedArtists.length > 0 && (
-          <div className="mb-10">
+          <div className="mb-10 pt-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-[#00FF88]/10 rounded-lg">
@@ -788,7 +788,7 @@ export default function MarketplacePage() {
             ) : (
               <div 
                 ref={artistSliderRef}
-                className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide scroll-smooth"
+                className="flex gap-3 overflow-x-auto overflow-y-visible pb-4 pt-2 scrollbar-hide scroll-smooth"
                 style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
               >
                 {followedArtists.map((artist) => (
