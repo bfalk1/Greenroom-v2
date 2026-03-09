@@ -121,6 +121,7 @@ async function downloadFile(storagePath, localPath) {
   const filePath = parts.slice(1).join("/");
   
   debug("Downloading file:", { storagePath, bucket, filePath, localPath });
+  console.log(`    📂 Bucket: ${bucket}, Path: ${filePath}`);
   const startTime = Date.now();
   
   const { data, error } = await supabase.storage.from(bucket).download(filePath);
@@ -134,6 +135,32 @@ async function downloadFile(storagePath, localPath) {
   const buffer = Buffer.from(await data.arrayBuffer());
   const duration = Date.now() - startTime;
   const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
+  const sizeKB = (buffer.length / 1024).toFixed(1);
+  
+  // Check file signature to detect format issues
+  const header = buffer.slice(0, 12).toString('ascii').replace(/[^\x20-\x7E]/g, '.');
+  const headerHex = buffer.slice(0, 4).toString('hex');
+  
+  // Detect if we got HTML/JSON instead of audio
+  if (header.includes('<!DOCTYPE') || header.includes('<html') || header.startsWith('{')) {
+    console.error(`    ⚠️  Downloaded content is NOT audio! Got: ${header.substring(0, 50)}...`);
+    throw new Error(`Downloaded content is not audio (got HTML/JSON): ${header.substring(0, 100)}`);
+  }
+  
+  // Log file info (always, not just debug)
+  const formatGuess = headerHex === '52494646' ? 'WAV' :  // RIFF
+                      headerHex === '664c6143' ? 'FLAC' : // fLaC
+                      headerHex.startsWith('4944') ? 'MP3(ID3)' : // ID3
+                      headerHex.startsWith('fffb') || headerHex.startsWith('fff3') ? 'MP3' :
+                      headerHex === '464f524d' ? 'AIFF' : // FORM
+                      'UNKNOWN';
+  
+  console.log(`    📦 Downloaded: ${sizeKB} KB, Format: ${formatGuess} (header: ${headerHex})`);
+  
+  if (formatGuess === 'UNKNOWN') {
+    console.log(`    ⚠️  Unknown format! First 20 bytes: ${buffer.slice(0, 20).toString('hex')}`);
+    console.log(`    ⚠️  ASCII: ${header}`);
+  }
   
   debug(`Downloaded ${sizeMB} MB in ${duration}ms (${(buffer.length / duration * 1000 / 1024 / 1024).toFixed(2)} MB/s)`);
   
