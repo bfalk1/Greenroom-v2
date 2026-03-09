@@ -74,6 +74,7 @@ function SampleRow({
       audio.pause();
       setIsPlayingState(false);
       setGlobalPlayingId(null);
+      setProgress(0); // Reset waveform progress
       return;
     }
 
@@ -102,6 +103,7 @@ function SampleRow({
 
       audio.src = url;
       audio.currentTime = 0;
+      setProgress(0); // Reset waveform progress
       await audio.play();
       setGlobalPlayingId(sample.id);
       setIsPlayingState(true);
