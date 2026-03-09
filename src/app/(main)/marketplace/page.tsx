@@ -267,7 +267,7 @@ function SampleRow({
 
       {/* Name + Artist + Waveform */}
       <div className="min-w-0 flex items-center gap-4">
-        <div className="min-w-0 w-[200px] flex-shrink-0">
+        <div className="min-w-0 w-[280px] flex-shrink-0">
           <p className="text-sm font-medium text-white truncate">{sample.name}</p>
           <Link
             href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
