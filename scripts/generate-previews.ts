@@ -70,6 +70,8 @@ async function downloadFile(storagePath: string, localPath: string): Promise<voi
   const bucket = parts[0];
   const filePath = parts.slice(1).join("/");
   
+  console.log(`    📂 Bucket: ${bucket}, Path: ${filePath}`);
+  
   const { data, error } = await supabase.storage
     .from(bucket)
     .download(filePath);
@@ -79,6 +81,18 @@ async function downloadFile(storagePath: string, localPath: string): Promise<voi
   }
   
   const buffer = Buffer.from(await data.arrayBuffer());
+  
+  // Debug: check what we actually got
+  console.log(`    📦 Downloaded ${buffer.length} bytes`);
+  
+  // WAV files start with "RIFF", AIFF with "FORM", MP3 with ID3 or 0xFF
+  const header = buffer.slice(0, 4).toString();
+  if (!header.startsWith('RIFF') && !header.startsWith('FORM') && !header.startsWith('ID3') && buffer[0] !== 0xFF) {
+    console.log(`    ⚠️  Not a valid audio file! Header: ${buffer.slice(0, 4).toString('hex')}`);
+    console.log(`    ⚠️  First 200 chars: ${buffer.slice(0, 200).toString().replace(/\n/g, '\\n')}`);
+    throw new Error(`Downloaded file is not valid audio (got ${header.startsWith('<') ? 'HTML' : 'unknown format'})`);
+  }
+  
   fs.writeFileSync(localPath, buffer);
 }
 
