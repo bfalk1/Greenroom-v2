@@ -304,6 +304,35 @@ export default function CreatorUploadPage() {
     setUploading(true);
 
     try {
+      // Generate waveform data from the audio file
+      let waveformData: number[] | null = null;
+      try {
+        const arrayBuffer = await audioFile.arrayBuffer();
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const rawData = audioBuffer.getChannelData(0);
+        
+        const samples = 80;
+        const blockSize = Math.floor(rawData.length / samples);
+        const peaks: number[] = [];
+        
+        for (let i = 0; i < samples; i++) {
+          const blockStart = blockSize * i;
+          let peak = 0;
+          for (let j = 0; j < blockSize; j++) {
+            const abs = Math.abs(rawData[blockStart + j] || 0);
+            if (abs > peak) peak = abs;
+          }
+          peaks.push(peak);
+        }
+        
+        const maxValue = Math.max(...peaks);
+        waveformData = maxValue > 0 ? peaks.map(n => n / maxValue) : null;
+        audioContext.close();
+      } catch (e) {
+        console.error("Failed to generate waveform:", e);
+      }
+
       // Upload audio file to Supabase Storage
       const audioExt = audioFile.name.split(".").pop();
       const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${audioExt}`;
@@ -364,6 +393,7 @@ export default function CreatorUploadPage() {
           tags: formData.tags,
           fileUrl,
           coverImageUrl,
+          waveformData,
         }),
       });
 

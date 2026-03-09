@@ -296,6 +296,7 @@ export async function GET(request: NextRequest) {
       file_url: s.previewUrl || s.fileUrl,
       preview_url: previewUrls[i],
       cover_art_url: s.coverImageUrl,
+      waveform_data: s.waveformData as number[] | null,
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
@@ -353,6 +354,7 @@ export async function POST(request: NextRequest) {
       fileUrl,
       previewUrl,
       coverImageUrl,
+      waveformData,
     } = body;
 
     if (!name || !genre || !instrumentType || !sampleType || !fileUrl) {
@@ -399,6 +401,7 @@ export async function POST(request: NextRequest) {
         fileUrl,
         previewUrl: previewUrl || null,
         coverImageUrl: coverImageUrl || null,
+        waveformData: waveformData || null,
         status: initialStatus,
         isActive: true,
       },

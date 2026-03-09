@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 interface WaveformProps {
   audioUrl?: string;
+  data?: number[]; // Pre-computed waveform data (0-1 normalized values)
   isPlaying?: boolean;
   progress?: number; // 0-100
   height?: number;
@@ -16,6 +17,7 @@ interface WaveformProps {
 
 export function Waveform({
   audioUrl,
+  data,
   isPlaying = false,
   progress = 0,
   height = 40,
@@ -30,8 +32,18 @@ export function Waveform({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
 
-  // Fetch and analyze audio to generate waveform data
+  // Use pre-computed data if available
   useEffect(() => {
+    if (data && data.length > 0) {
+      setWaveformData(data);
+      setIsLoading(false);
+      return;
+    }
+  }, [data]);
+
+  // Fetch and analyze audio to generate waveform data (fallback if no pre-computed data)
+  useEffect(() => {
+    if (data && data.length > 0) return; // Skip if we have pre-computed data
     if (!audioUrl) return;
 
     const generateWaveform = async () => {
@@ -48,33 +60,37 @@ export function Waveform({
         // Get the audio data from the first channel
         const rawData = audioBuffer.getChannelData(0);
         
-        // Calculate how many bars we want (based on typical container width)
-        const samples = 100;
+        // Calculate how many bars we want
+        const samples = 80;
         const blockSize = Math.floor(rawData.length / samples);
         const filteredData: number[] = [];
 
+        // Use peak detection instead of average for better visual representation
         for (let i = 0; i < samples; i++) {
           const blockStart = blockSize * i;
-          let sum = 0;
+          let peak = 0;
           for (let j = 0; j < blockSize; j++) {
-            sum += Math.abs(rawData[blockStart + j] || 0);
+            const abs = Math.abs(rawData[blockStart + j] || 0);
+            if (abs > peak) peak = abs;
           }
-          filteredData.push(sum / blockSize);
+          filteredData.push(peak);
         }
 
         // Normalize the data
         const maxValue = Math.max(...filteredData);
-        const normalizedData = filteredData.map((n) => n / maxValue);
+        const normalizedData = maxValue > 0 
+          ? filteredData.map((n) => n / maxValue)
+          : filteredData.map(() => 0.3);
 
         setWaveformData(normalizedData);
         audioContext.close();
       } catch (err) {
         console.error("Failed to generate waveform:", err);
         setError(true);
-        // Generate fake waveform as fallback
-        const fakeData = Array(100)
+        // Generate placeholder waveform as fallback
+        const fakeData = Array(80)
           .fill(0)
-          .map(() => 0.2 + Math.random() * 0.6);
+          .map((_, i) => 0.3 + 0.4 * Math.sin(i * 0.2) * Math.random());
         setWaveformData(fakeData);
       } finally {
         setIsLoading(false);
@@ -82,7 +98,7 @@ export function Waveform({
     };
 
     generateWaveform();
-  }, [audioUrl]);
+  }, [audioUrl, data]);
 
   // Draw the waveform
   useEffect(() => {

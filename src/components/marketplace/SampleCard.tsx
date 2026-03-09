@@ -23,6 +23,7 @@ export interface Sample {
   file_url?: string;
   preview_url?: string; // Public CDN URL for instant playback
   cover_art_url?: string;
+  waveform_data?: number[] | null; // Pre-computed waveform data
   status?: string;
   average_rating?: number;
   total_ratings?: number;

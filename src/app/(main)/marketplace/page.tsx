@@ -280,6 +280,7 @@ function SampleRow({
         <div className="hidden md:block w-[200px] flex-shrink-0">
           <Waveform
             audioUrl={sample.preview_url}
+            data={sample.waveform_data || undefined}
             isPlaying={isPlayingState}
             progress={progress}
             height={32}
