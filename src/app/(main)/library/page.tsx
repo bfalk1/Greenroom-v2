@@ -313,15 +313,19 @@ function LibraryRow({
   );
 }
 
+const PAGE_SIZE = 20;
+
 export default function LibraryPage() {
   const { user, loading: userLoading } = useUser();
   const [samples, setSamples] = useState<LibrarySample[]>([]);
-  const [filtered, setFiltered] = useState<LibrarySample[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -336,10 +340,10 @@ export default function LibraryPage() {
   };
 
   const selectAll = () => {
-    if (selectedIds.size === filtered.length) {
+    if (selectedIds.size === samples.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filtered.map(s => s.id)));
+      setSelectedIds(new Set(samples.map(s => s.id)));
     }
   };
 
@@ -348,7 +352,7 @@ export default function LibraryPage() {
     
     setBulkDownloading(true);
     try {
-      const selectedSamples = filtered.filter(s => selectedIds.has(s.id));
+      const selectedSamples = samples.filter(s => selectedIds.has(s.id));
       const zip = new JSZip();
       
       for (const sample of selectedSamples) {
@@ -383,50 +387,81 @@ export default function LibraryPage() {
     }
   };
 
-  // Fetch library and ratings
+  // Fetch library with pagination
+  const fetchLibrary = useCallback(async (offset = 0, append = false) => {
+    if (!user) return;
+    
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (searchQuery) params.set("search", searchQuery);
+
+      const res = await fetch(`/api/library?${params}`);
+      const data = await res.json();
+
+      if (data.samples) {
+        if (append) {
+          setSamples(prev => [...prev, ...data.samples]);
+        } else {
+          setSamples(data.samples);
+        }
+        setTotal(data.total);
+      }
+    } catch (error) {
+      console.error("Error fetching library:", error);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [user, searchQuery]);
+
+  // Initial load
   useEffect(() => {
     if (!user) return;
+    fetchLibrary(0);
+    fetch("/api/ratings").then(res => res.json()).then(data => {
+      if (data.ratings) setUserRatings(data.ratings);
+    });
+  }, [user, fetchLibrary]);
 
-    Promise.all([
-      fetch("/api/library").then(res => res.json()),
-      fetch("/api/ratings").then(res => res.json()),
-    ])
-      .then(([libraryData, ratingsData]) => {
-        if (libraryData.samples) {
-          setSamples(libraryData.samples);
-          setFiltered(libraryData.samples);
-        }
-        if (ratingsData.ratings) {
-          setUserRatings(ratingsData.ratings);
-        }
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [user]);
+  // Infinite scroll
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    if (query.trim()) {
-      setFiltered(
-        samples.filter(
-          (s) =>
-            s.name.toLowerCase().includes(query.toLowerCase()) ||
-            s.artist_name?.toLowerCase().includes(query.toLowerCase()) ||
-            s.genre?.toLowerCase().includes(query.toLowerCase()) ||
-            s.tags?.some((t) => t.toLowerCase().includes(query.toLowerCase()))
-        )
-      );
-    } else {
-      setFiltered(samples);
-    }
-  };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
+          fetchLibrary(samples.length, true);
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, loadingMore, samples.length, total, fetchLibrary]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (user) fetchLibrary(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Keyboard navigation
-  const { selectedIndex } = useKeyboardNavigation(filtered, {
-    enabled: filtered.length > 0 && !loading,
-    onPlay: (index) => {
-      // Play is handled by each row
-    },
+  const { selectedIndex } = useKeyboardNavigation(samples, {
+    enabled: samples.length > 0 && !loading,
+    onPlay: () => {},
   });
 
   if (userLoading || loading) {
@@ -456,7 +491,7 @@ export default function LibraryPage() {
                   type="text"
                   placeholder="Search your library..."
                   value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
                 />
               </div>
@@ -479,12 +514,12 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {filtered.length > 0 ? (
+        {samples.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
             {/* Header */}
             <div className="grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
               <button onClick={selectAll} className="flex-shrink-0">
-                {selectedIds.size === filtered.length && filtered.length > 0 ? (
+                {selectedIds.size === samples.length && samples.length > 0 ? (
                   <CheckSquare className="w-4 h-4 text-[#00FF88]" />
                 ) : (
                   <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
@@ -501,7 +536,7 @@ export default function LibraryPage() {
 
             {/* Rows */}
             <div className="divide-y divide-[#2a2a2a]">
-              {filtered.map((sample, index) => (
+              {samples.map((sample, index) => (
                 <LibraryRow
                   key={sample.id}
                   sample={sample}
@@ -513,6 +548,17 @@ export default function LibraryPage() {
                 />
               ))}
             </div>
+
+            {/* Load more sentinel */}
+            {samples.length < total && (
+              <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
+                {loadingMore ? (
+                  <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+                ) : (
+                  <span className="text-sm text-[#666]">Scroll for more...</span>
+                )}
+              </div>
+            )}
           </div>
         ) : samples.length > 0 ? (
           <div className="text-center py-16">

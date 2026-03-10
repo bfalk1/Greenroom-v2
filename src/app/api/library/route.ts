@@ -1,9 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
-import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const {
@@ -14,89 +13,91 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const purchases = await prisma.purchase.findMany({
-      where: { userId: authUser.id },
-      include: {
-        sample: {
-          include: {
-            creator: {
-              select: {
-                artistName: true,
-                username: true,
+    const { searchParams } = new URL(request.url);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
+    const offset = parseInt(searchParams.get("offset") || "0");
+    const search = searchParams.get("search") || "";
+
+    const where: any = { userId: authUser.id };
+    
+    if (search) {
+      where.sample = {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { creator: { artistName: { contains: search, mode: "insensitive" } } },
+          { genre: { contains: search, mode: "insensitive" } },
+        ],
+      };
+    }
+
+    const [purchases, total] = await Promise.all([
+      prisma.purchase.findMany({
+        where,
+        include: {
+          sample: {
+            include: {
+              creator: {
+                select: {
+                  artistName: true,
+                  username: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.purchase.count({ where }),
+    ]);
+
+    // Map samples without generating signed URLs upfront (expensive)
+    // Signed URLs are generated on-demand via /api/downloads/:id
+    const samples = purchases.map((p) => {
+      // Generate standardized filename: ArtistName - SampleName_Key_BPM.wav
+      const artistName = (p.sample.creator.artistName || p.sample.creator.username || "Unknown")
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .trim();
+      const sampleName = p.sample.name
+        .replace(/[^a-zA-Z0-9\s]/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+      const keyPart = p.sample.key ? `_${p.sample.key.replace(/\s+/g, "")}` : "";
+      const bpmPart = p.sample.bpm ? `_${p.sample.bpm}bpm` : "";
+      const filename = `${artistName} - ${sampleName}${keyPart}${bpmPart}.wav`;
+      
+      // Directory path for organized downloads
+      const downloadPath = `${artistName}/${sampleName}${keyPart}${bpmPart}.wav`;
+
+      return {
+        id: p.sample.id,
+        name: p.sample.name,
+        slug: p.sample.slug,
+        creator_id: p.sample.creatorId,
+        artist_name: p.sample.creator.artistName || p.sample.creator.username,
+        genre: p.sample.genre,
+        instrument_type: p.sample.instrumentType,
+        sample_type: p.sample.sampleType,
+        key: p.sample.key,
+        bpm: p.sample.bpm,
+        credit_price: p.sample.creditPrice,
+        tags: p.sample.tags,
+        file_url: p.sample.fileUrl,
+        signed_url: null, // Generated on-demand via /api/downloads
+        filename,
+        download_path: downloadPath,
+        preview_url: p.sample.previewUrl,
+        waveform_data: p.sample.waveformData,
+        cover_image_url: p.sample.coverImageUrl,
+        average_rating: p.sample.ratingAvg,
+        total_ratings: p.sample.ratingCount,
+        total_purchases: p.sample.downloadCount,
+        purchased_at: p.createdAt,
+      };
     });
 
-    // Generate signed URLs for all purchased samples
-    const serviceClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
-    const samples = await Promise.all(
-      purchases.map(async (p) => {
-        let signedUrl = null;
-
-        if (p.sample.fileUrl) {
-          const parts = p.sample.fileUrl.split("/");
-          const bucket = parts[0];
-          const path = parts.slice(1).join("/");
-
-          const { data } = await serviceClient.storage
-            .from(bucket)
-            .createSignedUrl(path, 3600); // 1 hour expiry
-
-          signedUrl = data?.signedUrl || null;
-        }
-
-        // Generate standardized filename: ArtistName - SampleName_Key_BPM.wav
-        const artistName = (p.sample.creator.artistName || p.sample.creator.username || "Unknown")
-          .replace(/[^a-zA-Z0-9\s]/g, "")
-          .trim();
-        const sampleName = p.sample.name
-          .replace(/[^a-zA-Z0-9\s]/g, "")
-          .trim()
-          .replace(/\s+/g, "_");
-        const keyPart = p.sample.key ? `_${p.sample.key.replace(/\s+/g, "")}` : "";
-        const bpmPart = p.sample.bpm ? `_${p.sample.bpm}bpm` : "";
-        const filename = `${artistName} - ${sampleName}${keyPart}${bpmPart}.wav`;
-        
-        // Directory path for organized downloads
-        // No "Greenroom" prefix - user extracts to their own Greenroom folder
-        const downloadPath = `${artistName}/${sampleName}${keyPart}${bpmPart}.wav`;
-
-        return {
-          id: p.sample.id,
-          name: p.sample.name,
-          slug: p.sample.slug,
-          creator_id: p.sample.creatorId,
-          artist_name: p.sample.creator.artistName || p.sample.creator.username,
-          genre: p.sample.genre,
-          instrument_type: p.sample.instrumentType,
-          sample_type: p.sample.sampleType,
-          key: p.sample.key,
-          bpm: p.sample.bpm,
-          credit_price: p.sample.creditPrice,
-          tags: p.sample.tags,
-          file_url: p.sample.fileUrl,
-          signed_url: signedUrl,
-          filename,
-          download_path: downloadPath,
-          preview_url: p.sample.previewUrl,
-          cover_image_url: p.sample.coverImageUrl,
-          average_rating: p.sample.ratingAvg,
-          total_ratings: p.sample.ratingCount,
-          total_purchases: p.sample.downloadCount,
-          purchased_at: p.createdAt,
-        };
-      })
-    );
-
-    return NextResponse.json({ samples });
+    return NextResponse.json({ samples, total, limit, offset });
   } catch (error) {
     console.error("Error fetching library:", error);
     return NextResponse.json(
