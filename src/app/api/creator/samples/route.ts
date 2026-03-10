@@ -72,6 +72,8 @@ export async function GET(_request: NextRequest) {
         creditPrice: s.creditPrice,
         tags: s.tags,
         coverImageUrl: s.coverImageUrl,
+        previewUrl: s.previewUrl,
+        waveformData: s.waveformData,
         status: s.status,
         downloadCount: s.downloadCount,
         ratingAvg: s.ratingAvg,

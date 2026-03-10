@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit2, Trash2, Eye, Music, Search, Star } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2 } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
+import { Waveform } from "@/components/audio/Waveform";
 
 interface CreatorSample {
   id: string;
@@ -28,6 +29,245 @@ interface CreatorSample {
   totalCredits: number;
   earningsUsd: number;
   createdAt: string;
+  previewUrl?: string | null;
+  waveformData?: number[] | null;
+  coverImageUrl?: string | null;
+}
+
+// Global audio state
+let creatorAudio: HTMLAudioElement | null = null;
+let creatorPlayingId: string | null = null;
+const creatorSetters = new Map<string, (playing: boolean) => void>();
+
+function getCreatorAudio() {
+  if (typeof window === "undefined") return null;
+  if (!creatorAudio) {
+    creatorAudio = new Audio();
+    creatorAudio.addEventListener("ended", () => {
+      if (creatorPlayingId) {
+        creatorSetters.get(creatorPlayingId)?.(false);
+      }
+      creatorPlayingId = null;
+    });
+  }
+  return creatorAudio;
+}
+
+function CreatorSampleRow({
+  sample,
+  onEdit,
+  onDelete,
+  onSubmitForReview,
+}: {
+  sample: CreatorSample;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onSubmitForReview: (id: string) => void;
+}) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPlayingState, setIsPlayingState] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    creatorSetters.set(sample.id, setIsPlayingState);
+    return () => {
+      creatorSetters.delete(sample.id);
+      if (creatorPlayingId === sample.id) {
+        getCreatorAudio()?.pause();
+        creatorPlayingId = null;
+      }
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [sample.id]);
+
+  useEffect(() => {
+    const audio = getCreatorAudio();
+    if (!audio) return;
+
+    const updateProgress = () => {
+      if (creatorPlayingId === sample.id && audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+      if (isPlayingState) {
+        progressRef.current = requestAnimationFrame(updateProgress);
+      }
+    };
+
+    if (isPlayingState) {
+      progressRef.current = requestAnimationFrame(updateProgress);
+    }
+
+    return () => {
+      if (progressRef.current) cancelAnimationFrame(progressRef.current);
+    };
+  }, [isPlayingState, sample.id]);
+
+  const handlePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const audio = getCreatorAudio();
+    if (!audio) return;
+
+    if (creatorPlayingId === sample.id) {
+      audio.pause();
+      setIsPlayingState(false);
+      creatorPlayingId = null;
+      setProgress(0);
+      return;
+    }
+
+    if (creatorPlayingId) {
+      creatorSetters.get(creatorPlayingId)?.(false);
+      audio.pause();
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/samples/${sample.id}/preview`);
+      const data = await res.json();
+      if (res.ok && data.url) {
+        audio.src = data.url;
+        audio.currentTime = 0;
+        setProgress(0);
+        await audio.play();
+        creatorPlayingId = sample.id;
+        setIsPlayingState(true);
+      }
+    } catch (err) {
+      console.error("Play error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className={`grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_1fr_80px_45px_45px_70px_80px_100px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
+        isPlayingState ? "bg-[#00FF88]/5" : "hover:bg-[#242424]"
+      }`}
+    >
+      {/* Cover Art + Play Button */}
+      <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
+        <img
+          src={
+            sample.coverImageUrl ||
+            "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop"
+          }
+          alt={sample.name}
+          className="w-full h-full object-cover"
+        />
+        <button
+          onClick={handlePlay}
+          className={`absolute inset-0 flex items-center justify-center transition ${
+            isPlayingState || isLoading
+              ? "bg-black/60"
+              : "bg-black/0 group-hover:bg-black/60"
+          }`}
+        >
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
+          ) : isPlayingState ? (
+            <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
+          ) : (
+            <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
+          )}
+        </button>
+      </div>
+
+      {/* Name + Waveform */}
+      <div className="min-w-0 flex items-center gap-4 flex-1">
+        <div className="min-w-0 w-[200px] flex-shrink-0">
+          <p className="text-sm font-medium text-white truncate" title={sample.name}>
+            {sample.name}
+          </p>
+          <p className="text-xs text-[#666]">
+            {sample.creditPrice} credits
+          </p>
+        </div>
+        <div className="hidden md:block flex-1 min-w-[100px] max-w-[250px]">
+          <Waveform
+            audioUrl={sample.previewUrl || undefined}
+            data={sample.waveformData || undefined}
+            isPlaying={isPlayingState}
+            progress={progress}
+            height={36}
+            barWidth={2}
+            barGap={1}
+            barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
+            progressColor="#00FF88"
+          />
+        </div>
+      </div>
+
+      {/* Genre */}
+      <span className="hidden md:block text-sm text-[#a1a1a1] truncate">
+        {sample.genre || "—"}
+      </span>
+
+      {/* Key */}
+      <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.key || "—"}</span>
+
+      {/* BPM */}
+      <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
+
+      {/* Rating */}
+      <div className="hidden md:flex items-center gap-1">
+        <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+        <span className="text-sm text-white">{sample.ratingAvg.toFixed(1)}</span>
+        <span className="text-xs text-[#666]">({sample.ratingCount})</span>
+      </div>
+
+      {/* Status */}
+      <div>
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+            sample.status === "PUBLISHED"
+              ? "bg-[#00FF88]/20 text-[#00FF88]"
+              : sample.status === "REVIEW"
+              ? "bg-yellow-500/20 text-yellow-400"
+              : "bg-[#2a2a2a] text-[#a1a1a1]"
+          }`}
+        >
+          {sample.status}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-1">
+        {sample.status === "DRAFT" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onSubmitForReview(sample.id)}
+            className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-white hover:bg-[#2a2a2a]"
+            title="Submit for Review"
+          >
+            <Eye className="w-4 h-4" />
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-white hover:bg-[#2a2a2a]"
+          onClick={() => onEdit(sample.id)}
+          title="Edit"
+        >
+          <Edit2 className="w-4 h-4" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDelete(sample.id)}
+          className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-red-400 hover:bg-red-500/10"
+          title="Delete"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function CreatorDashboardPage() {
@@ -102,7 +342,7 @@ export default function CreatorDashboardPage() {
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <div className="animate-pulse text-[#a1a1a1]">Loading...</div>
+        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
       </div>
     );
   }
@@ -177,9 +417,9 @@ export default function CreatorDashboardPage() {
 
         {/* Search */}
         {samples.length > 0 && (
-          <div className="mb-8">
+          <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-4 top-3.5 w-5 h-5 text-[#a1a1a1]" />
+              <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
               <Input
                 type="text"
                 placeholder="Search your samples..."
@@ -191,133 +431,32 @@ export default function CreatorDashboardPage() {
           </div>
         )}
 
-        {/* Samples Table */}
+        {/* Samples Grid */}
         {filteredSamples.length > 0 ? (
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b border-[#2a2a2a] bg-[#0a0a0a]">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Name
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Genre
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Instrument
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Purchases
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Downloads
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Rating
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Earnings
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Status
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-medium text-[#a1a1a1] uppercase">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#2a2a2a]">
-                  {filteredSamples.map((sample) => (
-                    <tr
-                      key={sample.id}
-                      className="hover:bg-[#2a2a2a]/30 transition"
-                    >
-                      <td className="px-6 py-4">
-                        <p className="text-white font-medium">{sample.name}</p>
-                        <p className="text-xs text-[#a1a1a1]">
-                          {sample.creditPrice} credits · {sample.key || "—"}{" "}
-                          {sample.bpm ? `· ${sample.bpm} BPM` : ""}
-                        </p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-[#a1a1a1]">{sample.genre}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-[#a1a1a1]">{sample.instrumentType}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-white">{sample.purchases}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="text-white">{sample.downloadCount}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3.5 h-3.5 text-[#00FF88]" />
-                          <span className="text-white text-sm">
-                            {sample.ratingAvg.toFixed(1)}
-                          </span>
-                          <span className="text-[#a1a1a1] text-xs">
-                            ({sample.ratingCount})
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-[#00FF88] font-medium">
-                          ${sample.earningsUsd?.toFixed(2) ?? "0.00"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            sample.status === "PUBLISHED"
-                              ? "bg-[#00FF88]/20 text-[#00FF88]"
-                              : sample.status === "REVIEW"
-                              ? "bg-yellow-500/20 text-yellow-400"
-                              : "bg-[#2a2a2a] text-[#a1a1a1]"
-                          }`}
-                        >
-                          {sample.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {sample.status === "DRAFT" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleSubmitForReview(sample.id)}
-                              className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
-                              title="Submit for Review"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-[#2a2a2a] text-white hover:bg-[#1a1a1a]"
-                            onClick={() =>
-                              router.push(`/creator/edit/${sample.id}`)
-                            }
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDeleteSample(sample.id)}
-                            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_1fr_80px_45px_45px_70px_80px_100px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+              <div className="w-10" />
+              <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Key</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">BPM</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Rating</span>
+              <span className="text-xs font-medium text-[#a1a1a1]">Status</span>
+              <span className="text-xs font-medium text-[#a1a1a1] text-right">Actions</span>
+            </div>
+
+            {/* Rows */}
+            <div className="divide-y divide-[#2a2a2a]">
+              {filteredSamples.map((sample) => (
+                <CreatorSampleRow
+                  key={sample.id}
+                  sample={sample}
+                  onEdit={(id) => router.push(`/creator/edit/${id}`)}
+                  onDelete={handleDeleteSample}
+                  onSubmitForReview={handleSubmitForReview}
+                />
+              ))}
             </div>
           </div>
         ) : (
