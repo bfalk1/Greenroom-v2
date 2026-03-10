@@ -124,6 +124,8 @@ export async function GET(
       credit_price: s.creditPrice,
       tags: s.tags,
       file_url: s.previewUrl || s.fileUrl,
+      preview_url: s.previewUrl,
+      waveform_data: s.waveformData,
       cover_art_url: s.coverImageUrl,
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
