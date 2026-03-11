@@ -478,7 +478,7 @@ export default function LibraryPage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">My Library</h1>
           <p className="text-[#a1a1a1]">
-            {samples.length} sample{samples.length !== 1 ? "s" : ""} purchased
+            {total} sample{total !== 1 ? "s" : ""} purchased
           </p>
         </div>
 
