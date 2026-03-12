@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings, LogOut, Menu, X, Zap, Download } from "lucide-react";
+import { Settings, LogOut, Menu, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 
@@ -122,10 +122,6 @@ export function Navbar() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <nav className="md:hidden mt-4 pt-4 border-t border-[#2a2a2a] flex flex-col gap-3">
-            <Link href="/download" className="flex items-center gap-2 text-sm font-medium text-[#00FF88] hover:text-[#00cc6a]">
-              <Download className="w-4 h-4" />
-              Download App
-            </Link>
             <Link href="/marketplace" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Marketplace
             </Link>
