@@ -6,13 +6,11 @@ import { usePathname } from "next/navigation";
 import { Settings, LogOut, Menu, X, Zap, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
-import { usePWAInstall } from "@/lib/hooks/usePWAInstall";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const { user, loading, logout } = useUser();
-  const { canInstall, install } = usePWAInstall();
 
   const hasActiveSub =
     user?.subscription_status === "active" ||
@@ -64,25 +62,13 @@ export function Navbar() {
               <>
                 {navLink("/marketplace", "Marketplace")}
                 {navLink("/pricing", "Pricing")}
+                {navLink("/download", "Download")}
               </>
             )}
           </nav>
 
           {/* Right Actions */}
           <div className="flex items-center gap-4">
-            {/* Install App Button */}
-            {canInstall && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={install}
-                className="hidden sm:flex items-center gap-2 text-[#00FF88] hover:text-[#00cc6a] hover:bg-[#1a1a1a]"
-              >
-                <Download className="w-4 h-4" />
-                <span>Install App</span>
-              </Button>
-            )}
-
             {loading ? (
               <div className="w-20 h-8 bg-[#1a1a1a] rounded-full animate-pulse" />
             ) : user ? (
@@ -136,16 +122,10 @@ export function Navbar() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <nav className="md:hidden mt-4 pt-4 border-t border-[#2a2a2a] flex flex-col gap-3">
-            {/* Install App - Mobile */}
-            {canInstall && (
-              <button
-                onClick={install}
-                className="flex items-center gap-2 text-sm font-medium text-[#00FF88] hover:text-[#00cc6a]"
-              >
-                <Download className="w-4 h-4" />
-                Install App
-              </button>
-            )}
+            <Link href="/download" className="flex items-center gap-2 text-sm font-medium text-[#00FF88] hover:text-[#00cc6a]">
+              <Download className="w-4 h-4" />
+              Download App
+            </Link>
             <Link href="/marketplace" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
               Marketplace
             </Link>
