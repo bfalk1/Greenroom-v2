@@ -1,8 +1,10 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Apple, Monitor, Download } from "lucide-react";
+import { Apple, Monitor, Download, ExternalLink } from "lucide-react";
 import Link from "next/link";
+
+const GITHUB_RELEASES_URL = "https://github.com/bfalk1/Greenroom-v2/releases/latest";
 
 export default function DownloadPage() {
   const platforms = [
@@ -11,24 +13,21 @@ export default function DownloadPage() {
       icon: Apple,
       description: "For Mac computers",
       requirements: "macOS 10.13 or later",
-      downloadUrl: "#", // TODO: Add actual download URL
-      available: false,
+      fileHint: ".dmg",
     },
     {
       name: "Windows",
       icon: Monitor,
       description: "For Windows PCs",
       requirements: "Windows 10 or later",
-      downloadUrl: "#", // TODO: Add actual download URL
-      available: false,
+      fileHint: ".exe",
     },
     {
       name: "Linux",
       icon: Monitor,
       description: "For Linux systems",
       requirements: "Ubuntu 18.04+ or equivalent",
-      downloadUrl: "#", // TODO: Add actual download URL
-      available: false,
+      fileHint: ".AppImage",
     },
   ];
 
@@ -49,7 +48,7 @@ export default function DownloadPage() {
         </div>
 
         {/* Platform Cards */}
-        <div className="grid md:grid-cols-3 gap-6 mb-16">
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
           {platforms.map((platform) => (
             <div
               key={platform.name}
@@ -64,29 +63,32 @@ export default function DownloadPage() {
               <p className="text-[#a1a1a1] text-sm mb-1">
                 {platform.description}
               </p>
-              <p className="text-[#666] text-xs mb-6">
+              <p className="text-[#666] text-xs mb-2">
                 {platform.requirements}
               </p>
-              {platform.available ? (
-                <Button
-                  asChild
-                  className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] font-medium"
-                >
-                  <a href={platform.downloadUrl}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  disabled
-                  className="w-full bg-[#2a2a2a] text-[#666] cursor-not-allowed"
-                >
-                  Coming Soon
-                </Button>
-              )}
+              <p className="text-[#00FF88] text-xs">
+                {platform.fileHint}
+              </p>
             </div>
           ))}
+        </div>
+
+        {/* Download Button */}
+        <div className="text-center mb-16">
+          <Button
+            asChild
+            size="lg"
+            className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold text-lg px-8 py-6"
+          >
+            <a href={GITHUB_RELEASES_URL} target="_blank" rel="noopener noreferrer">
+              <Download className="w-5 h-5 mr-2" />
+              Download Latest Release
+              <ExternalLink className="w-4 h-4 ml-2" />
+            </a>
+          </Button>
+          <p className="text-[#666] text-sm mt-4">
+            Choose your platform on the releases page
+          </p>
         </div>
 
         {/* Web App Alternative */}
