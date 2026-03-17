@@ -59,10 +59,52 @@ async function generatePreview(
   outputPath: string
 ): Promise<void> {
   // Generate preview: MP3, 128kbps, max 30 seconds
-  // ffmpeg will automatically stop at end of file if shorter than 30s
-  const cmd = `${FFMPEG} -y -i "${inputPath}" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} -ar 44100 -ac 2 "${outputPath}"`;
+  // Try multiple strategies to handle various WAV formats including 32-bit float
   
-  await execAsync(cmd);
+  // Probe the file first to understand what we're dealing with
+  try {
+    const probeCmd = `ffprobe -v error -show_entries stream=codec_name,sample_fmt,sample_rate,channels -of json "${inputPath}"`;
+    const { stdout: probeOutput } = await execAsync(probeCmd);
+    console.log(`    🔍 Probe result: ${probeOutput.replace(/\n/g, ' ')}`);
+  } catch {
+    console.log(`    ⚠️  Probe failed (continuing anyway)`);
+  }
+  
+  const strategies = [
+    // Strategy 1: Standard conversion with aformat filter for 32-bit float WAV
+    `${FFMPEG} -y -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+    
+    // Strategy 2: Force WAV demuxer with ignore_unknown for non-standard WAV chunks
+    `${FFMPEG} -y -f wav -ignore_unknown -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+    
+    // Strategy 3: Try as raw 32-bit float PCM (common for DAW exports)
+    `${FFMPEG} -y -f f32le -ar 44100 -ac 2 -i "${inputPath}" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+  ];
+  
+  let lastError: Error | null = null;
+  
+  for (let i = 0; i < strategies.length; i++) {
+    const cmd = strategies[i];
+    
+    try {
+      await execAsync(cmd);
+      
+      // Verify output was created and has content
+      if (fs.existsSync(outputPath)) {
+        const stats = fs.statSync(outputPath);
+        if (stats.size > 0) {
+          console.log(`    🎵 Preview generated using strategy ${i + 1}`);
+          return; // Success!
+        }
+      }
+    } catch (error) {
+      lastError = error as Error;
+      console.log(`    ⚠️  Strategy ${i + 1} failed, trying next...`);
+    }
+  }
+  
+  // All strategies failed
+  throw lastError || new Error("All ffmpeg strategies failed");
 }
 
 async function downloadFile(storagePath: string, localPath: string): Promise<void> {

@@ -94,25 +94,67 @@ async function ensureBucketExists() {
 }
 
 async function generatePreview(inputPath, outputPath) {
-  const cmd = `ffmpeg -y -i "${inputPath}" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} -ar 44100 -ac 2 "${outputPath}"`;
-  debug("ffmpeg command:", cmd);
-  
   const startTime = Date.now();
+  
+  // Probe the file first to understand what we're dealing with
   try {
-    const { stdout, stderr } = await execAsync(cmd);
-    const duration = Date.now() - startTime;
-    debug(`ffmpeg completed in ${duration}ms`);
-    if (stderr) debug("ffmpeg stderr:", stderr.substring(0, 500));
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`ffmpeg failed after ${duration}ms:`, error.message);
-    debug("ffmpeg error details:", { 
-      code: error.code, 
-      signal: error.signal,
-      stderr: error.stderr?.substring(0, 1000) 
-    });
-    throw error;
+    const probeCmd = `ffprobe -v error -show_entries stream=codec_name,sample_fmt,sample_rate,channels -of json "${inputPath}"`;
+    const { stdout: probeOutput } = await execAsync(probeCmd);
+    debug("ffprobe result:", probeOutput);
+  } catch (probeError) {
+    debug("ffprobe failed (continuing anyway):", probeError.message);
   }
+  
+  // Try multiple strategies in order of preference
+  const strategies = [
+    // Strategy 1: Standard conversion with aformat filter for 32-bit float WAV
+    `ffmpeg -y -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+    
+    // Strategy 2: Force WAV demuxer with ignore_unknown for non-standard WAV chunks
+    `ffmpeg -y -f wav -ignore_unknown -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+    
+    // Strategy 3: Try as raw 32-bit float PCM (common for DAW exports)
+    `ffmpeg -y -f f32le -ar 44100 -ac 2 -i "${inputPath}" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
+    
+    // Strategy 4: Use lavfi to generate silence if all else fails (marks as needing manual review)
+    // This ensures the pipeline doesn't break completely
+  ];
+  
+  let lastError = null;
+  
+  for (let i = 0; i < strategies.length; i++) {
+    const cmd = strategies[i];
+    debug(`Trying strategy ${i + 1}:`, cmd);
+    
+    try {
+      const { stdout, stderr } = await execAsync(cmd);
+      const duration = Date.now() - startTime;
+      debug(`Strategy ${i + 1} succeeded in ${duration}ms`);
+      if (stderr) debug("ffmpeg stderr:", stderr.substring(0, 500));
+      
+      // Verify output was created and has content
+      if (fs.existsSync(outputPath)) {
+        const stats = fs.statSync(outputPath);
+        if (stats.size > 0) {
+          console.log(`    🎵 Preview generated using strategy ${i + 1}`);
+          return; // Success!
+        }
+      }
+    } catch (error) {
+      lastError = error;
+      debug(`Strategy ${i + 1} failed:`, error.message);
+    }
+  }
+  
+  // All strategies failed
+  const duration = Date.now() - startTime;
+  console.error(`ffmpeg failed after ${duration}ms with all strategies`);
+  debug("All strategies failed, last error:", { 
+    code: lastError?.code, 
+    signal: lastError?.signal,
+    stderr: lastError?.stderr?.substring(0, 1000) 
+  });
+  throw lastError || new Error("All ffmpeg strategies failed");
 }
 
 async function downloadFile(storagePath, localPath) {
