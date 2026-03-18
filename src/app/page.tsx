@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center pt-32 md:pt-48 relative overflow-hidden">
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative overflow-hidden">
       {/* Background GIF */}
       <div className="absolute inset-0">
         <img
@@ -21,13 +21,20 @@ export default function LandingPage() {
       </Link>
 
       {/* Content */}
-      <div className="relative z-10 text-center px-4">
-        {/* Logo */}
-        <img
-          src="/greenroom-2-logo.png"
-          alt="GREENROOM 2.0"
-          className="h-12 md:h-16 lg:h-20 mx-auto"
-        />
+      <div className="relative z-10 text-center w-full">
+        {/* Black bar with logo */}
+        <div className="bg-black py-4 px-8">
+          <img
+            src="/greenroom-2-logo.png"
+            alt="GREENROOM 2.0"
+            className="h-12 md:h-16 lg:h-20 mx-auto"
+          />
+        </div>
+        
+        {/* Coming Soon */}
+        <p className="text-[#00FF88] text-xl md:text-2xl font-bold tracking-widest mt-4">
+          COMING SOON
+        </p>
       </div>
     </div>
   );
