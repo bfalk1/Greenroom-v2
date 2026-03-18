@@ -25,11 +25,11 @@
     ],
     "mac": {
       "category": "public.app-category.music",
-      "icon": "assets/icon.icns",
+      "icon": "assets/icon.png",
       "target": ["dmg", "zip"]
     },
     "win": {
-      "icon": "assets/icon.ico",
+      "icon": "assets/icon.png",
       "target": ["nsis", "portable"]
     },
     "linux": {
