@@ -26,13 +26,8 @@ export default function LandingPage() {
         <img
           src="/greenroom-2-logo.png"
           alt="GREENROOM 2.0"
-          className="h-12 md:h-16 lg:h-20 mx-auto mb-6"
+          className="h-12 md:h-16 lg:h-20 mx-auto"
         />
-
-        {/* Subtitle */}
-        <p className="text-xl md:text-2xl text-[#a1a1a1]">
-          Coming Soon
-        </p>
       </div>
     </div>
   );
