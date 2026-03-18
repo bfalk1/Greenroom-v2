@@ -22,21 +22,20 @@ export default function LandingPage() {
 
       {/* Content */}
       <div className="relative z-10 text-center w-full">
-        {/* Black bar with logo */}
-        <div className="bg-black py-4 px-8">
+        {/* Black bar with logo and coming soon */}
+        <div className="bg-black py-8 md:py-12 px-8">
           <img
             src="/greenroom-2-logo.png"
             alt="GREENROOM 2.0"
             className="h-12 md:h-16 lg:h-20 mx-auto"
           />
+          {/* Coming Soon */}
+          <img
+            src="/coming-soon.png"
+            alt="COMING SOON"
+            className="h-10 md:h-14 lg:h-16 mx-auto mt-6"
+          />
         </div>
-        
-        {/* Coming Soon */}
-        <img
-          src="/coming-soon.png"
-          alt="COMING SOON"
-          className="h-10 md:h-14 lg:h-16 mx-auto mt-4"
-        />
       </div>
     </div>
   );
