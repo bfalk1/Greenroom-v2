@@ -131,7 +131,7 @@ export default function DownloadPage() {
 
             {/* Other Platforms */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(["mac", "windows", "linux"] as Platform[]).map((p) => {
+              {(["mac", "windows", "linux"] as const).map((p) => {
                 if (p === platform) return null;
                 const asset = getAssetForPlatform(p);
                 const config = platformConfig[p];
