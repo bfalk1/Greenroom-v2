@@ -33,8 +33,8 @@ export default function DownloadPage() {
   useEffect(() => {
     setPlatform(detectPlatform());
     
-    // Fetch latest release from GitHub
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
+    // Fetch latest release from our API (handles private repo auth)
+    fetch("/api/releases")
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data?.assets) {
