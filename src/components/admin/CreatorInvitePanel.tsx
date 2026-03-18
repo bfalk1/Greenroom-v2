@@ -174,7 +174,7 @@ export function CreatorInvitePanel() {
   const getInviteStatus = (invite: Invite) => {
     if (invite.usedAt) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#39b54a]/20 text-[#39b54a] border border-[#39b54a]/30">
           <CheckCircle2 className="w-3 h-3" />
           Used
         </span>
@@ -199,7 +199,7 @@ export function CreatorInvitePanel() {
   const getEmailStatus = (invite: Invite) => {
     if (invite.emailStatus === "sent") {
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-[#00FF88]">
+        <span className="inline-flex items-center gap-1 text-xs text-[#39b54a]">
           <CheckCircle2 className="w-3 h-3" />
           Email sent
         </span>
@@ -224,7 +224,7 @@ export function CreatorInvitePanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-6 h-6 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -234,8 +234,8 @@ export function CreatorInvitePanel() {
       {/* Invite Form */}
       <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
         <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-[#00FF88]/10 rounded-lg">
-            <UserPlus className="w-5 h-5 text-[#00FF88]" />
+          <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+            <UserPlus className="w-5 h-5 text-[#39b54a]" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-white">Invite Creator</h3>
@@ -283,7 +283,7 @@ export function CreatorInvitePanel() {
               placeholder="Add a personal note to the invite..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88]"
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a]"
               rows={3}
             />
           </div>
@@ -291,7 +291,7 @@ export function CreatorInvitePanel() {
           <Button
             type="submit"
             disabled={sending || !email.trim() || !artistName.trim()}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             {sending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

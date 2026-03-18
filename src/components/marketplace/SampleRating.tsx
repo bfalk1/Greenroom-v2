@@ -112,7 +112,7 @@ export function SampleRating({
                   isActive
                     ? isUserRated
                       ? "fill-[#FFD700] text-[#FFD700]"
-                      : "fill-[#00FF88] text-[#00FF88]"
+                      : "fill-[#39b54a] text-[#39b54a]"
                     : "text-[#3a3a3a]"
                 }`}
               />
@@ -146,7 +146,7 @@ export function SampleRating({
                 isActive
                   ? isUserRated
                     ? "fill-[#FFD700] text-[#FFD700]" // Gold for user's rating
-                    : "fill-[#00FF88] text-[#00FF88]" // Green on hover
+                    : "fill-[#39b54a] text-[#39b54a]" // Green on hover
                   : "text-[#3a3a3a]"
               }`}
             />

@@ -78,7 +78,7 @@ export function ProfilePictureUpload({
   return (
     <div className="flex flex-col items-center gap-4">
       {/* Current Avatar Preview */}
-      <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-[#00FF88] to-[#00cc6a] overflow-hidden border-2 border-[#2a2a2a]">
+      <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-[#39b54a] to-[#2e9140] overflow-hidden border-2 border-[#2a2a2a]">
         {preview ? (
           <img
             src={preview}
@@ -106,7 +106,7 @@ export function ProfilePictureUpload({
           <Button
             asChild
             disabled={uploading}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             <span className="cursor-pointer">
               {uploading ? (

@@ -53,7 +53,7 @@ export default function PricingPage() {
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     }>
       <PricingContent />
@@ -152,9 +152,9 @@ function PricingContent() {
 
         {/* Active Subscription Banner */}
         {hasActiveSub && (
-          <div className="max-w-2xl mx-auto mb-12 bg-[#1a1a1a] border border-[#00FF88]/30 rounded-xl p-6 text-center">
+          <div className="max-w-2xl mx-auto mb-12 bg-[#1a1a1a] border border-[#39b54a]/30 rounded-xl p-6 text-center">
             <div className="flex items-center justify-center gap-2 mb-2">
-              <Zap className="w-5 h-5 text-[#00FF88]" />
+              <Zap className="w-5 h-5 text-[#39b54a]" />
               <h3 className="text-lg font-semibold text-white">
                 Active Subscription
               </h3>
@@ -166,7 +166,7 @@ function PricingContent() {
             <Button
               onClick={handleManageSubscription}
               disabled={portalLoading}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold"
             >
               {portalLoading ? (
                 <>
@@ -187,13 +187,13 @@ function PricingContent() {
               key={pkg.name}
               className={`relative rounded-2xl border transition-all ${
                 pkg.highlighted
-                  ? "bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border-[#00FF88] shadow-lg shadow-[#00FF88]/20 scale-105"
-                  : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#00FF88]/50"
+                  ? "bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border-[#39b54a] shadow-lg shadow-[#39b54a]/20 scale-105"
+                  : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#39b54a]/50"
               }`}
             >
               {pkg.highlighted && (
                 <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                  <span className="bg-[#00FF88] text-black text-sm font-semibold px-4 py-1 rounded-full">
+                  <span className="bg-[#39b54a] text-black text-sm font-semibold px-4 py-1 rounded-full">
                     Most Popular
                   </span>
                 </div>
@@ -204,7 +204,7 @@ function PricingContent() {
                 <h3 className="text-2xl font-bold text-white mb-2">
                   {pkg.name}
                 </h3>
-                <p className="text-sm text-[#00FF88] mb-4">
+                <p className="text-sm text-[#39b54a] mb-4">
                   Monthly Subscription
                 </p>
                 <div className="flex items-baseline gap-2 mb-6">
@@ -217,7 +217,7 @@ function PricingContent() {
                 {/* Credits */}
                 <div className="bg-[#0a0a0a] rounded-lg p-4 mb-6 border border-[#2a2a2a]">
                   <div className="flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-[#00FF88]" />
+                    <Zap className="w-5 h-5 text-[#39b54a]" />
                     <span className="text-white font-semibold">
                       {pkg.credits} Credits
                     </span>
@@ -228,7 +228,7 @@ function PricingContent() {
                 <ul className="space-y-4 mb-8">
                   {pkg.features.map((feature) => (
                     <li key={feature} className="flex items-center gap-3">
-                      <Check className="w-5 h-5 text-[#00FF88]" />
+                      <Check className="w-5 h-5 text-[#39b54a]" />
                       <span className="text-[#a1a1a1]">{feature}</span>
                     </li>
                   ))}
@@ -240,7 +240,7 @@ function PricingContent() {
                   disabled={loading !== null || userLoading}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted
-                      ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                      ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
                       : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
                   }`}
                 >

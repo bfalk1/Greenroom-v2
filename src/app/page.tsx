@@ -15,7 +15,7 @@ export default function LandingPage() {
       {/* Top Right Sign In */}
       <Link
         href="/login"
-        className="absolute top-6 right-6 text-[#00FF88] hover:text-white transition text-sm font-medium z-20"
+        className="absolute top-6 right-6 text-[#39b54a] hover:text-white transition text-sm font-medium z-20"
       >
         Creator Sign In →
       </Link>
@@ -32,7 +32,7 @@ export default function LandingPage() {
         </div>
         
         {/* Coming Soon */}
-        <p className="text-[#00FF88] text-xl md:text-2xl font-bold tracking-widest mt-4">
+        <p className="text-[#39b54a] text-xl md:text-2xl font-bold tracking-widest mt-4">
           COMING SOON
         </p>
       </div>

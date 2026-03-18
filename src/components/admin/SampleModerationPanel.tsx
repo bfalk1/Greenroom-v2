@@ -123,7 +123,7 @@ export function SampleModerationPanel({
         <Button
           onClick={handleApprove}
           disabled={submitting || sample.status === "published"}
-          className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
         >
           <CheckCircle2 className="w-4 h-4 mr-2" />
           Approve

@@ -89,7 +89,7 @@ export function BannerImageUpload({
           <Button
             asChild
             disabled={uploading}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             <span className="cursor-pointer">
               {uploading ? (

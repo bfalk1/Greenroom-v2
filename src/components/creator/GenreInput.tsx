@@ -113,7 +113,7 @@ export function GenreInput({ value, onChange, required }: GenreInputProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full h-10 px-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white text-sm hover:border-[#3a3a3a] transition focus:outline-none focus:border-[#00FF88]"
+        className="flex items-center justify-between w-full h-10 px-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white text-sm hover:border-[#3a3a3a] transition focus:outline-none focus:border-[#39b54a]"
       >
         <span className={value ? "text-white" : "text-[#666]"}>
           {value || "Select or type genre"}
@@ -145,7 +145,7 @@ export function GenreInput({ value, onChange, required }: GenreInputProps) {
                     type="button"
                     onClick={() => handleSelect(genre.name)}
                     className={`w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition flex items-center justify-between ${
-                      value === genre.name ? "text-[#00FF88]" : "text-white"
+                      value === genre.name ? "text-[#39b54a]" : "text-white"
                     }`}
                   >
                     <span>{genre.name}</span>
@@ -160,7 +160,7 @@ export function GenreInput({ value, onChange, required }: GenreInputProps) {
                   <button
                     type="button"
                     onClick={handleCreateNew}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition text-[#00FF88] flex items-center gap-2 border-t border-[#2a2a2a]"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition text-[#39b54a] flex items-center gap-2 border-t border-[#2a2a2a]"
                   >
                     <Plus className="w-4 h-4" />
                     Create "{search.trim()}"

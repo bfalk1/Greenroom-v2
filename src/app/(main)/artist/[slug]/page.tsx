@@ -280,7 +280,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -296,7 +296,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
               The artist you&apos;re looking for doesn&apos;t exist or isn&apos;t available.
             </p>
             <Link href="/marketplace">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Marketplace
               </Button>
@@ -318,7 +318,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[#00FF88]/20 via-[#1a1a1a] to-[#2a2a2a]" />
+          <div className="w-full h-full bg-gradient-to-br from-[#39b54a]/20 via-[#1a1a1a] to-[#2a2a2a]" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/50 to-transparent" />
       </div>
@@ -337,8 +337,8 @@ export default function ArtistPage({ params }: ArtistPageProps) {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#00FF88]/20 to-[#2a2a2a]">
-                    <Music className="w-12 h-12 sm:w-16 sm:h-16 text-[#00FF88]" />
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#39b54a]/20 to-[#2a2a2a]">
+                    <Music className="w-12 h-12 sm:w-16 sm:h-16 text-[#39b54a]" />
                   </div>
                 )}
               </div>
@@ -356,22 +356,22 @@ export default function ArtistPage({ params }: ArtistPageProps) {
               {/* Stats Row */}
               <div className="flex flex-wrap gap-4 sm:gap-6 text-sm mb-4">
                 <div className="flex items-center gap-2 text-[#a1a1a1]">
-                  <Music className="w-4 h-4 text-[#00FF88]" />
+                  <Music className="w-4 h-4 text-[#39b54a]" />
                   <span className="font-semibold text-white">{artist.sample_count}</span>
                   <span>samples</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#a1a1a1]">
-                  <Users className="w-4 h-4 text-[#00FF88]" />
+                  <Users className="w-4 h-4 text-[#39b54a]" />
                   <span className="font-semibold text-white">{artist.follower_count}</span>
                   <span>followers</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#a1a1a1]">
-                  <Download className="w-4 h-4 text-[#00FF88]" />
+                  <Download className="w-4 h-4 text-[#39b54a]" />
                   <span className="font-semibold text-white">{artist.total_downloads}</span>
                   <span>downloads</span>
                 </div>
                 <div className="flex items-center gap-2 text-[#a1a1a1]">
-                  <Calendar className="w-4 h-4 text-[#00FF88]" />
+                  <Calendar className="w-4 h-4 text-[#39b54a]" />
                   <span>Joined {formatDate(artist.created_at)}</span>
                 </div>
               </div>
@@ -386,7 +386,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
                   className={`min-w-[120px] ${
                     artist.is_following
                       ? "bg-[#1a1a1a] text-white border border-[#2a2a2a] hover:bg-[#2a2a2a] hover:border-red-500/50 hover:text-red-400"
-                      : "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                      : "bg-[#39b54a] text-black hover:bg-[#2e9140]"
                   }`}
                 >
                   {followLoading ? (
@@ -426,7 +426,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#00FF88] hover:bg-[#00FF88]/10 hover:border-[#00FF88]/50 transition-colors"
+                    className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1a1a1a] border border-[#2a2a2a] text-[#39b54a] hover:bg-[#39b54a]/10 hover:border-[#39b54a]/50 transition-colors"
                     title={platform}
                   >
                     {getSocialIcon(platform)}

@@ -161,7 +161,7 @@ export default function FavoritesPage() {
               Log in to see your favorite samples.
             </p>
             <Link href="/login">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 Log In
               </Button>
             </Link>
@@ -254,7 +254,7 @@ export default function FavoritesPage() {
               Click the heart icon on any sample to save it here for quick access.
             </p>
             <Link href="/marketplace">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 Explore Marketplace
               </Button>
             </Link>

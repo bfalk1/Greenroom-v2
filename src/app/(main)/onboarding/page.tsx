@@ -132,7 +132,7 @@ export default function OnboardingPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold py-3 flex items-center justify-center gap-2"
+            className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3 flex items-center justify-center gap-2"
           >
             {loading ? "Creating Profile..." : "Continue"}
             <ArrowRight className="w-4 h-4" />

@@ -153,7 +153,7 @@ export default function CreatorEarningsPage() {
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -170,7 +170,7 @@ export default function CreatorEarningsPage() {
           </p>
           <Button
             onClick={() => router.push("/creator/apply")}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             Apply Now
           </Button>
@@ -210,8 +210,8 @@ export default function CreatorEarningsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg bg-[#00FF88]/20 flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-[#00FF88]" />
+              <div className="w-10 h-10 rounded-lg bg-[#39b54a]/20 flex items-center justify-center">
+                <DollarSign className="w-6 h-6 text-[#39b54a]" />
               </div>
               <h3 className="text-[#a1a1a1] text-sm font-medium">
                 Total Earnings
@@ -327,8 +327,8 @@ export default function CreatorEarningsPage() {
             /* Stripe fully connected — show payout request */
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="w-4 h-4 text-[#00FF88]" />
-                <span className="text-sm text-[#00FF88] font-medium">
+                <CheckCircle2 className="w-4 h-4 text-[#39b54a]" />
+                <span className="text-sm text-[#39b54a] font-medium">
                   Stripe connected
                 </span>
               </div>
@@ -342,7 +342,7 @@ export default function CreatorEarningsPage() {
                     stats.unpaidEarnings - stats.pendingPayout > 0 ? (
                       <>
                         You have{" "}
-                        <span className="text-[#00FF88] font-medium">
+                        <span className="text-[#39b54a] font-medium">
                           $
                           {(
                             stats.unpaidEarnings - stats.pendingPayout
@@ -371,7 +371,7 @@ export default function CreatorEarningsPage() {
                 <Button
                   onClick={handleRequestPayout}
                   disabled={requestingPayout || !canRequestPayout}
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                  className="bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                 >
                   {requestingPayout ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -437,7 +437,7 @@ export default function CreatorEarningsPage() {
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium ${
                             payout.status === "PAID"
-                              ? "bg-[#00FF88]/20 text-[#00FF88]"
+                              ? "bg-[#39b54a]/20 text-[#39b54a]"
                               : payout.status === "PENDING"
                                 ? "bg-yellow-500/20 text-yellow-400"
                                 : "bg-red-500/20 text-red-400"
@@ -455,7 +455,7 @@ export default function CreatorEarningsPage() {
                         <a
                           href={`/api/creator/payouts/${payout.id}/invoice`}
                           download
-                          className="text-[#00FF88] hover:text-[#00cc6a] text-sm flex items-center justify-end gap-1"
+                          className="text-[#39b54a] hover:text-[#2e9140] text-sm flex items-center justify-end gap-1"
                         >
                           <Download className="w-4 h-4" />
                           Download

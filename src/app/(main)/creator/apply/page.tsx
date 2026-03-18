@@ -187,7 +187,7 @@ export default function CreatorApplicationPage() {
   if (userLoading || loadingApp) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -205,7 +205,7 @@ export default function CreatorApplicationPage() {
           </p>
           <Button
             onClick={() => router.push("/auth/login")}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             Sign In
           </Button>
@@ -222,7 +222,7 @@ export default function CreatorApplicationPage() {
           <div className="text-center">
             {application.status === "PENDING" && (
               <>
-                <Clock className="w-16 h-16 text-[#00FF88] mx-auto mb-4" />
+                <Clock className="w-16 h-16 text-[#39b54a] mx-auto mb-4" />
                 <h1 className="text-3xl font-bold text-white mb-2">
                   Application Under Review
                 </h1>
@@ -234,7 +234,7 @@ export default function CreatorApplicationPage() {
             )}
             {application.status === "APPROVED" && (
               <>
-                <CheckCircle2 className="w-16 h-16 text-[#00FF88] mx-auto mb-4" />
+                <CheckCircle2 className="w-16 h-16 text-[#39b54a] mx-auto mb-4" />
                 <h1 className="text-3xl font-bold text-white mb-2">
                   Welcome to GREENROOM Creator!
                 </h1>
@@ -244,7 +244,7 @@ export default function CreatorApplicationPage() {
                 </p>
                 <Button
                   onClick={() => router.push("/creator/dashboard")}
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 >
                   Go to Dashboard
                 </Button>
@@ -269,7 +269,7 @@ export default function CreatorApplicationPage() {
                 </p>
                 <Button
                   onClick={() => setApplication(null)}
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 >
                   Resubmit Application
                 </Button>
@@ -321,7 +321,7 @@ export default function CreatorApplicationPage() {
               value={formData.bio}
               onChange={(e) => handleInputChange("bio", e.target.value)}
               rows={4}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-2 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88]"
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-2 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a]"
               required
             />
           </div>
@@ -391,13 +391,13 @@ export default function CreatorApplicationPage() {
                   fileInputRef.current?.click();
                 }
               }}
-              className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition ${
+              className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition ${
                 !uploading && !formData.zip_file_path ? "cursor-pointer" : ""
               }`}
             >
               {formData.zip_file_path ? (
                 <div className="space-y-2">
-                  <CheckCircle2 className="w-8 h-8 text-[#00FF88] mx-auto" />
+                  <CheckCircle2 className="w-8 h-8 text-[#39b54a] mx-auto" />
                   <p className="text-white font-medium">File uploaded</p>
                   <p className="text-[#a1a1a1] text-sm">
                     {formData.zip_file_name}
@@ -415,10 +415,10 @@ export default function CreatorApplicationPage() {
                 </div>
               ) : fileUploadProgress > 0 ? (
                 <div className="space-y-2">
-                  <Loader2 className="w-8 h-8 text-[#00FF88] mx-auto animate-spin" />
+                  <Loader2 className="w-8 h-8 text-[#39b54a] mx-auto animate-spin" />
                   <div className="w-full bg-[#1a1a1a] rounded-full h-2">
                     <div
-                      className="bg-[#00FF88] h-2 rounded-full transition-all"
+                      className="bg-[#39b54a] h-2 rounded-full transition-all"
                       style={{ width: `${fileUploadProgress}%` }}
                     />
                   </div>
@@ -461,7 +461,7 @@ export default function CreatorApplicationPage() {
           <Button
             type="submit"
             disabled={submitting || uploading || !formData.zip_file_path}
-            className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? (
               <>

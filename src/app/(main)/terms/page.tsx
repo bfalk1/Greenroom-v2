@@ -31,7 +31,7 @@ export default function TermsPage() {
           <p>We may update these terms at any time. Continued use of the platform after changes constitutes acceptance of the updated terms.</p>
 
           <h2 className="text-xl font-semibold text-white mt-8">9. Contact</h2>
-          <p>Questions about these terms? Contact us at <a href="mailto:support@greenroom.app" className="text-[#00FF88] hover:underline">support@greenroom.app</a></p>
+          <p>Questions about these terms? Contact us at <a href="mailto:support@greenroom.app" className="text-[#39b54a] hover:underline">support@greenroom.app</a></p>
         </div>
       </div>
     </div>

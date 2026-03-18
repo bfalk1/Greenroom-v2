@@ -174,7 +174,7 @@ export function SampleUploadForm({
           <select
             value={formData.genre}
             onChange={(e) => handleInputChange("genre", e.target.value)}
-            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
             required
           >
             <option value="">Select Genre</option>
@@ -213,7 +213,7 @@ export function SampleUploadForm({
             onChange={(e) =>
               handleInputChange("sample_type", e.target.value)
             }
-            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
           >
             <option value="loop">Loop</option>
             <option value="one_shot">One-Shot</option>
@@ -226,7 +226,7 @@ export function SampleUploadForm({
           <select
             value={formData.key}
             onChange={(e) => handleInputChange("key", e.target.value)}
-            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+            className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
             required
           >
             <option value="">Select Key</option>
@@ -286,10 +286,10 @@ export function SampleUploadForm({
         <label className="block text-sm font-medium text-white mb-2">
           Audio File (WAV) <span className="text-red-500">*</span>
         </label>
-        <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
+        <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#39b54a]/50 transition">
           {formData.file_url ? (
             <div>
-              <p className="text-[#00FF88] text-sm font-medium">
+              <p className="text-[#39b54a] text-sm font-medium">
                 Audio uploaded ✓
               </p>
               <p className="text-[#a1a1a1] text-xs mt-1 truncate">
@@ -299,7 +299,7 @@ export function SampleUploadForm({
           ) : audioProgress > 0 ? (
             <div className="w-full bg-[#0a0a0a] rounded-full h-2">
               <div
-                className="bg-[#00FF88] h-2 rounded-full transition-all"
+                className="bg-[#39b54a] h-2 rounded-full transition-all"
                 style={{ width: `${audioProgress}%` }}
               />
             </div>
@@ -323,13 +323,13 @@ export function SampleUploadForm({
         <label className="block text-sm font-medium text-white mb-2">
           Cover Art (optional)
         </label>
-        <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
+        <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#39b54a]/50 transition">
           {formData.cover_art_url ? (
-            <p className="text-[#00FF88] text-sm">Cover uploaded ✓</p>
+            <p className="text-[#39b54a] text-sm">Cover uploaded ✓</p>
           ) : coverProgress > 0 ? (
             <div className="w-full bg-[#0a0a0a] rounded-full h-2">
               <div
-                className="bg-[#00FF88] h-2 rounded-full transition-all"
+                className="bg-[#39b54a] h-2 rounded-full transition-all"
                 style={{ width: `${coverProgress}%` }}
               />
             </div>
@@ -361,7 +361,7 @@ export function SampleUploadForm({
         <Button
           type="submit"
           disabled={uploading || !formData.file_url}
-          className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50"
+          className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50"
         >
           {uploading ? "Uploading..." : "Upload Sample"}
         </Button>

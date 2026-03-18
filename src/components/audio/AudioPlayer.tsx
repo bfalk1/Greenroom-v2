@@ -140,7 +140,7 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
         <Button
           onClick={togglePlay}
           disabled={isLoading}
-          className="w-12 h-12 rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] flex items-center justify-center"
+          className="w-12 h-12 rounded-full bg-[#39b54a] text-black hover:bg-[#2e9140] flex items-center justify-center"
         >
           {isLoading ? (
             <Loader2 className="w-6 h-6 animate-spin" />

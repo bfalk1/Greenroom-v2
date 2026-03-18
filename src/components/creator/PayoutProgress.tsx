@@ -44,7 +44,7 @@ export function PayoutProgress({
           <div>
             <h4 className="text-lg font-semibold text-white mb-2">Current Progress</h4>
             {thresholdMet ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#00FF88]/20 text-[#00FF88] text-xs font-medium rounded-full">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#39b54a]/20 text-[#39b54a] text-xs font-medium rounded-full">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 THRESHOLD MET
               </span>
@@ -69,7 +69,7 @@ export function PayoutProgress({
             style={{
               width: `${progressPercent}%`,
               background: thresholdMet
-                ? "linear-gradient(90deg, #00FF88 0%, #00cc6a 100%)"
+                ? "linear-gradient(90deg, #39b54a 0%, #2e9140 100%)"
                 : "linear-gradient(90deg, #8B5CF6 0%, #A78BFA 50%, #C4B5FD 100%)",
             }}
           />

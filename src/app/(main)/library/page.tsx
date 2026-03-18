@@ -188,9 +188,9 @@ function LibraryRow({
       ref={rowRef}
       className={`grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
-          ? "bg-[#00FF88]/10"
+          ? "bg-[#39b54a]/10"
           : isPlayingState
-          ? "bg-[#00FF88]/5"
+          ? "bg-[#39b54a]/5"
           : "hover:bg-[#242424]"
       }`}
     >
@@ -203,7 +203,7 @@ function LibraryRow({
         className="flex-shrink-0"
       >
         {isChecked ? (
-          <CheckSquare className="w-4 h-4 text-[#00FF88]" />
+          <CheckSquare className="w-4 h-4 text-[#39b54a]" />
         ) : (
           <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
         )}
@@ -228,9 +228,9 @@ function LibraryRow({
           }`}
         >
           {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
+            <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />
           ) : isPlayingState ? (
-            <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
+            <Pause className="w-4 h-4 fill-current text-[#39b54a]" />
           ) : (
             <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
           )}
@@ -244,7 +244,7 @@ function LibraryRow({
           <div className="flex items-center gap-2 min-w-0">
             <Link
               href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-              className="text-xs text-[#666] hover:text-[#00FF88] truncate transition flex-shrink-0"
+              className="text-xs text-[#666] hover:text-[#39b54a] truncate transition flex-shrink-0"
             >
               {sample.artist_name || "Unknown"}
             </Link>
@@ -273,7 +273,7 @@ function LibraryRow({
             barWidth={2}
             barGap={1}
             barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
-            progressColor="#00FF88"
+            progressColor="#39b54a"
           />
         </div>
       </div>
@@ -314,7 +314,7 @@ function LibraryRow({
           onClick={handleDownload}
           disabled={isDownloading}
           size="sm"
-          className="h-7 w-7 p-0 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          className="h-7 w-7 p-0 bg-[#39b54a] text-black hover:bg-[#2e9140]"
         >
           {isDownloading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -481,7 +481,7 @@ export default function LibraryPage() {
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -514,7 +514,7 @@ export default function LibraryPage() {
                 <Button
                   onClick={handleBulkDownload}
                   disabled={bulkDownloading}
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 >
                   {bulkDownloading ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -534,7 +534,7 @@ export default function LibraryPage() {
             <div className="grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
               <button onClick={selectAll} className="flex-shrink-0">
                 {selectedIds.size === samples.length && samples.length > 0 ? (
-                  <CheckSquare className="w-4 h-4 text-[#00FF88]" />
+                  <CheckSquare className="w-4 h-4 text-[#39b54a]" />
                 ) : (
                   <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
                 )}
@@ -567,7 +567,7 @@ export default function LibraryPage() {
             {samples.length < total && (
               <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
                 {loadingMore ? (
-                  <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+                  <Loader2 className="w-6 h-6 text-[#39b54a] animate-spin" />
                 ) : (
                   <span className="text-sm text-[#666]">Scroll for more...</span>
                 )}
@@ -589,7 +589,7 @@ export default function LibraryPage() {
               Purchase samples from the marketplace to add them here.
             </p>
             <Link href="/marketplace">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 Browse Marketplace
               </Button>
             </Link>

@@ -47,14 +47,14 @@ export default function ContactPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-6 text-center">
-            <Mail className="w-8 h-8 text-[#00FF88] mx-auto mb-3" />
+            <Mail className="w-8 h-8 text-[#39b54a] mx-auto mb-3" />
             <h3 className="text-white font-semibold mb-2">Email</h3>
-            <a href="mailto:admin@greenroom.fm" className="text-[#00FF88] hover:underline text-sm">
+            <a href="mailto:admin@greenroom.fm" className="text-[#39b54a] hover:underline text-sm">
               admin@greenroom.fm
             </a>
           </div>
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-6 text-center">
-            <MessageSquare className="w-8 h-8 text-[#00FF88] mx-auto mb-3" />
+            <MessageSquare className="w-8 h-8 text-[#39b54a] mx-auto mb-3" />
             <h3 className="text-white font-semibold mb-2">Response Time</h3>
             <p className="text-[#a1a1a1] text-sm">Usually within 24 hours</p>
           </div>
@@ -68,7 +68,7 @@ export default function ContactPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#00FF88] focus:outline-none transition"
+              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#39b54a] focus:outline-none transition"
               placeholder="Your name"
             />
           </div>
@@ -79,7 +79,7 @@ export default function ContactPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#00FF88] focus:outline-none transition"
+              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#39b54a] focus:outline-none transition"
               placeholder="your@email.com"
             />
           </div>
@@ -90,14 +90,14 @@ export default function ContactPage() {
               onChange={(e) => setMessage(e.target.value)}
               required
               rows={5}
-              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#00FF88] focus:outline-none transition resize-none"
+              className="w-full px-4 py-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-white placeholder-[#666] focus:border-[#39b54a] focus:outline-none transition resize-none"
               placeholder="How can we help?"
             />
           </div>
           <Button
             type="submit"
             disabled={sending}
-            className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold py-3"
+            className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3"
           >
             {sending ? "Sending..." : "Send Message"}
           </Button>

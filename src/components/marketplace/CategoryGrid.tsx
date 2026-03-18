@@ -25,7 +25,7 @@ interface Category {
 }
 
 const GENRE_CATEGORIES: Category[] = [
-  { id: "Electronic", name: "Electronic", icon: Zap, color: "#00FF88", gradient: "from-[#00FF88]/20 to-[#00FF88]/5" },
+  { id: "Electronic", name: "Electronic", icon: Zap, color: "#39b54a", gradient: "from-[#39b54a]/20 to-[#39b54a]/5" },
   { id: "Hip-Hop", name: "Hip-Hop", icon: Mic2, color: "#FF6B6B", gradient: "from-[#FF6B6B]/20 to-[#FF6B6B]/5" },
   { id: "Pop", name: "Pop", icon: Sparkles, color: "#FFD93D", gradient: "from-[#FFD93D]/20 to-[#FFD93D]/5" },
   { id: "House", name: "House", icon: Headphones, color: "#6BCB77", gradient: "from-[#6BCB77]/20 to-[#6BCB77]/5" },
@@ -42,7 +42,7 @@ const GENRE_CATEGORIES: Category[] = [
 const INSTRUMENT_CATEGORIES: Category[] = [
   { id: "Drums", name: "Drums", icon: Drum, color: "#FF6B6B", gradient: "from-[#FF6B6B]/20 to-[#FF6B6B]/5" },
   { id: "Bass", name: "Bass", icon: Volume2, color: "#6BCB77", gradient: "from-[#6BCB77]/20 to-[#6BCB77]/5" },
-  { id: "Synths", name: "Synths", icon: Zap, color: "#00FF88", gradient: "from-[#00FF88]/20 to-[#00FF88]/5" },
+  { id: "Synths", name: "Synths", icon: Zap, color: "#39b54a", gradient: "from-[#39b54a]/20 to-[#39b54a]/5" },
   { id: "Vocals", name: "Vocals", icon: Mic2, color: "#FFD93D", gradient: "from-[#FFD93D]/20 to-[#FFD93D]/5" },
   { id: "Guitars", name: "Guitars", icon: Guitar, color: "#E67E22", gradient: "from-[#E67E22]/20 to-[#E67E22]/5" },
   { id: "Keys", name: "Keys", icon: Piano, color: "#3498DB", gradient: "from-[#3498DB]/20 to-[#3498DB]/5" },
@@ -72,7 +72,7 @@ export function CategoryGrid({
         {selectedCategory && (
           <button
             onClick={() => onSelectCategory(null)}
-            className="text-sm text-[#00FF88] hover:text-[#00cc6a] transition"
+            className="text-sm text-[#39b54a] hover:text-[#2e9140] transition"
           >
             Clear filter
           </button>
@@ -145,7 +145,7 @@ export function CategoryChips({
           px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap
           transition-colors duration-200
           ${!selectedCategory 
-            ? "bg-[#00FF88] text-black" 
+            ? "bg-[#39b54a] text-black" 
             : "bg-[#1a1a1a] text-[#a1a1a1] hover:text-white border border-[#2a2a2a]"
           }
         `}
@@ -163,7 +163,7 @@ export function CategoryChips({
               px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap
               transition-colors duration-200
               ${isSelected 
-                ? "bg-[#00FF88] text-black" 
+                ? "bg-[#39b54a] text-black" 
                 : "bg-[#1a1a1a] text-[#a1a1a1] hover:text-white border border-[#2a2a2a]"
               }
             `}

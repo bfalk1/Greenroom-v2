@@ -108,7 +108,7 @@ export default function EditSamplePage() {
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00FF88]" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#39b54a]" />
       </div>
     );
   }
@@ -173,7 +173,7 @@ export default function EditSamplePage() {
               <select
                 value={formData.instrumentType}
                 onChange={(e) => handleChange("instrumentType", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
                 required
               >
                 <option value="">Select Instrument</option>
@@ -193,7 +193,7 @@ export default function EditSamplePage() {
               <select
                 value={formData.sampleType}
                 onChange={(e) => handleChange("sampleType", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
               >
                 <option value="LOOP">Loop</option>
                 <option value="ONE_SHOT">One-Shot</option>
@@ -265,7 +265,7 @@ export default function EditSamplePage() {
             <Button
               type="submit"
               disabled={saving}
-              className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               {saving ? (
                 <>

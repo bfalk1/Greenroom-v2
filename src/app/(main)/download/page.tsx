@@ -75,7 +75,7 @@ export default function DownloadPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#00FF88] to-[#00cc6a] flex items-center justify-center mx-auto mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#39b54a] to-[#2e9140] flex items-center justify-center mx-auto mb-6">
             <Download className="w-8 h-8 text-black" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-4">
@@ -91,7 +91,7 @@ export default function DownloadPage() {
 
         {loading ? (
           <div className="text-center py-12">
-            <div className="animate-spin w-8 h-8 border-2 border-[#00FF88] border-t-transparent rounded-full mx-auto" />
+            <div className="animate-spin w-8 h-8 border-2 border-[#39b54a] border-t-transparent rounded-full mx-auto" />
           </div>
         ) : assets.length === 0 ? (
           <div className="text-center py-12">
@@ -108,7 +108,7 @@ export default function DownloadPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl bg-[#2a2a2a] flex items-center justify-center">
-                      <primaryConfig.icon className="w-6 h-6 text-[#00FF88]" />
+                      <primaryConfig.icon className="w-6 h-6 text-[#39b54a]" />
                     </div>
                     <div>
                       <h2 className="text-xl font-semibold text-white">
@@ -120,7 +120,7 @@ export default function DownloadPage() {
                     </div>
                   </div>
                   <a href={primaryAsset.browser_download_url}>
-                    <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold px-6">
+                    <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold px-6">
                       <Download className="w-4 h-4 mr-2" />
                       Download
                     </Button>
@@ -141,10 +141,10 @@ export default function DownloadPage() {
                   <a
                     key={p}
                     href={asset.browser_download_url}
-                    className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-6 hover:border-[#00FF88]/30 transition group"
+                    className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-6 hover:border-[#39b54a]/30 transition group"
                   >
                     <div className="flex items-center gap-3 mb-2">
-                      <config.icon className="w-5 h-5 text-[#666] group-hover:text-[#00FF88] transition" />
+                      <config.icon className="w-5 h-5 text-[#666] group-hover:text-[#39b54a] transition" />
                       <span className="font-medium text-white">{config.label}</span>
                     </div>
                     <p className="text-xs text-[#666]">{formatSize(asset.size)}</p>
@@ -159,7 +159,7 @@ export default function DownloadPage() {
                 href={RELEASES_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-[#00FF88] hover:text-white transition"
+                className="text-sm text-[#39b54a] hover:text-white transition"
               >
                 View all releases on GitHub →
               </a>
@@ -170,22 +170,22 @@ export default function DownloadPage() {
         {/* Features */}
         <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#00FF88]/10 flex items-center justify-center mx-auto mb-3">
-              <Download className="w-5 h-5 text-[#00FF88]" />
+            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
+              <Download className="w-5 h-5 text-[#39b54a]" />
             </div>
             <h3 className="font-medium text-white mb-1">Faster Downloads</h3>
             <p className="text-sm text-[#666]">Download samples directly to your DAW folder</p>
           </div>
           <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#00FF88]/10 flex items-center justify-center mx-auto mb-3">
-              <Monitor className="w-5 h-5 text-[#00FF88]" />
+            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
+              <Monitor className="w-5 h-5 text-[#39b54a]" />
             </div>
             <h3 className="font-medium text-white mb-1">Native Experience</h3>
             <p className="text-sm text-[#666]">Full desktop app with system integration</p>
           </div>
           <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#00FF88]/10 flex items-center justify-center mx-auto mb-3">
-              <Apple className="w-5 h-5 text-[#00FF88]" />
+            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
+              <Apple className="w-5 h-5 text-[#39b54a]" />
             </div>
             <h3 className="font-medium text-white mb-1">Cross Platform</h3>
             <p className="text-sm text-[#666]">Available for macOS, Windows, and Linux</p>

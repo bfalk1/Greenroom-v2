@@ -431,7 +431,7 @@ export default function CreatorUploadPage() {
           </p>
           <Button
             onClick={() => router.push("/marketplace")}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             Browse Marketplace
           </Button>
@@ -498,7 +498,7 @@ export default function CreatorUploadPage() {
               <select
                 value={formData.instrumentType}
                 onChange={(e) => handleChange("instrumentType", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
                 required
               >
                 <option value="">Select Instrument</option>
@@ -520,7 +520,7 @@ export default function CreatorUploadPage() {
               <select
                 value={formData.sampleType}
                 onChange={(e) => handleChange("sampleType", e.target.value)}
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#00FF88]"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white focus:outline-none focus:border-[#39b54a]"
               >
                 <option value="LOOP">Loop</option>
                 <option value="ONE_SHOT">One-Shot</option>
@@ -594,15 +594,15 @@ export default function CreatorUploadPage() {
               <br />
               <span className="text-[#555]">Examples: Dark_Loop_Trap_Am_140.wav, Kick_OneShot_HipHop.wav</span>
             </p>
-            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
+            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#39b54a]/50 transition">
               {audioFile ? (
                 <div className="flex items-center justify-center gap-2">
                   {audioUploaded ? (
-                    <CheckCircle className="w-5 h-5 text-[#00FF88]" />
+                    <CheckCircle className="w-5 h-5 text-[#39b54a]" />
                   ) : (
-                    <Upload className="w-5 h-5 text-[#00FF88]" />
+                    <Upload className="w-5 h-5 text-[#39b54a]" />
                   )}
-                  <span className="text-[#00FF88] text-sm font-medium">
+                  <span className="text-[#39b54a] text-sm font-medium">
                     {audioFile.name}
                   </span>
                   <button
@@ -643,15 +643,15 @@ export default function CreatorUploadPage() {
             <label className="block text-sm font-medium text-white mb-2">
               Cover Art (optional)
             </label>
-            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#00FF88]/50 transition">
+            <div className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-6 text-center hover:border-[#39b54a]/50 transition">
               {coverFile ? (
                 <div className="flex items-center justify-center gap-2">
                   {coverUploaded ? (
-                    <CheckCircle className="w-5 h-5 text-[#00FF88]" />
+                    <CheckCircle className="w-5 h-5 text-[#39b54a]" />
                   ) : (
-                    <Upload className="w-5 h-5 text-[#00FF88]" />
+                    <Upload className="w-5 h-5 text-[#39b54a]" />
                   )}
-                  <span className="text-[#00FF88] text-sm font-medium">
+                  <span className="text-[#39b54a] text-sm font-medium">
                     {coverFile.name}
                   </span>
                   <button
@@ -695,7 +695,7 @@ export default function CreatorUploadPage() {
             <Button
               type="submit"
               disabled={uploading || !audioFile}
-              className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50"
+              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50"
             >
               {uploading ? "Uploading..." : "Upload Sample"}
             </Button>

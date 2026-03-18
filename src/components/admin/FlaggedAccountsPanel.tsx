@@ -102,7 +102,7 @@ export function FlaggedAccountsPanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -110,7 +110,7 @@ export function FlaggedAccountsPanel() {
   if (users.length === 0) {
     return (
       <div className="text-center py-12">
-        <CheckCircle2 className="w-12 h-12 text-[#00FF88] mx-auto mb-4" />
+        <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-white mb-2">No Flagged Accounts</h3>
         <p className="text-[#a1a1a1]">
           All accounts are in good standing

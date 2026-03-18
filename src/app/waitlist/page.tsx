@@ -157,7 +157,7 @@ export default function WaitlistPage() {
         {/* Email Signup */}
         <div className={`transition-all duration-1000 delay-500 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
           {status === "success" ? (
-            <div className="flex items-center justify-center gap-3 text-[#00FF88] text-xl">
+            <div className="flex items-center justify-center gap-3 text-[#39b54a] text-xl">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -171,12 +171,12 @@ export default function WaitlistPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="flex-1 px-6 py-4 bg-[#111] border border-[#2a2a2a] rounded-xl text-white placeholder-[#444] focus:outline-none focus:border-[#00FF88] focus:shadow-[0_0_20px_rgba(0,255,136,0.15)] transition-all text-lg"
+                className="flex-1 px-6 py-4 bg-[#111] border border-[#2a2a2a] rounded-xl text-white placeholder-[#444] focus:outline-none focus:border-[#39b54a] focus:shadow-[0_0_20px_rgba(0,255,136,0.15)] transition-all text-lg"
               />
               <button
                 type="submit"
                 disabled={status === "loading"}
-                className="px-8 py-4 bg-[#00FF88] text-black font-bold rounded-xl hover:bg-[#00cc6a] hover:shadow-[0_0_30px_rgba(0,255,136,0.4)] transition-all disabled:opacity-50 text-lg"
+                className="px-8 py-4 bg-[#39b54a] text-black font-bold rounded-xl hover:bg-[#2e9140] hover:shadow-[0_0_30px_rgba(0,255,136,0.4)] transition-all disabled:opacity-50 text-lg"
               >
                 {status === "loading" ? "..." : "JOIN"}
               </button>

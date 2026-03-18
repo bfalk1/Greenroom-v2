@@ -220,7 +220,7 @@ export default function AccountPage() {
   if (userLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -246,7 +246,7 @@ export default function AccountPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Zap className="w-5 h-5 text-[#00FF88]" />
+                <Zap className="w-5 h-5 text-[#39b54a]" />
                 <p className="text-sm font-medium text-[#a1a1a1]">
                   Credit Balance
                 </p>
@@ -276,7 +276,7 @@ export default function AccountPage() {
         {subscription && (
           <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
             <div className="flex items-center gap-2 mb-6">
-              <CreditCard className="w-5 h-5 text-[#00FF88]" />
+              <CreditCard className="w-5 h-5 text-[#39b54a]" />
               <h2 className="text-lg font-semibold text-white">
                 Subscription
               </h2>
@@ -340,7 +340,7 @@ export default function AccountPage() {
         {/* No Subscription CTA */}
         {!subscription && (
           <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8 text-center">
-            <Zap className="w-8 h-8 text-[#00FF88] mx-auto mb-3" />
+            <Zap className="w-8 h-8 text-[#39b54a] mx-auto mb-3" />
             <h2 className="text-lg font-semibold text-white mb-2">
               No Active Subscription
             </h2>
@@ -349,7 +349,7 @@ export default function AccountPage() {
             </p>
             <Button
               onClick={() => (window.location.href = "/pricing")}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold"
             >
               View Plans
             </Button>
@@ -508,7 +508,7 @@ export default function AccountPage() {
                   }
                   placeholder="Tell fans about yourself..."
                   rows={4}
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88] resize-none"
+                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] resize-none"
                 />
               </div>
             )}
@@ -527,7 +527,7 @@ export default function AccountPage() {
               <Button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a] h-11 font-semibold"
+                className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] h-11 font-semibold"
               >
                 <Save className="w-4 h-4 mr-2" />
                 {saving ? "Saving..." : "Save Changes"}
@@ -623,7 +623,7 @@ export default function AccountPage() {
                 <Button
                   onClick={handleEmailChange}
                   disabled={emailSaving}
-                  className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold"
+                  className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold"
                 >
                   {emailSaving ? (
                     <>

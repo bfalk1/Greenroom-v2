@@ -70,12 +70,12 @@ export function CreditPackages() {
             key={pack.credits}
             className={`relative rounded-xl border p-5 transition ${
               pack.popular
-                ? "border-[#00FF88]/40 bg-gradient-to-b from-[#00FF88]/5 to-transparent"
+                ? "border-[#39b54a]/40 bg-gradient-to-b from-[#39b54a]/5 to-transparent"
                 : "border-[#2a2a2a] bg-[#0a0a0a]"
             }`}
           >
             {pack.popular && (
-              <span className="absolute -top-2.5 left-4 bg-[#00FF88] text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+              <span className="absolute -top-2.5 left-4 bg-[#39b54a] text-black text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
                 Popular
               </span>
             )}
@@ -86,7 +86,7 @@ export function CreditPackages() {
             )}
 
             <div className="flex items-center gap-2 mb-3">
-              <Zap className="w-5 h-5 text-[#00FF88]" />
+              <Zap className="w-5 h-5 text-[#39b54a]" />
               <span className="text-2xl font-bold text-white">
                 {pack.credits}
               </span>
@@ -107,7 +107,7 @@ export function CreditPackages() {
               disabled={loading !== null}
               className={`w-full font-semibold ${
                 pack.popular
-                  ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
                   : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
               }`}
             >

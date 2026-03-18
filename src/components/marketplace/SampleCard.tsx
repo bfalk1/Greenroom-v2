@@ -332,7 +332,7 @@ export function SampleCard({
       {isPlaying && (
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2a2a2a] z-10 rounded-b-lg overflow-hidden">
           <div
-            className="h-full bg-[#00FF88] transition-none"
+            className="h-full bg-[#39b54a] transition-none"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -341,10 +341,10 @@ export function SampleCard({
       <div
         className={`rounded-lg border transition-all duration-300 flex items-center p-3 gap-4 ${
           isSelected
-            ? "bg-[#1a1a1a]/80 border-[#00FF88] ring-1 ring-[#00FF88]/50"
+            ? "bg-[#1a1a1a]/80 border-[#39b54a] ring-1 ring-[#39b54a]/50"
             : isPlaying
-            ? "bg-[#1a1a1a] border-[#00FF88]/40"
-            : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#00FF88]/50"
+            ? "bg-[#1a1a1a] border-[#39b54a]/40"
+            : "bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#39b54a]/50"
         }`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -364,7 +364,7 @@ export function SampleCard({
           {(isHovered || isPlaying || isLoading || isSelected) && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
               <button
-                className="rounded-full bg-[#00FF88] text-black hover:bg-[#00cc6a] w-8 h-8 flex items-center justify-center transition"
+                className="rounded-full bg-[#39b54a] text-black hover:bg-[#2e9140] w-8 h-8 flex items-center justify-center transition"
                 onClick={togglePlay}
               >
                 {isLoading ? (
@@ -389,8 +389,8 @@ export function SampleCard({
             className="flex items-center gap-2 group w-fit"
             onClick={(e) => e.stopPropagation()}
           >
-            <User className="w-3 h-3 text-[#a1a1a1] group-hover:text-[#00FF88] transition-colors" />
-            <span className="text-xs text-[#a1a1a1] truncate group-hover:text-[#00FF88] transition-colors">
+            <User className="w-3 h-3 text-[#a1a1a1] group-hover:text-[#39b54a] transition-colors" />
+            <span className="text-xs text-[#a1a1a1] truncate group-hover:text-[#39b54a] transition-colors">
               {sample.artist_name || "Unknown Creator"}
             </span>
           </Link>
@@ -434,7 +434,7 @@ export function SampleCard({
         {/* Price & Actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
           {!isOwned && (
-            <div className="bg-[#00FF88]/10 text-[#00FF88] px-3 py-1 rounded-full text-xs font-bold">
+            <div className="bg-[#39b54a]/10 text-[#39b54a] px-3 py-1 rounded-full text-xs font-bold">
               {sample.credit_price} cr
             </div>
           )}
@@ -443,8 +443,8 @@ export function SampleCard({
             disabled={isPurchasing || isDownloading || !user}
             className={`text-sm font-medium h-8 px-4 ${
               isOwned
-                ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
-                : "bg-[#00FF88] text-black hover:bg-[#00cc6a] disabled:opacity-50"
+                ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                : "bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50"
             }`}
           >
             {isPurchasing || isDownloading ? (

@@ -31,7 +31,7 @@ export default function PrivacyPage() {
           <p>We may update this privacy policy at any time. We will notify you of significant changes via email or platform notification.</p>
 
           <h2 className="text-xl font-semibold text-white mt-8">9. Contact</h2>
-          <p>Questions about privacy? Contact us at <a href="mailto:privacy@greenroom.app" className="text-[#00FF88] hover:underline">privacy@greenroom.app</a></p>
+          <p>Questions about privacy? Contact us at <a href="mailto:privacy@greenroom.app" className="text-[#39b54a] hover:underline">privacy@greenroom.app</a></p>
         </div>
       </div>
     </div>

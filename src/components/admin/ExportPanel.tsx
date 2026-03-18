@@ -66,7 +66,7 @@ export function ExportPanel() {
       {/* Date Range Filter */}
       <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-4">
         <div className="flex items-center gap-2 mb-3">
-          <Calendar className="w-4 h-4 text-[#00FF88]" />
+          <Calendar className="w-4 h-4 text-[#39b54a]" />
           <span className="text-sm font-medium text-white">Date Range (optional)</span>
         </div>
         <div className="flex gap-4">
@@ -109,7 +109,7 @@ export function ExportPanel() {
             className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <FileSpreadsheet className="w-8 h-8 text-[#00FF88]" />
+              <FileSpreadsheet className="w-8 h-8 text-[#39b54a]" />
               <div>
                 <h4 className="font-medium text-white">{exportType.label}</h4>
                 <p className="text-xs text-[#a1a1a1]">{exportType.description}</p>
@@ -119,7 +119,7 @@ export function ExportPanel() {
               onClick={() => handleExport(exportType.id)}
               disabled={loading !== null}
               size="sm"
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               {loading === exportType.id ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

@@ -137,7 +137,7 @@ export default function ModApplicationsPage() {
         );
       case "APPROVED":
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#39b54a]/20 text-[#39b54a] border border-[#39b54a]/30">
             <CheckCircle2 className="w-3 h-3" />
             Approved
           </span>
@@ -182,7 +182,7 @@ export default function ModApplicationsPage() {
               onClick={() => setFilter(tab.value)}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 filter === tab.value
-                  ? "bg-[#00FF88] text-black"
+                  ? "bg-[#39b54a] text-black"
                   : "bg-[#1a1a1a] text-[#a1a1a1] hover:text-white border border-[#2a2a2a]"
               }`}
             >
@@ -193,7 +193,7 @@ export default function ModApplicationsPage() {
 
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+            <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
           </div>
         ) : applications.length > 0 ? (
           <div className="space-y-6">
@@ -236,7 +236,7 @@ export default function ModApplicationsPage() {
                       href={app.socialLinks.soundcloud}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                      className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                     >
                       SoundCloud <ExternalLink className="w-3 h-3" />
                     </a>
@@ -246,7 +246,7 @@ export default function ModApplicationsPage() {
                       href={app.socialLinks.spotify}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                      className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                     >
                       Spotify <ExternalLink className="w-3 h-3" />
                     </a>
@@ -256,7 +256,7 @@ export default function ModApplicationsPage() {
                       href={app.socialLinks.instagram}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                      className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                     >
                       Instagram <ExternalLink className="w-3 h-3" />
                     </a>
@@ -266,7 +266,7 @@ export default function ModApplicationsPage() {
                 {/* Download ZIP */}
                 <button
                   onClick={() => handleDownload(app.id)}
-                  className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm mb-4"
+                  className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm mb-4"
                 >
                   <Download className="w-4 h-4" />
                   Download sample pack
@@ -304,7 +304,7 @@ export default function ModApplicationsPage() {
                           }))
                         }
                         placeholder="Enter approval message or denial reason..."
-                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88]"
+                        className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a]"
                         rows={3}
                       />
                     </div>
@@ -312,7 +312,7 @@ export default function ModApplicationsPage() {
                       <Button
                         onClick={() => handleReview(app.id, "approve")}
                         disabled={reviewingId === app.id}
-                        className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                        className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
                       >
                         {reviewingId === app.id ? (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />

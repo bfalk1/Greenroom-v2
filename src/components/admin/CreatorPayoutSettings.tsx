@@ -129,8 +129,8 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-[#00FF88]/10 rounded-lg">
-          <Percent className="w-5 h-5 text-[#00FF88]" />
+        <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+          <Percent className="w-5 h-5 text-[#39b54a]" />
         </div>
         <div>
           <h3 className="text-lg font-semibold text-white">Per-Creator Profit Split</h3>
@@ -156,7 +156,7 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
         <Button
           onClick={searchCreators}
           disabled={loading}
-          className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
         </Button>
@@ -219,7 +219,7 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
                         onClick={() => handleSaveRate(creator.id)}
                         disabled={savingId === creator.id}
                         size="sm"
-                        className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                        className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                       >
                         {savingId === creator.id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -244,7 +244,7 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
                       }}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0a0a0a] border border-[#2a2a2a] hover:border-[#3a3a3a] transition"
                     >
-                      <DollarSign className="w-4 h-4 text-[#00FF88]" />
+                      <DollarSign className="w-4 h-4 text-[#39b54a]" />
                       <span className="text-white font-medium">
                         {creator.customPayoutRate ?? platformDefaultRate}%
                       </span>

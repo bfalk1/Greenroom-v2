@@ -122,7 +122,7 @@ function SignupForm() {
           We sent a confirmation link to <span className="text-white font-medium">{email}</span>. Click it to activate your account.
         </p>
         <Link href="/login">
-          <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold">
+          <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
             Back to Sign In
           </Button>
         </Link>
@@ -153,10 +153,10 @@ function SignupForm() {
 
       {/* Creator Invite Banner */}
       {invite && (
-        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#00FF88]/10 to-[#00cc6a]/10 border border-[#00FF88]/30">
+        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#39b54a]/10 to-[#2e9140]/10 border border-[#39b54a]/30">
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-[#00FF88]" />
-            <span className="font-semibold text-[#00FF88]">Creator Invite</span>
+            <Sparkles className="w-5 h-5 text-[#39b54a]" />
+            <span className="font-semibold text-[#39b54a]">Creator Invite</span>
           </div>
           <p className="text-sm text-[#a1a1a1] mb-1">
             Welcome, <span className="text-white font-medium">{invite.artistName}</span>!
@@ -224,7 +224,7 @@ function SignupForm() {
         <Button
           type="submit"
           disabled={loading || inviteLoading}
-          className="w-full bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold py-3"
+          className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3"
         >
           {loading
             ? "Creating Account..."
@@ -240,7 +240,7 @@ function SignupForm() {
         Already have an account?{" "}
         <Link
           href="/login"
-          className="text-[#00FF88] hover:text-[#00cc6a] font-medium"
+          className="text-[#39b54a] hover:text-[#2e9140] font-medium"
         >
           Sign In
         </Link>
@@ -252,7 +252,7 @@ function SignupForm() {
 function SignupLoading() {
   return (
     <div className="w-full max-w-md flex flex-col items-center justify-center py-20">
-      <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin mb-4" />
+      <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin mb-4" />
       <p className="text-[#a1a1a1]">Loading...</p>
     </div>
   );

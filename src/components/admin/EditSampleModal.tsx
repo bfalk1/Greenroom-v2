@@ -245,7 +245,7 @@ export function EditSampleModal({
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               {saving ? "Saving..." : "Save Changes"}
             </Button>

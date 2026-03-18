@@ -131,7 +131,7 @@ export default function FollowingPage() {
               Log in to see samples from artists you follow.
             </p>
             <Link href="/login">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 Log In
               </Button>
             </Link>
@@ -156,8 +156,8 @@ export default function FollowingPage() {
             </Button>
           </Link>
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#00FF88]/10 rounded-lg">
-              <Users className="w-6 h-6 text-[#00FF88]" />
+            <div className="p-3 bg-[#39b54a]/10 rounded-lg">
+              <Users className="w-6 h-6 text-[#39b54a]" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white">Following</h1>
@@ -223,7 +223,7 @@ export default function FollowingPage() {
               Explore the marketplace and follow your favorite artists to see their latest samples here.
             </p>
             <Link href="/marketplace">
-              <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+              <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
                 Explore Marketplace
               </Button>
             </Link>

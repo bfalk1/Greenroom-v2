@@ -24,7 +24,7 @@ export function Waveform({
   barWidth = 2,
   barGap = 1,
   barColor = "#3a3a3a",
-  progressColor = "#00FF88",
+  progressColor = "#39b54a",
   backgroundColor = "transparent",
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -71,7 +71,7 @@ export default function HelpPage() {
           {topics.map((topic) => (
             <div key={topic.title}>
               <div className="flex items-center gap-3 mb-6">
-                <topic.icon className="w-6 h-6 text-[#00FF88]" />
+                <topic.icon className="w-6 h-6 text-[#39b54a]" />
                 <h2 className="text-2xl font-bold text-white">{topic.title}</h2>
               </div>
               <div className="space-y-4">
@@ -96,7 +96,7 @@ export default function HelpPage() {
           </p>
           <Link
             href="/contact"
-            className="inline-block bg-[#00FF88] text-black hover:bg-[#00cc6a] font-semibold px-6 py-3 rounded-lg transition"
+            className="inline-block bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold px-6 py-3 rounded-lg transition"
           >
             Contact Us
           </Link>

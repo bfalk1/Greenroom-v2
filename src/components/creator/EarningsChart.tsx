@@ -32,7 +32,7 @@ export function EarningsChart() {
   if (loading) {
     return (
       <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 flex items-center justify-center h-64">
-        <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-6 h-6 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -54,8 +54,8 @@ export function EarningsChart() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#00FF88]/10 rounded-lg">
-            <TrendingUp className="w-5 h-5 text-[#00FF88]" />
+          <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+            <TrendingUp className="w-5 h-5 text-[#39b54a]" />
           </div>
           <div>
             <h3 className="text-lg font-semibold text-white">Earnings History</h3>
@@ -73,7 +73,7 @@ export function EarningsChart() {
               onClick={() => setPeriod(p)}
               className={`px-3 py-1.5 text-sm rounded-md transition ${
                 period === p
-                  ? "bg-[#00FF88] text-black font-medium"
+                  ? "bg-[#39b54a] text-black font-medium"
                   : "text-[#a1a1a1] hover:text-white"
               }`}
             >
@@ -142,7 +142,7 @@ export function EarningsChart() {
             <path
               d={history.map((h, i) => `${i === 0 ? "M" : "L"} ${i * 20 + 10} ${100 - (h.earnings / maxEarnings) * 90}`).join(" ")}
               fill="none"
-              stroke="#00FF88"
+              stroke="#39b54a"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -155,8 +155,8 @@ export function EarningsChart() {
                 cx={i * 20 + 10}
                 cy={100 - (h.earnings / maxEarnings) * 90}
                 r={hoveredIndex === i ? 6 : 4}
-                fill={hoveredIndex === i ? "#00FF88" : "#1a1a1a"}
-                stroke="#00FF88"
+                fill={hoveredIndex === i ? "#39b54a" : "#1a1a1a"}
+                stroke="#39b54a"
                 strokeWidth="2"
                 className="cursor-pointer transition-all"
                 onMouseEnter={() => setHoveredIndex(i)}
@@ -167,8 +167,8 @@ export function EarningsChart() {
             {/* Gradient definition */}
             <defs>
               <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#00FF88" stopOpacity="0.5" />
-                <stop offset="100%" stopColor="#00FF88" stopOpacity="0" />
+                <stop offset="0%" stopColor="#39b54a" stopOpacity="0.5" />
+                <stop offset="100%" stopColor="#39b54a" stopOpacity="0" />
               </linearGradient>
             </defs>
           </svg>

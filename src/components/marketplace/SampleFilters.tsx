@@ -120,7 +120,7 @@ function SearchableSelect({
                 setSearch("");
               }}
               className={`w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition ${
-                value === "all" ? "text-[#00FF88]" : "text-white"
+                value === "all" ? "text-[#39b54a]" : "text-white"
               }`}
             >
               {allLabel}
@@ -135,7 +135,7 @@ function SearchableSelect({
                   setSearch("");
                 }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-[#2a2a2a] transition ${
-                  value === opt ? "text-[#00FF88]" : "text-white"
+                  value === opt ? "text-[#39b54a]" : "text-white"
                 }`}
               >
                 {opt}
@@ -202,7 +202,7 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
   return (
     <div className="flex flex-wrap gap-4 mb-8 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
       <div className="flex items-center gap-2">
-        <Filter className="w-4 h-4 text-[#00FF88]" />
+        <Filter className="w-4 h-4 text-[#39b54a]" />
         <span className="text-sm font-medium text-white">Filter:</span>
       </div>
 

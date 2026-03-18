@@ -19,11 +19,11 @@ interface AuditLog {
 }
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
-  SAMPLE_APPROVED: <CheckCircle className="w-4 h-4 text-[#00FF88]" />,
+  SAMPLE_APPROVED: <CheckCircle className="w-4 h-4 text-[#39b54a]" />,
   SAMPLE_REJECTED: <XCircle className="w-4 h-4 text-red-400" />,
   SAMPLE_DELETED: <Trash2 className="w-4 h-4 text-red-400" />,
   SAMPLE_EDITED: <Edit className="w-4 h-4 text-blue-400" />,
-  APPLICATION_APPROVED: <CheckCircle className="w-4 h-4 text-[#00FF88]" />,
+  APPLICATION_APPROVED: <CheckCircle className="w-4 h-4 text-[#39b54a]" />,
   APPLICATION_DENIED: <XCircle className="w-4 h-4 text-red-400" />,
 };
 
@@ -81,14 +81,14 @@ export function AuditLogPanel() {
     <Card className="bg-[#1a1a1a] border-[#2a2a2a]">
       <CardHeader>
         <CardTitle className="text-white flex items-center gap-2">
-          <ScrollText className="w-5 h-5 text-[#00FF88]" />
+          <ScrollText className="w-5 h-5 text-[#39b54a]" />
           Audit Log
         </CardTitle>
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 text-[#00FF88] animate-spin" />
+            <Loader2 className="w-6 h-6 text-[#39b54a] animate-spin" />
           </div>
         ) : logs.length === 0 ? (
           <div className="text-center py-8 text-[#a1a1a1]">

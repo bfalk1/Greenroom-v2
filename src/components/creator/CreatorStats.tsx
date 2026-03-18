@@ -21,25 +21,25 @@ export function CreatorStats({
       label: "Samples",
       value: totalSamples,
       icon: Music,
-      color: "#00FF88",
+      color: "#39b54a",
     },
     {
       label: "Downloads",
       value: totalDownloads,
       icon: Download,
-      color: "#00FF88",
+      color: "#39b54a",
     },
     {
       label: "Purchases",
       value: totalPurchases,
       icon: TrendingUp,
-      color: "#00FF88",
+      color: "#39b54a",
     },
     {
       label: "Earnings",
       value: `$${totalEarnings.toFixed(2)}`,
       icon: DollarSign,
-      color: "#00FF88",
+      color: "#39b54a",
     },
   ];
 

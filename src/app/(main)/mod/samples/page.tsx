@@ -258,7 +258,7 @@ export default function ModSamplesPage() {
   if (loading && samples.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -274,7 +274,7 @@ export default function ModSamplesPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Music className="w-4 h-4 text-[#00FF88]" />
+              <Music className="w-4 h-4 text-[#39b54a]" />
               <h3 className="text-xs font-medium text-[#a1a1a1]">Total</h3>
             </div>
             <p className="text-2xl font-bold text-white">
@@ -333,20 +333,20 @@ export default function ModSamplesPage() {
           <TabsList className="bg-[#1a1a1a] border border-[#2a2a2a] p-1 mb-8">
             <TabsTrigger
               value="pending"
-              className="data-[state=active]:bg-[#00FF88] data-[state=active]:text-black"
+              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
             >
               Pending Review ({stats?.pendingSamples ?? 0})
             </TabsTrigger>
             <TabsTrigger
               value="search"
-              className="data-[state=active]:bg-[#00FF88] data-[state=active]:text-black"
+              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
             >
               <Search className="w-4 h-4 mr-2" />
               Search All
             </TabsTrigger>
             <TabsTrigger
               value="lowest-rated"
-              className="data-[state=active]:bg-[#00FF88] data-[state=active]:text-black"
+              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
             >
               <TrendingDown className="w-4 h-4 mr-2" />
               Lowest Rated
@@ -404,7 +404,7 @@ export default function ModSamplesPage() {
               })
             ) : (
               <div className="text-center py-12">
-                <CheckCircle2 className="w-12 h-12 text-[#00FF88] mx-auto mb-4" />
+                <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
                 <p className="text-[#a1a1a1]">
                   All samples have been reviewed!
                 </p>
@@ -428,7 +428,7 @@ export default function ModSamplesPage() {
               </div>
               <Button
                 onClick={handleSearch}
-                className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
               >
                 Search
               </Button>
@@ -584,7 +584,7 @@ export default function ModSamplesPage() {
                 value={flagReason}
                 onChange={(e) => setFlagReason(e.target.value)}
                 placeholder="Reason for flagging..."
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88] mb-4"
+                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] mb-4"
                 rows={3}
               />
               <div className="flex gap-3">

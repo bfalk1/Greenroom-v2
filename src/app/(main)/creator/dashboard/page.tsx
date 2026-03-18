@@ -145,7 +145,7 @@ function CreatorSampleRow({
   return (
     <div
       className={`grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_1fr_80px_45px_45px_70px_80px_100px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
-        isPlayingState ? "bg-[#00FF88]/5" : "hover:bg-[#242424]"
+        isPlayingState ? "bg-[#39b54a]/5" : "hover:bg-[#242424]"
       }`}
     >
       {/* Cover Art + Play Button */}
@@ -167,9 +167,9 @@ function CreatorSampleRow({
           }`}
         >
           {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
+            <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />
           ) : isPlayingState ? (
-            <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
+            <Pause className="w-4 h-4 fill-current text-[#39b54a]" />
           ) : (
             <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
           )}
@@ -196,7 +196,7 @@ function CreatorSampleRow({
             barWidth={2}
             barGap={1}
             barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
-            progressColor="#00FF88"
+            progressColor="#39b54a"
           />
         </div>
       </div>
@@ -224,7 +224,7 @@ function CreatorSampleRow({
         <span
           className={`px-2 py-0.5 rounded-full text-xs font-medium ${
             sample.status === "PUBLISHED"
-              ? "bg-[#00FF88]/20 text-[#00FF88]"
+              ? "bg-[#39b54a]/20 text-[#39b54a]"
               : sample.status === "REVIEW"
               ? "bg-yellow-500/20 text-yellow-400"
               : "bg-[#2a2a2a] text-[#a1a1a1]"
@@ -342,7 +342,7 @@ export default function CreatorDashboardPage() {
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -357,7 +357,7 @@ export default function CreatorDashboardPage() {
           </p>
           <Button
             onClick={() => router.push("/marketplace")}
-            className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
           >
             Browse Marketplace
           </Button>
@@ -392,14 +392,14 @@ export default function CreatorDashboardPage() {
             <Button
               onClick={() => router.push("/creator/batch-upload")}
               variant="outline"
-              className="border-[#00FF88] text-[#00FF88] hover:bg-[#00FF88]/10"
+              className="border-[#39b54a] text-[#39b54a] hover:bg-[#39b54a]/10"
             >
               <Plus className="w-4 h-4 mr-2" />
               Batch Upload
             </Button>
             <Button
               onClick={() => router.push("/creator/upload")}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               <Plus className="w-4 h-4 mr-2" />
               Upload Sample
@@ -470,7 +470,7 @@ export default function CreatorDashboardPage() {
             </p>
             <Button
               onClick={() => router.push("/creator/upload")}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               <Plus className="w-4 h-4 mr-2" />
               Upload Sample

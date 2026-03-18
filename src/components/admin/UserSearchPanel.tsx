@@ -236,7 +236,7 @@ export function UserSearchPanel() {
             <Button
               onClick={handleSearch}
               disabled={loading}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
@@ -259,7 +259,7 @@ export function UserSearchPanel() {
                   onClick={() => handleSelectUser(user)}
                   className={`p-4 rounded-lg cursor-pointer transition ${
                     selectedUser?.id === user.id
-                      ? "bg-[#00FF88]/10 border-2 border-[#00FF88]"
+                      ? "bg-[#39b54a]/10 border-2 border-[#39b54a]"
                       : "bg-[#0a0a0a] border border-[#2a2a2a] hover:bg-[#141414]"
                   }`}
                 >
@@ -290,19 +290,19 @@ export function UserSearchPanel() {
                       {user.role === "CREATOR" && user.payoutRate !== null && (
                         <div className="text-right">
                           <p className="text-sm text-[#a1a1a1]">Payout</p>
-                          <p className="text-[#00FF88] font-bold">${(user.payoutRate / 100).toFixed(2)}/cr</p>
+                          <p className="text-[#39b54a] font-bold">${(user.payoutRate / 100).toFixed(2)}/cr</p>
                         </div>
                       )}
                       <div className={`flex items-center gap-2 px-2 py-1 rounded ${
                         user.role === "ADMIN" ? "bg-red-500/20" :
                         user.role === "MODERATOR" ? "bg-purple-500/20" :
-                        user.role === "CREATOR" ? "bg-[#00FF88]/20" :
+                        user.role === "CREATOR" ? "bg-[#39b54a]/20" :
                         "bg-[#2a2a2a]"
                       }`}>
                         <Shield className={`w-3 h-3 ${
                           user.role === "ADMIN" ? "text-red-400" :
                           user.role === "MODERATOR" ? "text-purple-400" :
-                          user.role === "CREATOR" ? "text-[#00FF88]" :
+                          user.role === "CREATOR" ? "text-[#39b54a]" :
                           "text-[#a1a1a1]"
                         }`} />
                         <span className="text-xs text-white">{user.role}</span>
@@ -329,7 +329,7 @@ export function UserSearchPanel() {
                 {/* Role Management */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-[#a1a1a1]">
-                    <Shield className="w-5 h-5 text-[#00FF88]" />
+                    <Shield className="w-5 h-5 text-[#39b54a]" />
                     <span>Change Role</span>
                   </div>
                   <Select
@@ -357,7 +357,7 @@ export function UserSearchPanel() {
                   <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-[#a1a1a1]">
-                        <Shield className="w-5 h-5 text-[#00FF88]" />
+                        <Shield className="w-5 h-5 text-[#39b54a]" />
                         <span>Whitelist Status</span>
                       </div>
                       <Button
@@ -386,13 +386,13 @@ export function UserSearchPanel() {
                 {(isCreator || selectedUser.payoutRate !== null) && (
                   <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
                     <div className="flex items-center gap-2 text-[#a1a1a1]">
-                      <Percent className="w-5 h-5 text-[#00FF88]" />
+                      <Percent className="w-5 h-5 text-[#39b54a]" />
                       <span>
                         Payout Rate (¢/credit)
                         {selectedUser.payoutRate === null ? (
                           <span className="ml-2 text-xs text-[#666]">(default: $0.03/credit)</span>
                         ) : (
-                          <span className="ml-2 text-xs text-[#00FF88]">(custom: ${(selectedUser.payoutRate / 100).toFixed(2)}/credit)</span>
+                          <span className="ml-2 text-xs text-[#39b54a]">(custom: ${(selectedUser.payoutRate / 100).toFixed(2)}/credit)</span>
                         )}
                       </span>
                     </div>
@@ -409,7 +409,7 @@ export function UserSearchPanel() {
                       <Button
                         onClick={handlePayoutRateChange}
                         disabled={updatingPayout}
-                        className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                        className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                       >
                         {updatingPayout ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
                       </Button>
@@ -423,7 +423,7 @@ export function UserSearchPanel() {
                 {/* Credit Adjustment */}
                 <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
                   <div className="flex items-center gap-2 text-[#a1a1a1]">
-                    <Zap className="w-5 h-5 text-[#00FF88]" />
+                    <Zap className="w-5 h-5 text-[#39b54a]" />
                     <span>
                       Current balance:{" "}
                       <strong className="text-white">
@@ -443,7 +443,7 @@ export function UserSearchPanel() {
                     <Button
                       onClick={handleAdjustCredits}
                       disabled={adjusting || !creditAdjustment}
-                      className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                      className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                     >
                       {adjusting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
                     </Button>

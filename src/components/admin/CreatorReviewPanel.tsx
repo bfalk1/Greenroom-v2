@@ -71,7 +71,7 @@ export function CreatorReviewPanel({
               href={application.soundcloud_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+              className="flex items-center gap-2 text-[#39b54a] hover:text-[#2e9140] text-sm"
             >
               SoundCloud <ExternalLink className="w-4 h-4" />
             </a>
@@ -81,7 +81,7 @@ export function CreatorReviewPanel({
               href={application.spotify_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+              className="flex items-center gap-2 text-[#39b54a] hover:text-[#2e9140] text-sm"
             >
               Spotify <ExternalLink className="w-4 h-4" />
             </a>
@@ -91,7 +91,7 @@ export function CreatorReviewPanel({
               href={application.instagram_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+              className="flex items-center gap-2 text-[#39b54a] hover:text-[#2e9140] text-sm"
             >
               Instagram <ExternalLink className="w-4 h-4" />
             </a>
@@ -102,7 +102,7 @@ export function CreatorReviewPanel({
           href={application.zip_file_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[#00FF88] hover:text-[#00cc6a] text-sm underline"
+          className="text-[#39b54a] hover:text-[#2e9140] text-sm underline"
         >
           Download sample pack →
         </a>
@@ -116,7 +116,7 @@ export function CreatorReviewPanel({
           value={reviewNotes}
           onChange={(e) => setReviewNotes(e.target.value)}
           placeholder="Enter approval message or rejection reason..."
-          className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88]"
+          className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a]"
           rows={4}
         />
       </div>
@@ -125,7 +125,7 @@ export function CreatorReviewPanel({
         <Button
           onClick={handleApprove}
           disabled={submitting}
-          className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+          className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
         >
           <CheckCircle2 className="w-4 h-4 mr-2" />
           Approve

@@ -224,9 +224,9 @@ export function SampleRow({
       ref={rowRef}
       className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
-          ? "bg-[#00FF88]/10"
+          ? "bg-[#39b54a]/10"
           : isPlayingState
-          ? "bg-[#00FF88]/5"
+          ? "bg-[#39b54a]/5"
           : "hover:bg-[#242424]"
       }`}
     >
@@ -250,9 +250,9 @@ export function SampleRow({
           }`}
         >
           {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[#00FF88]" />
+            <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />
           ) : isPlayingState ? (
-            <Pause className="w-4 h-4 fill-current text-[#00FF88]" />
+            <Pause className="w-4 h-4 fill-current text-[#39b54a]" />
           ) : (
             <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
           )}
@@ -267,7 +267,7 @@ export function SampleRow({
             {showArtist ? (
               <Link
                 href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-                className="text-xs text-[#666] hover:text-[#00FF88] truncate transition flex-shrink-0"
+                className="text-xs text-[#666] hover:text-[#39b54a] truncate transition flex-shrink-0"
               >
                 {sample.artist_name || "Unknown"}
               </Link>
@@ -299,7 +299,7 @@ export function SampleRow({
             barWidth={2}
             barGap={1}
             barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
-            progressColor="#00FF88"
+            progressColor="#39b54a"
           />
         </div>
       </div>
@@ -354,10 +354,10 @@ export function SampleRow({
             size="sm"
             className={`h-7 w-7 p-0 ${
               isOwned
-                ? "bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 : (user?.credits ?? 0) < sample.credit_price
                 ? "bg-[#2a2a2a] text-[#666] cursor-not-allowed"
-                : "bg-[#2a2a2a] text-white hover:bg-[#00FF88] hover:text-black"
+                : "bg-[#2a2a2a] text-white hover:bg-[#39b54a] hover:text-black"
             }`}
           >
             {isPurchasing || isDownloading ? (
@@ -369,7 +369,7 @@ export function SampleRow({
             )}
           </Button>
           {!isOwned && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-xs text-[#00FF88] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-xs text-[#39b54a] font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10">
               {sample.credit_price} cr
             </div>
           )}
@@ -396,7 +396,7 @@ export function SampleTableHeader({ sortable = false, onSort, sortBy, sortDir }:
       <button
         onClick={() => onSort(column)}
         className={`text-xs font-medium flex items-center gap-1 transition ${
-          isActive ? "text-[#00FF88]" : "text-[#a1a1a1] hover:text-white"
+          isActive ? "text-[#39b54a]" : "text-[#a1a1a1] hover:text-white"
         }`}
       >
         {label}

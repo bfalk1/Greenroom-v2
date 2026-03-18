@@ -458,7 +458,7 @@ export default function AdminDashboardPage() {
         );
       case "APPROVED":
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#39b54a]/20 text-[#39b54a] border border-[#39b54a]/30">
             <CheckCircle2 className="w-3 h-3" />
             Approved
           </span>
@@ -478,7 +478,7 @@ export default function AdminDashboardPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -534,7 +534,7 @@ export default function AdminDashboardPage() {
                   {stats?.totalSamples ?? "—"}
                 </p>
               </div>
-              <Music className="w-8 h-8 text-[#00FF88]" />
+              <Music className="w-8 h-8 text-[#39b54a]" />
             </div>
           </div>
           <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
@@ -564,7 +564,7 @@ export default function AdminDashboardPage() {
                   {stats?.pendingApplications ?? applications.length}
                 </p>
               </div>
-              <Clock className="w-8 h-8 text-[#00FF88]" />
+              <Clock className="w-8 h-8 text-[#39b54a]" />
             </div>
           </div>
           <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
@@ -577,7 +577,7 @@ export default function AdminDashboardPage() {
                   {stats?.pendingSamples ?? draftSamples.length}
                 </p>
               </div>
-              <Music className="w-8 h-8 text-[#00FF88]" />
+              <Music className="w-8 h-8 text-[#39b54a]" />
             </div>
           </div>
         </div>
@@ -588,7 +588,7 @@ export default function AdminDashboardPage() {
             onClick={() => setActiveTab("applications")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "applications"
-                ? "border-[#00FF88] text-[#00FF88]"
+                ? "border-[#39b54a] text-[#39b54a]"
                 : "border-transparent text-[#a1a1a1] hover:text-white"
             }`}
           >
@@ -599,7 +599,7 @@ export default function AdminDashboardPage() {
             onClick={() => setActiveTab("samples")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "samples"
-                ? "border-[#00FF88] text-[#00FF88]"
+                ? "border-[#39b54a] text-[#39b54a]"
                 : "border-transparent text-[#a1a1a1] hover:text-white"
             }`}
           >
@@ -613,7 +613,7 @@ export default function AdminDashboardPage() {
             }}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "payouts"
-                ? "border-[#00FF88] text-[#00FF88]"
+                ? "border-[#39b54a] text-[#39b54a]"
                 : "border-transparent text-[#a1a1a1] hover:text-white"
             }`}
           >
@@ -629,7 +629,7 @@ export default function AdminDashboardPage() {
             onClick={() => setActiveTab("flagged")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "flagged"
-                ? "border-[#00FF88] text-[#00FF88]"
+                ? "border-[#39b54a] text-[#39b54a]"
                 : "border-transparent text-[#a1a1a1] hover:text-white"
             }`}
           >
@@ -640,7 +640,7 @@ export default function AdminDashboardPage() {
             onClick={() => setActiveTab("tools")}
             className={`px-4 py-3 font-medium border-b-2 transition ${
               activeTab === "tools"
-                ? "border-[#00FF88] text-[#00FF88]"
+                ? "border-[#39b54a] text-[#39b54a]"
                 : "border-transparent text-[#a1a1a1] hover:text-white"
             }`}
           >
@@ -698,7 +698,7 @@ export default function AdminDashboardPage() {
                             href={app.socialLinks.soundcloud}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                            className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                           >
                             SoundCloud <ExternalLink className="w-3 h-3" />
                           </a>
@@ -708,7 +708,7 @@ export default function AdminDashboardPage() {
                             href={app.socialLinks.spotify}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                            className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                           >
                             Spotify <ExternalLink className="w-3 h-3" />
                           </a>
@@ -718,7 +718,7 @@ export default function AdminDashboardPage() {
                             href={app.socialLinks.instagram}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm"
+                            className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm"
                           >
                             Instagram <ExternalLink className="w-3 h-3" />
                           </a>
@@ -728,7 +728,7 @@ export default function AdminDashboardPage() {
                       {/* Download ZIP */}
                       <button
                         onClick={() => handleDownload(app.id)}
-                        className="flex items-center gap-1.5 text-[#00FF88] hover:text-[#00cc6a] text-sm mb-4"
+                        className="flex items-center gap-1.5 text-[#39b54a] hover:text-[#2e9140] text-sm mb-4"
                       >
                         <Download className="w-4 h-4" />
                         Download sample pack
@@ -750,7 +750,7 @@ export default function AdminDashboardPage() {
                                 }))
                               }
                               placeholder="Enter approval message or denial reason..."
-                              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#00FF88]"
+                              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a]"
                               rows={3}
                             />
                           </div>
@@ -758,7 +758,7 @@ export default function AdminDashboardPage() {
                             <Button
                               onClick={() => handleReview(app.id, "approve")}
                               disabled={reviewingId === app.id}
-                              className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
                             >
                               {reviewingId === app.id ? (
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -859,7 +859,7 @@ export default function AdminDashboardPage() {
                     }}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                       payoutFilter === status
-                        ? "bg-[#00FF88] text-black"
+                        ? "bg-[#39b54a] text-black"
                         : "bg-[#1a1a1a] text-[#a1a1a1] hover:text-white border border-[#2a2a2a]"
                     }`}
                   >
@@ -911,7 +911,7 @@ export default function AdminDashboardPage() {
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             payout.status === "PAID"
-                              ? "bg-[#00FF88]/20 text-[#00FF88] border border-[#00FF88]/30"
+                              ? "bg-[#39b54a]/20 text-[#39b54a] border border-[#39b54a]/30"
                               : payout.status === "PENDING"
                               ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
                               : "bg-red-500/20 text-red-400 border border-red-500/30"
@@ -933,7 +933,7 @@ export default function AdminDashboardPage() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                         <div>
                           <p className="text-xs text-[#a1a1a1] mb-1">Amount</p>
-                          <p className="text-lg font-bold text-[#00FF88]">
+                          <p className="text-lg font-bold text-[#39b54a]">
                             ${payout.amountUsd.toFixed(2)}
                           </p>
                         </div>
@@ -1004,7 +1004,7 @@ export default function AdminDashboardPage() {
                                 handlePayoutAction(payout.id, "approve")
                               }
                               disabled={processingPayoutId === payout.id}
-                              className="flex-1 bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
                             >
                               {processingPayoutId === payout.id ? (
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1060,8 +1060,8 @@ export default function AdminDashboardPage() {
               {/* Payout Settings */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-[#00FF88]/10 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-[#00FF88]" />
+                  <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-[#39b54a]" />
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-white">Creator Payout Rate</h3>
@@ -1099,7 +1099,7 @@ export default function AdminDashboardPage() {
                 <Button
                   onClick={handleSaveSettings}
                   disabled={savingSettings}
-                  className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                  className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 >
                   {savingSettings ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />

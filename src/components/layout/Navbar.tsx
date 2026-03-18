@@ -22,7 +22,7 @@ export function Navbar() {
       <Link
         href={href}
         className={`text-sm font-medium transition ${
-          isActive ? "text-[#00FF88]" : "text-[#a1a1a1] hover:text-white"
+          isActive ? "text-[#39b54a]" : "text-[#a1a1a1] hover:text-white"
         }`}
       >
         {label}
@@ -74,7 +74,7 @@ export function Navbar() {
             ) : user ? (
               <>
                 {/* Credits Badge */}
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#00FF88]/30">
+                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#39b54a]/30">
                   <img src="/g-icon.png" alt="G" className="w-4 h-4" />
                   <span className="text-sm font-medium text-white">
                     {user.credits} credits
@@ -99,7 +99,7 @@ export function Navbar() {
               </>
             ) : (
               <Link href="/login">
-                <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a] font-medium">
+                <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-medium">
                   Sign In
                 </Button>
               </Link>

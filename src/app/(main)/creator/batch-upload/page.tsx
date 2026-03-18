@@ -335,7 +335,7 @@ export default function BatchUploadPage() {
   if (userLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#00FF88] animate-spin" />
+        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
       </div>
     );
   }
@@ -346,7 +346,7 @@ export default function BatchUploadPage() {
         <div className="text-center">
           <h2 className="text-xl font-bold text-white mb-2">Creator Access Required</h2>
           <p className="text-[#a1a1a1] mb-4">You need a Creator account to upload samples.</p>
-          <Button onClick={() => router.push("/marketplace")} className="bg-[#00FF88] text-black hover:bg-[#00cc6a]">
+          <Button onClick={() => router.push("/marketplace")} className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
             Browse Marketplace
           </Button>
         </div>
@@ -381,14 +381,14 @@ export default function BatchUploadPage() {
           <p className="text-[#a1a1a1] text-sm mb-3">
             Name your files using this format to auto-extract metadata:
           </p>
-          <code className="block bg-[#1a1a1a] rounded px-3 py-2 text-[#00FF88] text-sm mb-3">
+          <code className="block bg-[#1a1a1a] rounded px-3 py-2 text-[#39b54a] text-sm mb-3">
             SampleName_Key_BPM.wav
           </code>
           <div className="text-xs text-[#666] space-y-1">
             <p><strong className="text-[#a1a1a1]">Examples:</strong></p>
-            <p>• <code className="text-[#00FF88]">Dark_Trap_Loop_Am_140.wav</code> → Name: Dark Trap Loop, Key: A Minor, BPM: 140</p>
-            <p>• <code className="text-[#00FF88]">Piano_Chords_Gmaj_90bpm.wav</code> → Name: Piano Chords, Key: G Major, BPM: 90</p>
-            <p>• <code className="text-[#00FF88]">808_Bass_Cm_128.wav</code> → Name: 808 Bass, Key: C Minor, BPM: 128</p>
+            <p>• <code className="text-[#39b54a]">Dark_Trap_Loop_Am_140.wav</code> → Name: Dark Trap Loop, Key: A Minor, BPM: 140</p>
+            <p>• <code className="text-[#39b54a]">Piano_Chords_Gmaj_90bpm.wav</code> → Name: Piano Chords, Key: G Major, BPM: 90</p>
+            <p>• <code className="text-[#39b54a]">808_Bass_Cm_128.wav</code> → Name: 808 Bass, Key: C Minor, BPM: 128</p>
           </div>
         </div>
 
@@ -397,9 +397,9 @@ export default function BatchUploadPage() {
           {/* Multiple WAV Files */}
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition cursor-pointer bg-[#1a1a1a]"
+            className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a]"
           >
-            <Music className="w-10 h-10 text-[#00FF88] mx-auto mb-3" />
+            <Music className="w-10 h-10 text-[#39b54a] mx-auto mb-3" />
             <p className="text-white font-medium mb-1">Select WAV Files</p>
             <p className="text-[#a1a1a1] text-sm">Choose multiple .wav files</p>
             <input
@@ -415,12 +415,12 @@ export default function BatchUploadPage() {
           {/* ZIP File */}
           <div
             onClick={() => !extractingZip && zipInputRef.current?.click()}
-            className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#00FF88]/50 transition cursor-pointer bg-[#1a1a1a] ${extractingZip ? "opacity-50" : ""}`}
+            className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a] ${extractingZip ? "opacity-50" : ""}`}
           >
             {extractingZip ? (
-              <Loader2 className="w-10 h-10 text-[#00FF88] mx-auto mb-3 animate-spin" />
+              <Loader2 className="w-10 h-10 text-[#39b54a] mx-auto mb-3 animate-spin" />
             ) : (
-              <Package className="w-10 h-10 text-[#00FF88] mx-auto mb-3" />
+              <Package className="w-10 h-10 text-[#39b54a] mx-auto mb-3" />
             )}
             <p className="text-white font-medium mb-1">
               {extractingZip ? "Extracting..." : "Upload Sample Pack (ZIP)"}
@@ -439,8 +439,8 @@ export default function BatchUploadPage() {
 
         {/* Batch Settings */}
         {samples.length > 0 && (
-          <div className="bg-[#00FF88]/5 border border-[#00FF88]/30 rounded-lg p-4 mb-6">
-            <h3 className="text-[#00FF88] font-semibold mb-1">🎛️ Batch Settings — Apply to All Samples</h3>
+          <div className="bg-[#39b54a]/5 border border-[#39b54a]/30 rounded-lg p-4 mb-6">
+            <h3 className="text-[#39b54a] font-semibold mb-1">🎛️ Batch Settings — Apply to All Samples</h3>
             <p className="text-[#a1a1a1] text-xs mb-4">Set defaults and apply to all samples at once, or edit each sample individually below.</p>
             <div className="flex flex-wrap gap-4 items-end">
               <div>
@@ -469,7 +469,7 @@ export default function BatchUploadPage() {
               </div>
               <Button
                 onClick={applyDefaultsToAll}
-                className="bg-[#00FF88] text-black hover:bg-[#00cc6a]"
+                className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
               >
                 Apply to All Samples
               </Button>
@@ -502,7 +502,7 @@ export default function BatchUploadPage() {
                 <div
                   key={sample.id}
                   className={`p-4 border-b border-[#2a2a2a] last:border-b-0 ${
-                    sample.status === "done" ? "bg-[#00FF88]/5" : 
+                    sample.status === "done" ? "bg-[#39b54a]/5" : 
                     sample.status === "error" ? "bg-red-500/5" : ""
                   }`}
                 >
@@ -512,7 +512,7 @@ export default function BatchUploadPage() {
                       onClick={() => togglePreview(sample)}
                       className={`w-8 h-8 flex items-center justify-center rounded-full transition flex-shrink-0 ${
                         playingId === sample.id 
-                          ? "bg-[#00FF88] text-black" 
+                          ? "bg-[#39b54a] text-black" 
                           : "bg-[#2a2a2a] text-[#a1a1a1] hover:bg-[#3a3a3a] hover:text-white"
                       }`}
                       title={playingId === sample.id ? "Stop preview" : "Preview sample"}
@@ -526,8 +526,8 @@ export default function BatchUploadPage() {
                     
                     {/* Status Icon */}
                     <div className="w-6 flex-shrink-0">
-                      {sample.status === "uploading" && <Loader2 className="w-4 h-4 text-[#00FF88] animate-spin" />}
-                      {sample.status === "done" && <CheckCircle className="w-4 h-4 text-[#00FF88]" />}
+                      {sample.status === "uploading" && <Loader2 className="w-4 h-4 text-[#39b54a] animate-spin" />}
+                      {sample.status === "done" && <CheckCircle className="w-4 h-4 text-[#39b54a]" />}
                       {sample.status === "error" && <AlertCircle className="w-4 h-4 text-red-400" />}
                       {sample.status === "pending" && <Music className="w-4 h-4 text-[#666]" />}
                     </div>
@@ -638,7 +638,7 @@ export default function BatchUploadPage() {
             <Button
               onClick={handleUploadAll}
               disabled={uploading}
-              className="bg-[#00FF88] text-black hover:bg-[#00cc6a] px-8"
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140] px-8"
             >
               {uploading ? (
                 <>

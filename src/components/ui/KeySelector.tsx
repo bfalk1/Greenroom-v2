@@ -96,7 +96,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
               onClick={() => setUseFlats(true)}
               className={`flex-1 pb-2 text-sm font-medium transition ${
                 useFlats
-                  ? "text-white border-b-2 border-[#00FF88]"
+                  ? "text-white border-b-2 border-[#39b54a]"
                   : "text-[#666] hover:text-white"
               }`}
             >
@@ -107,7 +107,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
               onClick={() => setUseFlats(false)}
               className={`flex-1 pb-2 text-sm font-medium transition ${
                 !useFlats
-                  ? "text-white border-b-2 border-[#00FF88]"
+                  ? "text-white border-b-2 border-[#39b54a]"
                   : "text-[#666] hover:text-white"
               }`}
             >
@@ -125,7 +125,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
                   onClick={() => handleNoteClick(note)}
                   className={`w-8 h-8 rounded text-xs font-medium transition ${
                     selectedNote === note || selectedNote === SHARP_NOTES[i] || selectedNote === FLAT_NOTES[i]
-                      ? "bg-[#00FF88] text-black"
+                      ? "bg-[#39b54a] text-black"
                       : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
                   }`}
                 >
@@ -146,7 +146,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
                 onClick={() => handleNoteClick(note)}
                 className={`w-8 h-8 rounded text-xs font-medium transition ${
                   selectedNote === note
-                    ? "bg-[#00FF88] text-black"
+                    ? "bg-[#39b54a] text-black"
                     : "bg-[#3a3a3a] text-white hover:bg-[#4a4a4a]"
                 }`}
               >
@@ -162,7 +162,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
               onClick={() => handleScaleClick("Major")}
               className={`flex-1 py-2 rounded text-sm font-medium transition ${
                 selectedScale === "Major"
-                  ? "bg-[#00FF88] text-black"
+                  ? "bg-[#39b54a] text-black"
                   : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
               }`}
             >
@@ -173,7 +173,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
               onClick={() => handleScaleClick("Minor")}
               className={`flex-1 py-2 rounded text-sm font-medium transition ${
                 selectedScale === "Minor"
-                  ? "bg-[#00FF88] text-black"
+                  ? "bg-[#39b54a] text-black"
                   : "bg-[#2a2a2a] text-white hover:bg-[#3a3a3a]"
               }`}
             >
@@ -193,7 +193,7 @@ export function KeySelector({ value, onChange, placeholder = "Key", className }:
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="px-4 py-1.5 bg-[#00FF88] text-black rounded text-sm font-medium hover:bg-[#00cc6a] transition"
+              className="px-4 py-1.5 bg-[#39b54a] text-black rounded text-sm font-medium hover:bg-[#2e9140] transition"
             >
               Close
             </button>

@@ -75,7 +75,7 @@ export default function MarketplacePage() {
       className="flex items-center gap-1 text-xs font-medium text-[#a1a1a1] hover:text-white transition group"
     >
       {label}
-      <span className={`transition ${sortColumn === column ? "text-[#00FF88]" : "text-[#3a3a3a] group-hover:text-[#666]"}`}>
+      <span className={`transition ${sortColumn === column ? "text-[#39b54a]" : "text-[#3a3a3a] group-hover:text-[#666]"}`}>
         {sortColumn === column ? (
           sortDirection === "asc" ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
         ) : (
@@ -386,8 +386,8 @@ export default function MarketplacePage() {
           <div className="mb-10 pt-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-[#00FF88]/10 rounded-lg">
-                  <Users className="w-5 h-5 text-[#00FF88]" />
+                <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+                  <Users className="w-5 h-5 text-[#39b54a]" />
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-white">For You</h2>
@@ -449,7 +449,7 @@ export default function MarketplacePage() {
                     className="flex-shrink-0 group"
                   >
                     <div className="w-28 hover:scale-105 transition-all">
-                      <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-[#2a2a2a] ring-2 ring-[#2a2a2a] group-hover:ring-[#00FF88]/50 transition-all">
+                      <div className="relative w-20 h-20 mx-auto mb-2 rounded-full overflow-hidden bg-[#2a2a2a] ring-2 ring-[#2a2a2a] group-hover:ring-[#39b54a]/50 transition-all">
                         {artist.avatar_url ? (
                           <img
                             src={artist.avatar_url}
@@ -462,7 +462,7 @@ export default function MarketplacePage() {
                           </div>
                         )}
                       </div>
-                      <p className="text-white text-xs font-medium text-center truncate group-hover:text-[#00FF88] transition-colors mt-1">
+                      <p className="text-white text-xs font-medium text-center truncate group-hover:text-[#39b54a] transition-colors mt-1">
                         {artist.artist_name}
                       </p>
                     </div>
@@ -477,8 +477,8 @@ export default function MarketplacePage() {
         {!isFiltered && user && followingCount === 0 && !loadingFollowing && (
           <div className="mb-10 p-6 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-[#00FF88]/10 rounded-full">
-                <Users className="w-6 h-6 text-[#00FF88]" />
+              <div className="p-3 bg-[#39b54a]/10 rounded-full">
+                <Users className="w-6 h-6 text-[#39b54a]" />
               </div>
               <div className="flex-1">
                 <h3 className="text-white font-semibold mb-1">Discover Artists</h3>
@@ -579,7 +579,7 @@ export default function MarketplacePage() {
                       <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
                       <button
                         onClick={() => fetchSamples(samples.length, true)}
-                        className="text-sm text-[#00FF88] hover:text-white transition"
+                        className="text-sm text-[#39b54a] hover:text-white transition"
                       >
                         Load more
                       </button>
