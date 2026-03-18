@@ -33,7 +33,7 @@ export default function LandingPage() {
       <img
         src="/coming-soon.png"
         alt="COMING SOON"
-        className="absolute z-10 h-10 md:h-14 lg:h-16 left-1/2 -translate-x-1/2 bottom-[35%]"
+        className="absolute z-10 h-10 md:h-14 lg:h-16 left-1/2 -translate-x-1/2 bottom-[28%]"
       />
     </div>
   );
