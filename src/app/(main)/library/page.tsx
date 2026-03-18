@@ -237,16 +237,30 @@ function LibraryRow({
         </button>
       </div>
 
-      {/* Name + Artist + Waveform */}
+      {/* Name + Artist + Tags + Waveform */}
       <div className="min-w-0 flex items-center gap-4 flex-1">
         <div className="min-w-0 w-[250px] flex-shrink-0">
           <p className="text-sm font-medium text-white truncate" title={sample.name}>{sample.name}</p>
-          <Link
-            href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-            className="text-xs text-[#666] hover:text-[#00FF88] truncate transition block"
-          >
-            {sample.artist_name || "Unknown"}
-          </Link>
+          <div className="flex items-center gap-2 min-w-0">
+            <Link
+              href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+              className="text-xs text-[#666] hover:text-[#00FF88] truncate transition flex-shrink-0"
+            >
+              {sample.artist_name || "Unknown"}
+            </Link>
+            {sample.tags && sample.tags.length > 0 && (
+              <div className="flex items-center gap-1 overflow-hidden">
+                {sample.tags.slice(0, 3).map((tag, i) => (
+                  <span
+                    key={i}
+                    className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2a2a2a] text-[#888] whitespace-nowrap"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         {/* Waveform */}
         <div className="hidden md:block flex-1 min-w-[150px] max-w-[350px]">
