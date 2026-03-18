@@ -4,7 +4,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-black flex flex-col items-center pt-32 md:pt-48 relative overflow-hidden">
       {/* Background GIF */}
-      <div className="absolute inset-0 opacity-30">
+      <div className="absolute inset-0">
         <img
           src="https://greenroom.fm/cdn/shop/files/ezgif.com-video-to-gif_2048x2048.gif"
           alt=""
