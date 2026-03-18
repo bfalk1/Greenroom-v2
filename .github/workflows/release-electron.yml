@@ -36,8 +36,6 @@ jobs:
       - name: Build Electron app
         working-directory: ./electron
         run: npm run build:${{ matrix.platform }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
