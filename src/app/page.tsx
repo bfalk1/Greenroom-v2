@@ -32,9 +32,11 @@ export default function LandingPage() {
         </div>
         
         {/* Coming Soon */}
-        <p className="text-[#39b54a] text-xl md:text-2xl font-bold tracking-widest mt-4">
-          COMING SOON
-        </p>
+        <img
+          src="/coming-soon.png"
+          alt="COMING SOON"
+          className="h-6 md:h-8 mx-auto mt-4"
+        />
       </div>
     </div>
   );
