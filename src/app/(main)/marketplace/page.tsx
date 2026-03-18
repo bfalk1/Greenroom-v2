@@ -566,17 +566,30 @@ export default function MarketplacePage() {
                 ))}
               </div>
 
-              {/* Infinite scroll sentinel */}
-              {samples.length < total && (
-                <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
+              {/* Infinite scroll sentinel / Load more */}
+              {hasMore && samples.length < total && (
+                <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
                   {loadingMore ? (
                     <div className="flex items-center gap-2 text-[#a1a1a1]">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       Loading more...
                     </div>
                   ) : (
-                    <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
+                    <>
+                      <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
+                      <button
+                        onClick={() => fetchSamples(samples.length, true)}
+                        className="text-sm text-[#00FF88] hover:text-white transition"
+                      >
+                        Load more
+                      </button>
+                    </>
                   )}
+                </div>
+              )}
+              {!hasMore && samples.length > 0 && (
+                <div className="text-center py-6 border-t border-[#2a2a2a]">
+                  <span className="text-[#3a3a3a] text-sm">All {samples.length} samples loaded</span>
                 </div>
               )}
             </div>
