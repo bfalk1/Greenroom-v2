@@ -22,10 +22,12 @@ export default function LandingPage() {
 
       {/* Content */}
       <div className="relative z-10 text-center px-4">
-        {/* Title */}
-        <h1 className="text-5xl md:text-7xl font-bold text-white mb-4">
-          Greenroom 2.0
-        </h1>
+        {/* Logo */}
+        <img
+          src="/greenroom-2-logo.png"
+          alt="GREENROOM 2.0"
+          className="h-12 md:h-16 lg:h-20 mx-auto mb-6"
+        />
 
         {/* Subtitle */}
         <p className="text-xl md:text-2xl text-[#a1a1a1]">
