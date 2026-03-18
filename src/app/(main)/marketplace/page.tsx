@@ -144,7 +144,12 @@ export default function MarketplacePage() {
         const data = await res.json();
 
         if (append) {
-          setSamples((prev) => [...prev, ...data.samples]);
+          // De-duplicate samples when appending
+          setSamples((prev) => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const newSamples = data.samples.filter((s: Sample) => !existingIds.has(s.id));
+            return [...prev, ...newSamples];
+          });
         } else {
           setSamples(data.samples);
         }
@@ -160,14 +165,25 @@ export default function MarketplacePage() {
     [searchQuery, filters, sortDirection]
   );
 
-  // Infinite scroll
+  // Infinite scroll with debounce
+  const lastFetchRef = useRef<number>(0);
+  
   useEffect(() => {
     const sentinel = loadMoreRef.current;
     if (!sentinel) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
+        const now = Date.now();
+        // Debounce: minimum 500ms between fetches
+        if (
+          entries[0].isIntersecting && 
+          !loading && 
+          !loadingMore && 
+          samples.length < total &&
+          now - lastFetchRef.current > 500
+        ) {
+          lastFetchRef.current = now;
           fetchSamples(samples.length, true);
         }
       },
