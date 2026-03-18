@@ -35,7 +35,7 @@ export default function LandingPage() {
         <img
           src="/coming-soon.png"
           alt="COMING SOON"
-          className="h-6 md:h-8 mx-auto mt-4"
+          className="h-10 md:h-14 lg:h-16 mx-auto mt-4"
         />
       </div>
     </div>
