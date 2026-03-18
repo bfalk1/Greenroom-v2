@@ -42,11 +42,10 @@ export default function LandingPage() {
             Discover thousands of high-quality audio samples created by
             world-class producers. Subscribe to download unlimited.
           </p>
-          <Link href="/signup">
-            <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a] px-8 py-3 font-semibold text-lg">
-              Get Started
-            </Button>
-          </Link>
+          <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#1a1a1a] border border-[#2a2a2a]">
+            <span className="text-[#a1a1a1]">🎵</span>
+            <span className="text-white font-medium">Invite Only — Coming Soon</span>
+          </div>
         </div>
 
         {/* Features Grid */}
@@ -95,11 +94,11 @@ export default function LandingPage() {
             Join thousands of producers
           </h2>
           <p className="text-[#a1a1a1] mb-6">
-            Start with a free trial. No credit card required.
+            We&apos;re currently invite-only. Have an invite? Sign in below.
           </p>
-          <Link href="/signup">
+          <Link href="/login">
             <Button className="bg-[#00FF88] text-black hover:bg-[#00cc6a] px-8 py-3 font-semibold">
-              Sign Up Free
+              Sign In
             </Button>
           </Link>
         </div>

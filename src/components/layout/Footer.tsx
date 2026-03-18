@@ -1,5 +1,3 @@
-import { Music } from "lucide-react";
-
 export function Footer() {
   return (
     <footer className="border-t border-[#2a2a2a] bg-[#0a0a0a] mt-20">
@@ -7,8 +5,11 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
           <div>
             <div className="flex items-center gap-2 mb-4">
-              <Music className="w-5 h-5 text-[#00FF88]" />
-              <span className="font-bold text-white">GREENROOM</span>
+              <img
+                src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+                alt="GREENROOM"
+                className="h-4"
+              />
             </div>
             <p className="text-[#a1a1a1] text-sm">
               Music samples for creators

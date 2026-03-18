@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings, LogOut, Menu, X, Zap } from "lucide-react";
+import { Settings, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 
@@ -75,7 +75,7 @@ export function Navbar() {
               <>
                 {/* Credits Badge */}
                 <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#00FF88]/30">
-                  <Zap className="w-4 h-4 text-[#00FF88]" />
+                  <img src="/g-icon.png" alt="G" className="w-4 h-4" />
                   <span className="text-sm font-medium text-white">
                     {user.credits} credits
                   </span>

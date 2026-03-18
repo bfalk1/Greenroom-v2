@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Music, Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2 } from "lucide-react";
 
 interface InviteData {
   email: string;
@@ -25,32 +25,40 @@ function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Check for invite token on mount
+  // Check for invite token on mount — block public registration
   useEffect(() => {
     const inviteToken = searchParams.get("invite");
-    if (inviteToken) {
-      setInviteLoading(true);
-      fetch(`/api/invites/verify?token=${encodeURIComponent(inviteToken)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.valid && data.email) {
-            setInvite({
-              email: data.email,
-              artistName: data.artistName || "Creator",
-            });
-            setEmail(data.email);
-          } else if (data.error) {
-            setError(`Invite issue: ${data.error}`);
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to verify invite:", err);
-        })
-        .finally(() => {
-          setInviteLoading(false);
-        });
+    
+    // No invite token = redirect to login (invite-only mode)
+    if (!inviteToken) {
+      router.push("/login");
+      return;
     }
-  }, [searchParams]);
+    
+    setInviteLoading(true);
+    fetch(`/api/invites/verify?token=${encodeURIComponent(inviteToken)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.valid && data.email) {
+          setInvite({
+            email: data.email,
+            artistName: data.artistName || "Creator",
+          });
+          setEmail(data.email);
+        } else if (data.error) {
+          setError(`Invite issue: ${data.error}`);
+          // Invalid invite = redirect to login
+          router.push("/login");
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to verify invite:", err);
+        router.push("/login");
+      })
+      .finally(() => {
+        setInviteLoading(false);
+      });
+  }, [searchParams, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,9 +112,11 @@ function SignupForm() {
   if (success) {
     return (
       <div className="w-full max-w-md text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#00FF88] to-[#00cc6a] flex items-center justify-center mx-auto mb-6">
-          <Music className="w-10 h-10 text-black" />
-        </div>
+        <img
+          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+          alt="GREENROOM"
+          className="h-6 mx-auto mb-6"
+        />
         <h1 className="text-3xl font-bold text-white mb-4">Check Your Email</h1>
         <p className="text-[#a1a1a1] mb-6">
           We sent a confirmation link to <span className="text-white font-medium">{email}</span>. Click it to activate your account.
@@ -124,10 +134,12 @@ function SignupForm() {
     <div className="w-full max-w-md">
       {/* Logo */}
       <div className="text-center mb-8">
-        <Link href="/" className="inline-flex items-center gap-2 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#00FF88] to-[#00cc6a] flex items-center justify-center">
-            <Music className="w-7 h-7 text-black" />
-          </div>
+        <Link href="/" className="inline-block mb-6">
+          <img
+            src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+            alt="GREENROOM"
+            className="h-6 mx-auto"
+          />
         </Link>
         <h1 className="text-3xl font-bold text-white mb-2">
           {invite ? "Join as a Creator" : "Create Your Account"}

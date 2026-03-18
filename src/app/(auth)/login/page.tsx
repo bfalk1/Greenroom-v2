@@ -6,8 +6,6 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Music } from "lucide-react";
-
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,10 +55,12 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#00FF88] to-[#00cc6a] flex items-center justify-center">
-              <Music className="w-7 h-7 text-black" />
-            </div>
+          <Link href="/" className="inline-block mb-6">
+            <img
+              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+              alt="GREENROOM"
+              className="h-6 mx-auto"
+            />
           </Link>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-[#a1a1a1]">Sign in to your GREENROOM account</p>
