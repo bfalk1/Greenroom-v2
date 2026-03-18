@@ -1,10 +1,14 @@
 {
   "name": "greenroom",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "GREENROOM - Premium Music Samples for Your Sound",
   "main": "main.js",
   "author": "GREENROOM",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bfalk1/Greenroom-v2.git"
+  },
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
