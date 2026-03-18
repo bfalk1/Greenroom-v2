@@ -6,7 +6,7 @@ export default function LandingPage() {
       {/* Background GIF */}
       <div className="absolute inset-0">
         <img
-          src="https://greenroom.fm/cdn/shop/files/ezgif.com-video-to-gif_2048x2048.gif"
+          src="/background.webp"
           alt=""
           className="w-full h-full object-cover"
         />
