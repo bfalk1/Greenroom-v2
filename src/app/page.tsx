@@ -20,24 +20,21 @@ export default function LandingPage() {
         Creator Sign In →
       </Link>
 
-      {/* Content - centered vertically */}
-      <div className="relative z-10 text-center w-full flex flex-col items-center justify-center">
-        {/* Black bar with logo */}
-        <div className="bg-black py-6 md:py-8 px-8 w-full">
-          <img
-            src="/greenroom-2-logo.png"
-            alt="GREENROOM 2.0"
-            className="h-8 md:h-10 lg:h-12 mx-auto"
-          />
-        </div>
-        
-        {/* Coming Soon */}
+      {/* Black bar with logo - centered */}
+      <div className="relative z-10 bg-black py-6 md:py-8 px-8 w-full">
         <img
-          src="/coming-soon.png"
-          alt="COMING SOON"
-          className="h-10 md:h-14 lg:h-16 mx-auto mt-4"
+          src="/greenroom-2-logo.png"
+          alt="GREENROOM 2.0"
+          className="h-8 md:h-10 lg:h-12 mx-auto"
         />
       </div>
+      
+      {/* Coming Soon - positioned below */}
+      <img
+        src="/coming-soon.png"
+        alt="COMING SOON"
+        className="absolute z-10 h-10 md:h-14 lg:h-16 left-1/2 -translate-x-1/2 bottom-[35%]"
+      />
     </div>
   );
 }
