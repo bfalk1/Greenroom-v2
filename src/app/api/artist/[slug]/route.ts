@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 // GET /api/artist/[slug] — Public artist profile
 export async function GET(
@@ -108,8 +109,41 @@ export async function GET(
     const hasMore = samples.length > limit;
     const paginatedSamples = hasMore ? samples.slice(0, limit) : samples;
 
+    // Generate signed URLs for previews (needed for waveform generation)
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const previewPaths = paginatedSamples.map(s => 
+      s.previewUrl?.startsWith("previews/") 
+        ? s.previewUrl.replace("previews/", "") 
+        : null
+    );
+    
+    const validPaths = previewPaths.filter((p): p is string => p !== null);
+    let signedUrlMap: Record<string, string> = {};
+    
+    if (validPaths.length > 0) {
+      const { data } = await serviceClient.storage
+        .from("previews")
+        .createSignedUrls(validPaths, 3600);
+      
+      if (data) {
+        for (const item of data) {
+          if (item.signedUrl && item.path) {
+            signedUrlMap[item.path] = item.signedUrl;
+          }
+        }
+      }
+    }
+
+    const previewUrls = previewPaths.map(path => 
+      path ? signedUrlMap[path] || null : null
+    );
+
     // Map samples to frontend format
-    const mappedSamples = paginatedSamples.map((s) => ({
+    const mappedSamples = paginatedSamples.map((s, i) => ({
       id: s.id,
       name: s.name,
       slug: s.slug,
@@ -124,7 +158,7 @@ export async function GET(
       credit_price: s.creditPrice,
       tags: s.tags,
       file_url: s.previewUrl || s.fileUrl,
-      preview_url: s.previewUrl,
+      preview_url: previewUrls[i] || s.previewUrl,
       waveform_data: s.waveformData,
       cover_art_url: s.coverImageUrl,
       average_rating: s.ratingAvg,
