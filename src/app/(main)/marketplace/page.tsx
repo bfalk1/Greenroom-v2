@@ -138,20 +138,35 @@ export default function MarketplacePage() {
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
-        const res = await fetch(`/api/samples?${params.toString()}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+        
+        const res = await fetch(`/api/samples?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        
         if (!res.ok) throw new Error("Failed to fetch samples");
 
         const data = await res.json();
 
         if (append) {
           // De-duplicate samples when appending
-          setSamples((prev) => {
-            const existingIds = new Set(prev.map(s => s.id));
-            const newSamples = data.samples.filter((s: Sample) => !existingIds.has(s.id));
-            return [...prev, ...newSamples];
-          });
+          const newSamples = data.samples.filter((s: Sample) => 
+            !samples.some(existing => existing.id === s.id)
+          );
+          
+          // If no new samples or less than page size, we've reached the end
+          if (newSamples.length === 0 || data.samples.length < PAGE_SIZE) {
+            setHasMore(false);
+          }
+          
+          if (newSamples.length > 0) {
+            setSamples((prev) => [...prev, ...newSamples]);
+          }
         } else {
           setSamples(data.samples);
+          setHasMore(data.samples.length >= PAGE_SIZE);
         }
         setTotal(data.total);
       } catch (error) {
@@ -167,6 +182,12 @@ export default function MarketplacePage() {
 
   // Infinite scroll with debounce
   const lastFetchRef = useRef<number>(0);
+  const [hasMore, setHasMore] = useState(true);
+  
+  useEffect(() => {
+    // Reset hasMore when filters change
+    setHasMore(true);
+  }, [filters, searchQuery]);
   
   useEffect(() => {
     const sentinel = loadMoreRef.current;
@@ -175,24 +196,25 @@ export default function MarketplacePage() {
     const observer = new IntersectionObserver(
       (entries) => {
         const now = Date.now();
-        // Debounce: minimum 500ms between fetches
+        // Debounce: minimum 800ms between fetches
         if (
           entries[0].isIntersecting && 
           !loading && 
           !loadingMore && 
+          hasMore &&
           samples.length < total &&
-          now - lastFetchRef.current > 500
+          now - lastFetchRef.current > 800
         ) {
           lastFetchRef.current = now;
           fetchSamples(samples.length, true);
         }
       },
-      { threshold: 0.1, rootMargin: "100px" }
+      { threshold: 0.1, rootMargin: "200px" }
     );
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loading, loadingMore, samples.length, total, fetchSamples]);
+  }, [loading, loadingMore, samples.length, total, hasMore, fetchSamples]);
 
   const fetchFollowingData = useCallback(async () => {
     if (!user) {
