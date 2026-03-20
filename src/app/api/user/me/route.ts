@@ -40,6 +40,7 @@ export async function GET() {
       // Check for pending invite first
       let role: "USER" | "CREATOR" = "USER";
       let artistName: string | undefined;
+      let pendingInvite: { email: string } | null = null;
       
       if (authUser.email) {
         const invite = await prisma.creatorInvite.findUnique({
@@ -48,14 +49,11 @@ export async function GET() {
         if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
           role = "CREATOR";
           artistName = invite.artistName;
-          // Mark invite as used
-          await prisma.creatorInvite.update({
-            where: { email: authUser.email },
-            data: { usedAt: new Date(), usedByUserId: authUser.id },
-          });
+          pendingInvite = invite;
         }
       }
 
+      // Create user FIRST (before updating invite to avoid FK violation)
       user = await prisma.user.create({
         data: {
           id: authUser.id,
@@ -72,6 +70,14 @@ export async function GET() {
           },
         },
       });
+
+      // Now mark invite as used (user exists, FK will succeed)
+      if (pendingInvite) {
+        await prisma.creatorInvite.update({
+          where: { email: pendingInvite.email },
+          data: { usedAt: new Date(), usedByUserId: user.id },
+        });
+      }
 
       // Create credit balance
       await prisma.creditBalance.create({
