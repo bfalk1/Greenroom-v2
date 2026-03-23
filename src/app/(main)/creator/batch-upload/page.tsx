@@ -257,6 +257,68 @@ export default function BatchUploadPage() {
     toast.success("Applied defaults to all samples");
   };
 
+  // Upload a single sample - used by the queue
+  const uploadSingle = async (sample: SampleToUpload): Promise<{ success: boolean; error?: string }> => {
+    if (!user) return { success: false, error: "Not logged in" };
+    
+    setSamples(prev => prev.map(s => 
+      s.id === sample.id ? { ...s, status: "uploading" } : s
+    ));
+    
+    try {
+      // Validate file size - skip 0-byte files
+      if (sample.file.size === 0) {
+        throw new Error("File is empty (0 bytes)");
+      }
+
+      // Upload audio file
+      const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
+      const { error: uploadError } = await supabase.storage
+        .from("samples")
+        .upload(audioPath, sample.file, { cacheControl: "3600", upsert: false });
+      
+      if (uploadError) throw uploadError;
+      
+      const fileUrl = `samples/${audioPath}`;
+      
+      // Create sample via API
+      const res = await fetch("/api/samples", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: sample.name,
+          genre: sample.genre,
+          instrumentType: sample.instrumentType,
+          sampleType: sample.sampleType,
+          key: sample.key || null,
+          bpm: sample.bpm || null,
+          creditPrice: sample.creditPrice,
+          tags: "",
+          fileUrl,
+        }),
+      });
+      
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to create sample");
+      }
+      
+      setSamples(prev => prev.map(s => 
+        s.id === sample.id ? { ...s, status: "done" } : s
+      ));
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed";
+      setSamples(prev => prev.map(s => 
+        s.id === sample.id ? { ...s, status: "error", error: message } : s
+      ));
+      return { success: false, error: message };
+    }
+  };
+
+  // Process uploads with max concurrency to prevent bandwidth overload
+  const MAX_CONCURRENT_UPLOADS = 2;
+
   const handleUploadAll = async () => {
     if (!user || samples.length === 0) return;
     
@@ -264,61 +326,16 @@ export default function BatchUploadPage() {
     let successCount = 0;
     let errorCount = 0;
     
-    for (const sample of samples) {
-      if (sample.status === "done") continue;
+    const pendingSamples = samples.filter(s => s.status === "pending");
+    
+    // Process in batches of MAX_CONCURRENT_UPLOADS
+    for (let i = 0; i < pendingSamples.length; i += MAX_CONCURRENT_UPLOADS) {
+      const batch = pendingSamples.slice(i, i + MAX_CONCURRENT_UPLOADS);
+      const results = await Promise.all(batch.map(uploadSingle));
       
-      setSamples(prev => prev.map(s => 
-        s.id === sample.id ? { ...s, status: "uploading" } : s
-      ));
-      
-      try {
-        // Validate file size - skip 0-byte files
-        if (sample.file.size === 0) {
-          throw new Error("File is empty (0 bytes)");
-        }
-
-        // Upload audio file
-        const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
-        const { error: uploadError } = await supabase.storage
-          .from("samples")
-          .upload(audioPath, sample.file, { cacheControl: "3600", upsert: false });
-        
-        if (uploadError) throw uploadError;
-        
-        const fileUrl = `samples/${audioPath}`;
-        
-        // Create sample via API
-        const res = await fetch("/api/samples", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: sample.name,
-            genre: sample.genre,
-            instrumentType: sample.instrumentType,
-            sampleType: sample.sampleType,
-            key: sample.key || null,
-            bpm: sample.bpm || null,
-            creditPrice: sample.creditPrice,
-            tags: "",
-            fileUrl,
-          }),
-        });
-        
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || "Failed to create sample");
-        }
-        
-        setSamples(prev => prev.map(s => 
-          s.id === sample.id ? { ...s, status: "done" } : s
-        ));
-        successCount++;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Upload failed";
-        setSamples(prev => prev.map(s => 
-          s.id === sample.id ? { ...s, status: "error", error: message } : s
-        ));
-        errorCount++;
+      for (const result of results) {
+        if (result.success) successCount++;
+        else errorCount++;
       }
     }
     
