@@ -75,9 +75,11 @@ interface PanelSample {
   status: string;
   file_url?: string;
   tags?: string[];
+  preview_ready: boolean;
 }
 
 function mapSampleForPanel(s: APISample): PanelSample {
+  const previewReady = !!(s.previewUrl && s.previewUrl.startsWith("previews/"));
   return {
     id: s.id,
     name: s.name,
@@ -89,8 +91,9 @@ function mapSampleForPanel(s: APISample): PanelSample {
     bpm: s.bpm ?? undefined,
     credit_price: s.creditPrice,
     status: s.status,
-    file_url: s.previewUrl || s.fileUrl || undefined,
+    file_url: previewReady ? s.previewUrl : (s.fileUrl || undefined),
     tags: s.tags,
+    preview_ready: previewReady,
   };
 }
 
