@@ -84,12 +84,33 @@ export function EditSampleModal({
   const handleSave = async () => {
     try {
       setSaving(true);
-      // TODO: Replace with Supabase/Prisma call
+      
+      const res = await fetch("/api/mod/samples", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sampleId: sample.id,
+          name: formData.name,
+          genre: formData.genre,
+          instrumentType: formData.instrument_type,
+          sampleType: formData.sample_type,
+          key: formData.key,
+          bpm: formData.bpm || null,
+          creditPrice: formData.credit_price,
+          tags: formData.tags,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save changes");
+      }
+
       onSave();
       onClose();
     } catch (error) {
       console.error("Save error:", error);
-      alert("Failed to save changes");
+      alert(error instanceof Error ? error.message : "Failed to save changes");
     } finally {
       setSaving(false);
     }

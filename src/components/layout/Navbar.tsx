@@ -54,6 +54,7 @@ export function Navbar() {
                 {/* Only show creator dashboard/earnings for CREATOR role, not for ADMIN/MODERATOR */}
                 {user.role === "CREATOR" && navLink("/creator/dashboard", "Dashboard")}
                 {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
+                {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
                 {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                   navLink("/mod/samples", "Moderation")}
                 {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
@@ -149,6 +150,11 @@ export function Navbar() {
             {user?.role === "CREATOR" && (
               <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                 Earnings
+              </Link>
+            )}
+            {user?.role === "CREATOR" && (
+              <Link href={`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`} className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                Profile
               </Link>
             )}
             {(user?.role === "MODERATOR" || user?.role === "ADMIN") && (
