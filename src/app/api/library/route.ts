@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
                 select: {
                   artistName: true,
                   username: true,
+                  avatarUrl: true,
                 },
               },
             },
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
         download_path: downloadPath,
         preview_url: previewUrls[i] || p.sample.previewUrl,
         waveform_data: p.sample.waveformData,
-        cover_image_url: p.sample.coverImageUrl,
+        cover_image_url: p.sample.coverImageUrl || p.sample.creator.avatarUrl,
         average_rating: p.sample.ratingAvg,
         total_ratings: p.sample.ratingCount,
         total_purchases: p.sample.downloadCount,

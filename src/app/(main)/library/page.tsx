@@ -212,12 +212,12 @@ function LibraryRow({
       {/* Cover Art + Play Button */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
         <img
-          src={
-            sample.cover_image_url ||
-            "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop"
-          }
+          src={sample.cover_image_url || "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop"}
           alt={sample.name}
           className="w-full h-full object-cover"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop";
+          }}
         />
         <button
           onClick={handlePlay}
