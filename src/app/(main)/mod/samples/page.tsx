@@ -91,7 +91,7 @@ function mapSampleForPanel(s: APISample): PanelSample {
     bpm: s.bpm ?? undefined,
     credit_price: s.creditPrice,
     status: s.status,
-    file_url: previewReady ? s.previewUrl : (s.fileUrl || undefined),
+    file_url: previewReady ? (s.previewUrl ?? undefined) : (s.fileUrl || undefined),
     tags: s.tags,
     preview_ready: previewReady,
   };
