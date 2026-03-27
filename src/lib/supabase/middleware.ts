@@ -69,11 +69,10 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // If user is logged in and on login/signup, redirect to pricing or marketplace
+  // If user is logged in and on login/signup, redirect to marketplace
   if (user && (pathname === "/login" || pathname === "/signup")) {
     const url = request.nextUrl.clone();
-    // Check subscription status from user metadata or redirect to pricing
-    url.pathname = "/pricing";
+    url.pathname = "/marketplace";
     return NextResponse.redirect(url);
   }
 
@@ -90,7 +89,7 @@ export async function updateSession(request: NextRequest) {
   if (user && !isPaywallExempt) {
     // Need to check subscription status
     const { data: userData } = await supabase
-      .from("User")
+      .from("users")
       .select("subscription_status, role")
       .eq("id", user.id)
       .single();
