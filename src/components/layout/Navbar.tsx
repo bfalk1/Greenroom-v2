@@ -54,7 +54,7 @@ export function Navbar() {
                 <>
                   {navLink("/marketplace", "Marketplace")}
                   {navLink("/library", "Library")}
-                  {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
+                  {hasActiveSub && user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
                   {user.role === "CREATOR" && navLink("/creator/dashboard", "Dashboard")}
                   {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
                   {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
@@ -151,7 +151,7 @@ export function Navbar() {
                   <Link href="/library" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                     Library
                   </Link>
-                  {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && (
+                  {hasActiveSub && user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && (
                     <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                       Become a Creator
                     </Link>

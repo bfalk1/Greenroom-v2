@@ -105,8 +105,8 @@ export async function updateSession(request: NextRequest) {
     // Redirect non-subscribers to pricing
     if (!hasActiveSubscription) {
       // Allow marketplace in read-only mode (will show limited UI)
-      // But block library, favorites, following, download
-      const subscriberOnlyPaths = ["/library", "/favorites", "/following", "/download"];
+      // But block library, favorites, following, download, creator apply
+      const subscriberOnlyPaths = ["/library", "/favorites", "/following", "/download", "/creator/apply"];
       const needsSubscription = subscriberOnlyPaths.some(p => pathname.startsWith(p));
       
       if (needsSubscription) {
