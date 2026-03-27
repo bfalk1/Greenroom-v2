@@ -178,8 +178,8 @@ function CreatorSampleRow({
 
       {/* Name + Waveform */}
       <div className="min-w-0 flex items-center gap-4 flex-1">
-        <div className="min-w-0 w-[200px] flex-shrink-0">
-          <p className="text-sm font-medium text-white truncate" title={sample.name}>
+        <div className="min-w-0 w-[320px] md:w-[380px] flex-shrink-0">
+          <p className="text-sm font-medium text-white" title={sample.name}>
             {sample.name}
           </p>
           <p className="text-xs text-[#666]">

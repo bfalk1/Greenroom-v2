@@ -261,8 +261,8 @@ export function SampleRow({
 
       {/* Name + Artist + Tags + Waveform */}
       <div className="min-w-0 flex items-center gap-4 flex-1">
-        <div className="min-w-0 w-[280px] flex-shrink-0">
-          <p className="text-sm font-medium text-white truncate" title={sample.name}>{sample.name}</p>
+        <div className="min-w-0 w-[320px] md:w-[380px] flex-shrink-0">
+          <p className="text-sm font-medium text-white" title={sample.name}>{sample.name}</p>
           <div className="flex items-center gap-2 min-w-0">
             {showArtist ? (
               <Link
