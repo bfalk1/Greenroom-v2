@@ -67,12 +67,15 @@ function PricingContent() {
   const { user, loading: userLoading } = useUser();
   const searchParams = useSearchParams();
 
+  const isWelcome = searchParams.get("welcome") === "true";
+
   // Handle success/canceled URL params
   useEffect(() => {
     if (searchParams.get("success") === "true") {
       toast.success("Subscription activated! Your credits are ready to use.");
       // Clean URL
-      window.history.replaceState({}, "", "/pricing");
+      window.history.replaceState({}, "", "/marketplace");
+      window.location.href = "/marketplace";
     }
     if (searchParams.get("canceled") === "true") {
       toast.info("Checkout canceled. No charges were made.");
@@ -143,8 +146,20 @@ function PricingContent() {
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       {/* Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        {/* Welcome Banner for New Signups */}
+        {isWelcome && !hasActiveSub && (
+          <div className="max-w-2xl mx-auto mb-12 bg-gradient-to-r from-[#39b54a]/20 to-[#1a1a1a] border border-[#39b54a]/30 rounded-xl p-6 text-center">
+            <h2 className="text-2xl font-bold text-white mb-2">Welcome to GREENROOM! 🎉</h2>
+            <p className="text-[#a1a1a1]">
+              Choose a plan below to unlock unlimited access to thousands of royalty-free samples.
+            </p>
+          </div>
+        )}
+
         <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-white mb-4">Simple Pricing</h1>
+          <h1 className="text-5xl font-bold text-white mb-4">
+            {isWelcome && !hasActiveSub ? "Choose Your Plan" : "Simple Pricing"}
+          </h1>
           <p className="text-xl text-[#a1a1a1]">
             Choose your monthly subscription and get fresh credits every month
           </p>

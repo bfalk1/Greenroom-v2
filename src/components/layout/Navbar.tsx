@@ -14,7 +14,10 @@ export function Navbar() {
 
   const hasActiveSub =
     user?.subscription_status === "active" ||
-    user?.subscription_status === "past_due";
+    user?.subscription_status === "past_due" ||
+    user?.role === "CREATOR" ||
+    user?.role === "ADMIN" ||
+    user?.role === "MODERATOR";
 
   const navLink = (href: string, label: string) => {
     const isActive = pathname === href;
@@ -35,7 +38,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link href={user ? "/marketplace" : "/"} className="flex items-center gap-2 group">
+          <Link href={user && hasActiveSub ? "/marketplace" : "/explore"} className="flex items-center gap-2 group">
             <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
               alt="GREENROOM"
@@ -46,24 +49,31 @@ export function Navbar() {
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">
             {user ? (
-              <>
-                {navLink("/marketplace", "Marketplace")}
-                {navLink("/library", "Library")}
-                {!hasActiveSub && navLink("/pricing", "Pricing")}
-                {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
-                {/* Only show creator dashboard/earnings for CREATOR role, not for ADMIN/MODERATOR */}
-                {user.role === "CREATOR" && navLink("/creator/dashboard", "Dashboard")}
-                {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
-                {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
-                {(user.role === "MODERATOR" || user.role === "ADMIN") &&
-                  navLink("/mod/samples", "Moderation")}
-                {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
-              </>
+              hasActiveSub ? (
+                // Logged in with subscription
+                <>
+                  {navLink("/marketplace", "Marketplace")}
+                  {navLink("/library", "Library")}
+                  {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
+                  {user.role === "CREATOR" && navLink("/creator/dashboard", "Dashboard")}
+                  {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
+                  {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
+                  {(user.role === "MODERATOR" || user.role === "ADMIN") &&
+                    navLink("/mod/samples", "Moderation")}
+                  {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
+                </>
+              ) : (
+                // Logged in without subscription
+                <>
+                  {navLink("/explore", "Explore")}
+                  {navLink("/pricing", "Subscribe")}
+                </>
+              )
             ) : (
+              // Not logged in
               <>
-                {navLink("/marketplace", "Marketplace")}
+                {navLink("/explore", "Explore")}
                 {navLink("/pricing", "Pricing")}
-                {navLink("/download", "Download")}
               </>
             )}
           </nav>
@@ -74,13 +84,15 @@ export function Navbar() {
               <div className="w-20 h-8 bg-[#1a1a1a] rounded-full animate-pulse" />
             ) : user ? (
               <>
-                {/* Credits Badge */}
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#39b54a]/30">
-                  <img src="/g-icon.png" alt="G" className="w-4 h-4" />
-                  <span className="text-sm font-medium text-white">
-                    {user.credits} credits
-                  </span>
-                </div>
+                {/* Credits Badge - only show for subscribers */}
+                {hasActiveSub && (
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#39b54a]/30">
+                    <img src="/g-icon.png" alt="G" className="w-4 h-4" />
+                    <span className="text-sm font-medium text-white">
+                      {user.credits} credits
+                    </span>
+                  </div>
+                )}
 
                 {/* Account */}
                 <Link
@@ -99,11 +111,18 @@ export function Navbar() {
                 </Button>
               </>
             ) : (
-              <Link href="/login">
-                <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-medium">
-                  Sign In
-                </Button>
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link href="/login">
+                  <Button variant="ghost" className="text-[#a1a1a1] hover:text-white font-medium">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/signup">
+                  <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-medium">
+                    Get Started
+                  </Button>
+                </Link>
+              </div>
             )}
 
             {/* Mobile Menu Button */}
@@ -123,49 +142,65 @@ export function Navbar() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <nav className="md:hidden mt-4 pt-4 border-t border-[#2a2a2a] flex flex-col gap-3">
-            <Link href="/marketplace" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-              Marketplace
-            </Link>
-            {user && (
-              <Link href="/library" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Library
-              </Link>
-            )}
-            {!hasActiveSub && (
-              <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Pricing
-              </Link>
-            )}
-            {user && user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && (
-              <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Become a Creator
-              </Link>
-            )}
-            {/* Only show creator dashboard/earnings for CREATOR role */}
-            {user?.role === "CREATOR" && (
-              <Link href="/creator/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Dashboard
-              </Link>
-            )}
-            {user?.role === "CREATOR" && (
-              <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Earnings
-              </Link>
-            )}
-            {user?.role === "CREATOR" && (
-              <Link href={`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`} className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Profile
-              </Link>
-            )}
-            {(user?.role === "MODERATOR" || user?.role === "ADMIN") && (
-              <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Moderation
-              </Link>
-            )}
-            {user?.role === "ADMIN" && (
-              <Link href="/admin/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                Admin
-              </Link>
+            {user ? (
+              hasActiveSub ? (
+                <>
+                  <Link href="/marketplace" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                    Marketplace
+                  </Link>
+                  <Link href="/library" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                    Library
+                  </Link>
+                  {user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && (
+                    <Link href="/creator/apply" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Become a Creator
+                    </Link>
+                  )}
+                  {user.role === "CREATOR" && (
+                    <Link href="/creator/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Dashboard
+                    </Link>
+                  )}
+                  {user.role === "CREATOR" && (
+                    <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Earnings
+                    </Link>
+                  )}
+                  {user.role === "CREATOR" && (
+                    <Link href={`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`} className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Profile
+                    </Link>
+                  )}
+                  {(user.role === "MODERATOR" || user.role === "ADMIN") && (
+                    <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Moderation
+                    </Link>
+                  )}
+                  {user.role === "ADMIN" && (
+                    <Link href="/admin/dashboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Admin
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Link href="/explore" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                    Explore
+                  </Link>
+                  <Link href="/pricing" className="text-sm font-medium text-[#39b54a] hover:text-white">
+                    Subscribe
+                  </Link>
+                </>
+              )
+            ) : (
+              <>
+                <Link href="/explore" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                  Explore
+                </Link>
+                <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                  Pricing
+                </Link>
+              </>
             )}
           </nav>
         )}

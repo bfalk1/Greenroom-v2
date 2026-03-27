@@ -42,7 +42,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Public paths — no auth required
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/marketplace", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health"];
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/explore", "/pricing", "/help", "/contact", "/terms", "/privacy", "/api/health"];
   const isPublicPath = 
     publicPaths.includes(pathname) || 
     pathname.startsWith("/waitlist") ||
@@ -69,11 +69,53 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // If user is logged in and on login/signup, redirect to marketplace
+  // If user is logged in and on login/signup, redirect to pricing or marketplace
   if (user && (pathname === "/login" || pathname === "/signup")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/marketplace";
+    // Check subscription status from user metadata or redirect to pricing
+    url.pathname = "/pricing";
     return NextResponse.redirect(url);
+  }
+
+  // Subscription paywall — users without active subscription are limited
+  // Allow: pricing, account, onboarding, creator paths, admin/mod paths
+  const paywallExemptPaths = ["/pricing", "/account", "/onboarding", "/explore"];
+  const isPaywallExempt = 
+    paywallExemptPaths.includes(pathname) ||
+    pathname.startsWith("/creator/") ||
+    pathname.startsWith("/admin/") ||
+    pathname.startsWith("/mod/");
+  
+  // Check subscription in DB for paywall routes
+  if (user && !isPaywallExempt) {
+    // Need to check subscription status
+    const { data: userData } = await supabase
+      .from("User")
+      .select("subscription_status, role")
+      .eq("id", user.id)
+      .single();
+    
+    const hasActiveSubscription = 
+      userData?.subscription_status === "active" || 
+      userData?.subscription_status === "past_due" ||
+      userData?.role === "CREATOR" ||
+      userData?.role === "ADMIN" ||
+      userData?.role === "MODERATOR";
+    
+    // Redirect non-subscribers to pricing
+    if (!hasActiveSubscription) {
+      // Allow marketplace in read-only mode (will show limited UI)
+      // But block library, favorites, following, download
+      const subscriberOnlyPaths = ["/library", "/favorites", "/following", "/download"];
+      const needsSubscription = subscriberOnlyPaths.some(p => pathname.startsWith(p));
+      
+      if (needsSubscription) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/pricing";
+        url.searchParams.set("redirect", pathname);
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return supabaseResponse;

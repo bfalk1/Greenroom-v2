@@ -25,13 +25,12 @@ function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Check for invite token on mount — block public registration
+  // Check for invite token on mount (optional - for creator invites)
   useEffect(() => {
     const inviteToken = searchParams.get("invite");
     
-    // No invite token = redirect to login (invite-only mode)
+    // No invite token = public signup (allowed now)
     if (!inviteToken) {
-      router.push("/login");
       return;
     }
     
@@ -46,14 +45,12 @@ function SignupForm() {
           });
           setEmail(data.email);
         } else if (data.error) {
-          setError(`Invite issue: ${data.error}`);
-          // Invalid invite = redirect to login
-          router.push("/login");
+          // Invalid invite - just ignore and allow public signup
+          console.warn("Invalid invite token:", data.error);
         }
       })
       .catch((err) => {
         console.error("Failed to verify invite:", err);
-        router.push("/login");
       })
       .finally(() => {
         setInviteLoading(false);
@@ -77,7 +74,6 @@ function SignupForm() {
     setLoading(true);
 
     try {
-      // Create Supabase client only when needed (avoids auth lock issues)
       const supabase = createClient();
       const { error, data } = await supabase.auth.signUp({
         email,
@@ -92,10 +88,15 @@ function SignupForm() {
         return;
       }
 
-      // If session exists, email confirmation is off — redirect directly
+      // If session exists, email confirmation is off — redirect to pricing (paywall)
       if (data.session) {
         await fetch("/api/user/me");
-        router.push("/onboarding");
+        // Creator invites go to onboarding, regular signups go to pricing
+        if (invite) {
+          router.push("/onboarding");
+        } else {
+          router.push("/pricing?welcome=true");
+        }
         return;
       }
 
