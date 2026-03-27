@@ -244,7 +244,7 @@ function LibraryRow({
           <div className="flex items-center gap-2 min-w-0">
             <Link
               href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-              className="text-xs text-[#666] hover:text-[#39b54a] truncate transition flex-shrink-0"
+              className="text-xs text-[#39b54a] hover:text-[#2da03e] truncate transition flex-shrink-0"
             >
               {sample.artist_name || "Unknown"}
             </Link>
@@ -253,7 +253,7 @@ function LibraryRow({
                 {sample.tags.slice(0, 3).map((tag, i) => (
                   <span
                     key={i}
-                    className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#2a2a2a] text-[#888] whitespace-nowrap"
+                    className="text-[10px] px-1.5 py-0.5 rounded-full border border-[#39b54a]/50 text-[#39b54a] whitespace-nowrap"
                   >
                     {tag}
                   </span>
