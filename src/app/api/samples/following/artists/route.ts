@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         new_samples: c._count.samples,
         total_samples: totalCountMap.get(c.id) || 0,
       }))
-      .filter(a => a.new_samples > 0 || a.total_samples > 0) // Only show artists with samples
+      .filter(a => a.new_samples > 0) // Only show artists with samples posted in the last 30 days
       .sort((a, b) => b.new_samples - a.new_samples); // Most active first
 
     return NextResponse.json({
