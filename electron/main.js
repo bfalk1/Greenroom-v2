@@ -1,5 +1,11 @@
 const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const http = require('http');
+
+// Temp directory for drag-and-drop files
+const TEMP_DIR = path.join(app.getPath('temp'), 'greenroom-samples');
 
 // Production URL
 const GREENROOM_URL = 'https://greenroom-v2.vercel.app';
@@ -281,6 +287,131 @@ ipcMain.on('window-maximize', () => {
   }
 });
 ipcMain.on('window-close', () => mainWindow?.close());
+
+// Ensure temp directory exists
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+}
+
+// Download file helper
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destPath);
+    const protocol = url.startsWith('https') ? https : http;
+    
+    protocol.get(url, (response) => {
+      // Handle redirects
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        downloadFile(response.headers.location, destPath)
+          .then(resolve)
+          .catch(reject);
+        return;
+      }
+      
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download: ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve(destPath);
+      });
+    }).on('error', (err) => {
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+  });
+}
+
+// IPC Handler for drag-and-drop to DAW
+ipcMain.handle('prepare-drag', async (event, { sampleId, sampleName }) => {
+  try {
+    const filename = `${sampleName.replace(/[^a-zA-Z0-9-_]/g, '_')}.wav`;
+    const tempPath = path.join(TEMP_DIR, filename);
+    
+    // Check if already downloaded
+    if (fs.existsSync(tempPath)) {
+      return { success: true, filePath: tempPath };
+    }
+    
+    console.log('Downloading sample for drag:', sampleName);
+    
+    // Download via the web session (includes auth cookies)
+    const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
+    
+    // Use the session's cookies for authenticated download
+    const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
+    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    
+    await new Promise((resolve, reject) => {
+      const file = fs.createWriteStream(tempPath);
+      
+      https.get(downloadUrl, {
+        headers: {
+          'Cookie': cookieHeader,
+          'User-Agent': 'GREENROOM-Desktop/1.2.0',
+        }
+      }, (response) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          // Follow redirect
+          https.get(response.headers.location, (redirectRes) => {
+            redirectRes.pipe(file);
+            file.on('finish', () => {
+              file.close();
+              resolve();
+            });
+          }).on('error', reject);
+          return;
+        }
+        
+        if (response.statusCode !== 200) {
+          reject(new Error(`Download failed: ${response.statusCode}`));
+          return;
+        }
+        
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close();
+          resolve();
+        });
+      }).on('error', reject);
+    });
+    
+    return { success: true, filePath: tempPath };
+  } catch (err) {
+    console.error('Prepare drag failed:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+// Start the actual native drag
+ipcMain.on('start-drag', (event, { filePath }) => {
+  if (!fs.existsSync(filePath)) {
+    console.error('File not found for drag:', filePath);
+    return;
+  }
+  
+  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  event.sender.startDrag({
+    file: filePath,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+  });
+  
+  console.log('Started native drag:', filePath);
+});
+
+// Clean up temp files on quit
+app.on('before-quit', () => {
+  try {
+    if (fs.existsSync(TEMP_DIR)) {
+      fs.rmSync(TEMP_DIR, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.log('Could not clean temp dir:', e.message);
+  }
+});
 
 // Handle download requests (for sample downloads)
 app.on('ready', () => {

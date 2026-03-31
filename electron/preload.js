@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('greenroom', {
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
+  // Drag and drop to DAW
+  prepareDrag: (sampleId, sampleName) => ipcRenderer.invoke('prepare-drag', { sampleId, sampleName }),
+  startDrag: (filePath) => ipcRenderer.send('start-drag', { filePath }),
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -186,4 +189,177 @@ window.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
     }
   });
+  
+  // ===== DRAG AND DROP TO DAW =====
+  
+  // Track sample info from API calls
+  const sampleCache = new Map(); // sampleId -> { name, ready, filePath }
+  
+  // Override fetch to capture sample info
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+    
+    // Capture sample IDs from preview/download requests
+    if (url) {
+      let match = url.match(/\/api\/samples\/([^/]+)\/preview/);
+      if (!match) match = url.match(/\/api\/downloads\/([^/?]+)/);
+      
+      if (match) {
+        const sampleId = match[1];
+        if (!sampleCache.has(sampleId)) {
+          sampleCache.set(sampleId, { id: sampleId, name: null, ready: false, filePath: null });
+        }
+      }
+    }
+    
+    return origFetch.apply(this, args);
+  };
+  
+  // Prepare sample for drag (download to temp)
+  const prepareSampleForDrag = async (sampleId, sampleName) => {
+    const cached = sampleCache.get(sampleId);
+    if (cached?.ready && cached?.filePath) {
+      return cached.filePath;
+    }
+    
+    try {
+      const result = await window.greenroom.prepareDrag(sampleId, sampleName);
+      if (result.success) {
+        sampleCache.set(sampleId, { 
+          id: sampleId, 
+          name: sampleName, 
+          ready: true, 
+          filePath: result.filePath 
+        });
+        return result.filePath;
+      }
+    } catch (err) {
+      console.error('Failed to prepare sample:', err);
+    }
+    return null;
+  };
+  
+  // Setup drag for sample rows
+  const setupDragForRow = (row) => {
+    if (row.dataset.dragSetup) return;
+    row.dataset.dragSetup = 'true';
+    
+    // Make the entire row draggable
+    row.draggable = true;
+    row.style.cursor = 'grab';
+    
+    let sampleId = null;
+    let sampleName = null;
+    
+    // Try to find sample info
+    const findSampleInfo = () => {
+      // Get name from the row
+      const nameEl = row.querySelector('p.text-sm.font-medium, h3, [class*="font-medium"][class*="text-white"]');
+      sampleName = nameEl?.textContent?.trim();
+      
+      // Get sample ID from the most recent cache entry that matches this name
+      for (const [id, info] of sampleCache) {
+        if (!sampleId) sampleId = id; // Use any cached ID as fallback
+      }
+      
+      return { sampleId, sampleName };
+    };
+    
+    // Intercept clicks to capture sample ID before drag
+    row.addEventListener('mousedown', (e) => {
+      // Don't interfere with button clicks
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      
+      const info = findSampleInfo();
+      sampleId = info.sampleId;
+      sampleName = info.sampleName;
+    });
+    
+    row.addEventListener('dragstart', async (e) => {
+      if (!sampleId || !sampleName) {
+        findSampleInfo();
+      }
+      
+      if (!sampleId) {
+        console.log('No sample ID found - play the sample first');
+        e.preventDefault();
+        return;
+      }
+      
+      // Set text data for fallback
+      e.dataTransfer.setData('text/plain', sampleName || 'sample');
+      e.dataTransfer.effectAllowed = 'copy';
+      
+      // Visual feedback
+      row.style.opacity = '0.5';
+      
+      // Prepare file and start native drag
+      const filePath = await prepareSampleForDrag(sampleId, sampleName);
+      if (filePath) {
+        window.greenroom.startDrag(filePath);
+      }
+    });
+    
+    row.addEventListener('dragend', () => {
+      row.style.opacity = '1';
+    });
+  };
+  
+  // Setup all rows
+  const setupAllDragRows = () => {
+    const rows = document.querySelectorAll('[class*="divide-y"] > div');
+    rows.forEach(setupDragForRow);
+  };
+  
+  // Initial setup and observe
+  setTimeout(setupAllDragRows, 1000);
+  
+  const dragObserver = new MutationObserver(() => {
+    setupAllDragRows();
+  });
+  
+  dragObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Add drag styles
+  const dragStyles = document.createElement('style');
+  dragStyles.textContent = \`
+    /* Drag and drop styles */
+    body.greenroom-desktop [draggable="true"] {
+      cursor: grab !important;
+    }
+    
+    body.greenroom-desktop [draggable="true"]:active {
+      cursor: grabbing !important;
+    }
+    
+    /* Drag hint on hover */
+    body.greenroom-desktop [data-drag-setup="true"]:hover::before {
+      content: '⋮⋮';
+      position: absolute;
+      left: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #666;
+      font-size: 10px;
+      letter-spacing: 1px;
+      opacity: 0.7;
+    }
+    
+    body.greenroom-desktop [data-drag-setup="true"] {
+      position: relative;
+    }
+  \`;
+  document.head.appendChild(dragStyles);
+  
+  // Show drag tip on first load
+  setTimeout(() => {
+    console.log('%c🎵 GREENROOM Desktop: Drag samples directly into your DAW!', 
+      'color: #39b54a; font-weight: bold; font-size: 14px;');
+    console.log('%cPlay a sample first, then drag the row to Ableton, FL Studio, Logic, etc.', 
+      'color: #888;');
+  }, 2000);
 });
