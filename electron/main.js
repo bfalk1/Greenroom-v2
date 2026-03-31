@@ -92,10 +92,57 @@ function createWindow() {
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    
+    // Open DevTools in dev mode
+    if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
+      mainWindow.webContents.openDevTools();
+    }
   });
 
   // Start at marketplace
   mainWindow.loadURL(`${GREENROOM_URL}/marketplace`);
+  
+  // Inject CSS/JS directly after page loads (backup for preload)
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`
+      console.log('%c🎵 GREENROOM Desktop Injection Running', 'color: #39b54a; font-weight: bold;');
+      
+      // Inject CSS
+      if (!document.getElementById('gr-desktop-css')) {
+        const style = document.createElement('style');
+        style.id = 'gr-desktop-css';
+        style.textContent = \`
+          /* Hide footer */
+          footer, [class*="Footer"] { display: none !important; }
+          
+          /* Hide admin/mod/creator nav */
+          a[href*="/admin"], a[href*="/mod"], a[href*="/creator"] { display: none !important; }
+          
+          /* Title bar drag */
+          header { -webkit-app-region: drag; padding-top: 12px !important; }
+          header *, header a, header button { -webkit-app-region: no-drag; }
+          
+          /* Scrollbar */
+          ::-webkit-scrollbar { width: 8px; }
+          ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        \`;
+        document.head.appendChild(style);
+      }
+      
+      // Hide nav items by text
+      const hideNav = () => {
+        document.querySelectorAll('nav a, header a').forEach(el => {
+          const t = el.textContent?.toLowerCase() || '';
+          if (t.includes('moderation') || t.includes('admin') || t === 'creator' || t.includes('dashboard') || t.includes('earnings')) {
+            el.style.display = 'none';
+          }
+        });
+      };
+      hideNav();
+      setInterval(hideNav, 500);
+      new MutationObserver(hideNav).observe(document.body, { childList: true, subtree: true });
+    `).catch(err => console.error('Injection failed:', err));
+  });
 
   // Handle new window requests
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
