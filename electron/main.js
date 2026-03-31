@@ -4,8 +4,8 @@ const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
-// Temp directory for drag-and-drop files
-const TEMP_DIR = path.join(app.getPath('temp'), 'greenroom-samples');
+// Temp directory for drag-and-drop files (set after app ready)
+let TEMP_DIR = null;
 
 // Production URL
 const GREENROOM_URL = 'https://greenroom-v2.vercel.app';
@@ -288,11 +288,6 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => mainWindow?.close());
 
-// Ensure temp directory exists
-if (!fs.existsSync(TEMP_DIR)) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
-}
-
 // Download file helper
 function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
@@ -415,6 +410,12 @@ app.on('before-quit', () => {
 
 // Handle download requests (for sample downloads)
 app.on('ready', () => {
+  // Initialize temp directory for drag-and-drop
+  TEMP_DIR = path.join(app.getPath('temp'), 'greenroom-samples');
+  if (!fs.existsSync(TEMP_DIR)) {
+    fs.mkdirSync(TEMP_DIR, { recursive: true });
+  }
+  
   createMenu();
   createWindow();
   
