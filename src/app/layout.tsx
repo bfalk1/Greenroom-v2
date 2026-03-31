@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
+import { Analytics } from "@vercel/analytics/react";
 import { UserProvider } from "@/lib/context/UserContext";
 import "./globals.css";
 
@@ -26,6 +27,7 @@ export default function RootLayout({
           {children}
           <Toaster theme="dark" position="bottom-right" richColors />
         </UserProvider>
+        <Analytics />
       </body>
     </html>
   );
