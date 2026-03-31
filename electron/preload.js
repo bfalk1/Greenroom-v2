@@ -2,18 +2,21 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const isMac = process.platform === 'darwin';
+const APP_VERSION = '1.4.0';
 
 // Expose limited APIs to the renderer
 contextBridge.exposeInMainWorld('greenroom', {
   platform: process.platform,
   isDesktop: true,
-  version: require('./package.json').version,
+  version: APP_VERSION,
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
   prepareDrag: (sampleId, sampleName) => ipcRenderer.invoke('prepare-drag', { sampleId, sampleName }),
   startDrag: (filePath) => ipcRenderer.send('start-drag', { filePath }),
 });
+
+console.log('%c🎵 GREENROOM Desktop v' + APP_VERSION, 'color: #39b54a; font-weight: bold; font-size: 14px;');
 
 // Inject CSS immediately (before DOMContentLoaded)
 const injectStyles = () => {
@@ -85,7 +88,7 @@ if (document.head) {
 
 // Hide nav items by text content (runs after page loads)
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('%c🎵 GREENROOM Desktop v' + require('./package.json').version, 'color: #39b54a; font-weight: bold;');
+  console.log('%c🎵 GREENROOM Desktop - Preload loaded', 'color: #39b54a; font-weight: bold;');
   
   document.body.classList.add('greenroom-desktop');
   
