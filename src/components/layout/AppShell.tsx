@@ -15,17 +15,31 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     setMounted(true);
+    
     // Check if running in Electron desktop app
     const checkDesktop = () => {
-      const isElectron = !!(window as any).greenroom?.isDesktop;
-      setIsDesktop(isElectron);
+      const hasGreenroomAPI = !!(window as any).greenroom?.isDesktop;
+      const hasDesktopClass = document.body.classList.contains('greenroom-desktop');
+      const hasElectronUA = navigator.userAgent.toLowerCase().includes('electron');
+      
+      const isElectron = hasGreenroomAPI || hasDesktopClass || hasElectronUA;
+      
+      if (isElectron) {
+        setIsDesktop(true);
+        document.body.classList.add('greenroom-desktop');
+      }
+      
+      return isElectron;
     };
     
-    checkDesktop();
+    // Check immediately
+    if (checkDesktop()) return;
     
-    // Also check after a short delay (in case greenroom isn't set yet)
-    const timer = setTimeout(checkDesktop, 100);
-    return () => clearTimeout(timer);
+    // Keep checking for a bit (preload might be slow)
+    const checks = [100, 300, 500, 1000];
+    const timers = checks.map(ms => setTimeout(() => checkDesktop(), ms));
+    
+    return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
   // Prevent hydration mismatch - render web layout on server
