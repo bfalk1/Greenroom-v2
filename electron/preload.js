@@ -33,6 +33,13 @@ window.addEventListener('DOMContentLoaded', () => {
       display: none !important;
     }
     
+    /* Hide admin/mod/creator nav items */
+    a[href*="/admin"],
+    a[href*="/mod"],
+    a[href*="/creator"] {
+      display: none !important;
+    }
+    
     /* Add draggable title bar region */
     body.greenroom-desktop header,
     body.greenroom-desktop nav:first-of-type {
@@ -132,24 +139,41 @@ window.addEventListener('DOMContentLoaded', () => {
   document.head.appendChild(style);
   
   // Hide creator/admin nav elements
+  // Hide admin/mod/creator elements - users only see Marketplace & Library
   const hideCreatorElements = () => {
     const selectors = [
       '[href*="/creator"]',
       '[href*="/admin"]',
       '[href*="/mod"]',
-      '.creator-nav',
-      '.admin-nav',
+      'a:has-text("Moderation")',
+      'a:has-text("Admin")',
+      'a:has-text("Creator")',
+      'a:has-text("Dashboard")',
+      'a:has-text("Earnings")',
     ];
     
+    // Hide by href
     selectors.forEach(selector => {
-      document.querySelectorAll(selector).forEach(el => {
-        el.style.display = 'none';
-      });
+      try {
+        document.querySelectorAll(selector).forEach(el => {
+          el.style.display = 'none';
+        });
+      } catch {}
+    });
+    
+    // Also hide by text content
+    document.querySelectorAll('nav a, header a').forEach(link => {
+      const text = link.textContent?.trim().toLowerCase();
+      if (text === 'moderation' || text === 'admin' || text === 'creator' || 
+          text === 'dashboard' || text === 'earnings' || text === 'become a creator') {
+        link.style.display = 'none';
+      }
     });
   };
   
   // Run on load and observe for changes
   hideCreatorElements();
+  setInterval(hideCreatorElements, 500); // Backup: check every 500ms
   
   const observer = new MutationObserver(hideCreatorElements);
   observer.observe(document.body, { 
