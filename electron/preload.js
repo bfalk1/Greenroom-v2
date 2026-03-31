@@ -12,8 +12,7 @@ contextBridge.exposeInMainWorld('greenroom', {
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
-  prepareDrag: (sampleId, sampleName) => ipcRenderer.invoke('prepare-drag', { sampleId, sampleName }),
-  startDrag: (filePath) => ipcRenderer.send('start-drag', { filePath }),
+  startSampleDrag: (sampleId, sampleName) => ipcRenderer.send('start-sample-drag', { sampleId, sampleName }),
 });
 
 console.log('%c🎵 GREENROOM Desktop v' + APP_VERSION, 'color: #39b54a; font-weight: bold; font-size: 14px;');

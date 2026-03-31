@@ -58,25 +58,18 @@ export function SampleRow({
   }, []);
 
   // Handle drag to DAW
-  const handleDragStart = async (e: React.DragEvent) => {
-    if (!isDesktop) return;
+  const handleDragStart = (e: React.DragEvent) => {
+    if (!isDesktop || !isOwned) return;
     
     const greenroom = (window as any).greenroom;
-    if (!greenroom?.prepareDrag) return;
+    if (!greenroom?.startSampleDrag) return;
     
     setIsDragging(true);
     e.dataTransfer.setData("text/plain", sample.name);
     e.dataTransfer.effectAllowed = "copy";
     
-    try {
-      // Prepare the file for dragging
-      const result = await greenroom.prepareDrag(sample.id, sample.name);
-      if (result?.success && result?.filePath) {
-        greenroom.startDrag(result.filePath);
-      }
-    } catch (err) {
-      console.error("Drag prep failed:", err);
-    }
+    // Start the drag (download happens in Electron main process)
+    greenroom.startSampleDrag(sample.id, sample.name);
   };
 
   const handleDragEnd = () => {

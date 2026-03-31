@@ -368,80 +368,60 @@ function downloadFile(url, destPath) {
 }
 
 // IPC Handler for drag-and-drop to DAW
-ipcMain.handle('prepare-drag', async (event, { sampleId, sampleName }) => {
+// Drag to DAW - download and start drag in one call
+ipcMain.on('start-sample-drag', async (event, { sampleId, sampleName }) => {
   try {
     const filename = `${sampleName.replace(/[^a-zA-Z0-9-_]/g, '_')}.wav`;
     const tempPath = path.join(TEMP_DIR, filename);
     
     // Check if already downloaded
-    if (fs.existsSync(tempPath)) {
-      return { success: true, filePath: tempPath };
+    if (!fs.existsSync(tempPath)) {
+      console.log('Downloading sample for drag:', sampleName);
+      
+      // Download via the web session (includes auth cookies)
+      const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
+      const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
+      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      
+      await new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(tempPath);
+        
+        https.get(downloadUrl, {
+          headers: {
+            'Cookie': cookieHeader,
+            'User-Agent': 'GREENROOM-Desktop/1.4.0',
+          }
+        }, (response) => {
+          if (response.statusCode === 301 || response.statusCode === 302) {
+            https.get(response.headers.location, (redirectRes) => {
+              redirectRes.pipe(file);
+              file.on('finish', () => { file.close(); resolve(null); });
+            }).on('error', reject);
+            return;
+          }
+          
+          if (response.statusCode !== 200) {
+            reject(new Error(`Download failed: ${response.statusCode}`));
+            return;
+          }
+          
+          response.pipe(file);
+          file.on('finish', () => { file.close(); resolve(null); });
+        }).on('error', reject);
+      });
     }
     
-    console.log('Downloading sample for drag:', sampleName);
-    
-    // Download via the web session (includes auth cookies)
-    const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
-    
-    // Use the session's cookies for authenticated download
-    const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
-    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    
-    await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(tempPath);
-      
-      https.get(downloadUrl, {
-        headers: {
-          'Cookie': cookieHeader,
-          'User-Agent': 'GREENROOM-Desktop/1.2.0',
-        }
-      }, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          // Follow redirect
-          https.get(response.headers.location, (redirectRes) => {
-            redirectRes.pipe(file);
-            file.on('finish', () => {
-              file.close();
-              resolve();
-            });
-          }).on('error', reject);
-          return;
-        }
-        
-        if (response.statusCode !== 200) {
-          reject(new Error(`Download failed: ${response.statusCode}`));
-          return;
-        }
-        
-        response.pipe(file);
-        file.on('finish', () => {
-          file.close();
-          resolve();
-        });
-      }).on('error', reject);
+    // Start native drag
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    event.sender.startDrag({
+      file: tempPath,
+      icon: fs.existsSync(iconPath) ? iconPath : undefined,
     });
     
-    return { success: true, filePath: tempPath };
+    console.log('Started drag for:', filename);
   } catch (err) {
-    console.error('Prepare drag failed:', err);
-    return { success: false, error: err.message };
+    console.error('Drag failed:', err);
   }
-});
-
-// Start the actual native drag
-ipcMain.on('start-drag', (event, { filePath }) => {
-  if (!fs.existsSync(filePath)) {
-    console.error('File not found for drag:', filePath);
-    return;
-  }
-  
-  const iconPath = path.join(__dirname, 'assets', 'icon.png');
-  event.sender.startDrag({
-    file: filePath,
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
-  });
-  
-  console.log('Started native drag:', filePath);
 });
 
 // Clean up temp files on quit
