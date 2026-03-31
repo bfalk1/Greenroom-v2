@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { DesktopSidebar } from "./DesktopSidebar";
+import { DesktopTitleBar } from "./DesktopTitleBar";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -58,7 +59,8 @@ export function AppShell({ children }: AppShellProps) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
         <DesktopSidebar />
-        <main className="ml-52 min-h-screen">{children}</main>
+        <DesktopTitleBar />
+        <main className="ml-52 pt-10 min-h-screen">{children}</main>
       </div>
     );
   }
