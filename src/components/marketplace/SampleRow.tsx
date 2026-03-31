@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Loader2, Play, Pause, Heart, Download, Plus } from "lucide-react";
+import { Loader2, Play, Pause, Heart, Download, Plus, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sample, getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { Waveform } from "@/components/audio/Waveform";
@@ -41,8 +41,47 @@ export function SampleRow({
   const [isFavorited, setIsFavorited] = useState(isFavoritedProp);
   const [isFavoriting, setIsFavoriting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<number | null>(null);
+
+  // Check if running in desktop app
+  useEffect(() => {
+    const checkDesktop = () => {
+      const isElectron = !!(window as any).greenroom?.isDesktop;
+      setIsDesktop(isElectron);
+    };
+    checkDesktop();
+    const timer = setTimeout(checkDesktop, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Handle drag to DAW
+  const handleDragStart = async (e: React.DragEvent) => {
+    if (!isDesktop) return;
+    
+    const greenroom = (window as any).greenroom;
+    if (!greenroom?.prepareDrag) return;
+    
+    setIsDragging(true);
+    e.dataTransfer.setData("text/plain", sample.name);
+    e.dataTransfer.effectAllowed = "copy";
+    
+    try {
+      // Prepare the file for dragging
+      const result = await greenroom.prepareDrag(sample.id, sample.name);
+      if (result?.success && result?.filePath) {
+        greenroom.startDrag(result.filePath);
+      }
+    } catch (err) {
+      console.error("Drag prep failed:", err);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
 
   useEffect(() => {
     setIsFavorited(isFavoritedProp);
@@ -222,16 +261,22 @@ export function SampleRow({
   return (
     <div
       ref={rowRef}
+      draggable={isDesktop && isOwned}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
         isSelected
           ? "bg-[#39b54a]/10"
           : isPlayingState
           ? "bg-[#39b54a]/5"
           : "hover:bg-[#242424]"
-      }`}
+      } ${isDragging ? "opacity-50" : ""} ${isDesktop && isOwned ? "cursor-grab active:cursor-grabbing" : ""}`}
     >
       {/* Cover Art + Play Button */}
-      <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
+      <div 
+        className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group"
+        title={isDesktop && isOwned ? "Drag to DAW" : undefined}
+      >
         <img
           src={
             sample.cover_art_url ||
