@@ -379,8 +379,7 @@ export default function MarketplacePage() {
   const isFiltered = searchQuery || filters.genre !== "all" || filters.instrumentType !== "all" || filters.sampleType !== "all" || filters.key !== "all";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-6">
         {/* For You Section - Horizontal artist slider */}
         {!isFiltered && user && followedArtists.length > 0 && (
           <div className="mb-10 pt-4">
@@ -602,7 +601,6 @@ export default function MarketplacePage() {
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
