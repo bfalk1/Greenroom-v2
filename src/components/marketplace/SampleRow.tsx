@@ -254,21 +254,31 @@ export function SampleRow({
   return (
     <div
       ref={rowRef}
-      draggable={isDesktop && isOwned}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
+      className={`grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors select-none ${
         isSelected
           ? "bg-[#39b54a]/10"
           : isPlayingState
           ? "bg-[#39b54a]/5"
           : "hover:bg-[#242424]"
-      } ${isDragging ? "opacity-50" : ""} ${isDesktop && isOwned ? "cursor-grab active:cursor-grabbing" : ""}`}
+      } ${isDragging ? "opacity-50" : ""}`}
+      style={{ WebkitUserSelect: 'none' } as React.CSSProperties}
     >
+      {/* Drag Handle (desktop + owned only) */}
+      {isDesktop && isOwned && (
+        <div
+          className="w-6 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing text-[#3a3a3a] hover:text-[#39b54a] transition -ml-1"
+          draggable
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          title="Drag to DAW"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
+      
       {/* Cover Art + Play Button */}
       <div 
         className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group"
-        title={isDesktop && isOwned ? "Drag to DAW" : undefined}
       >
         <img
           src={
