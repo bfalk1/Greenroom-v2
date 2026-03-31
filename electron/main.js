@@ -1,8 +1,11 @@
-const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme } = require('electron');
 const path = require('path');
 
 // Production URL
 const GREENROOM_URL = 'https://greenroom-v2.vercel.app';
+
+// Force dark mode for consistent appearance
+nativeTheme.themeSource = 'dark';
 
 // User-only allowed routes
 const ALLOWED_ROUTES = [
@@ -246,15 +249,65 @@ function createMenu() {
       ],
     },
   ];
+  
+  // Add View > Always on Top option
+  const viewMenu = template.find(item => item.label === 'View');
+  if (viewMenu && viewMenu.submenu) {
+    viewMenu.submenu.push(
+      { type: 'separator' },
+      {
+        label: 'Always on Top',
+        type: 'checkbox',
+        checked: false,
+        accelerator: 'CmdOrCtrl+Shift+T',
+        click: (menuItem) => {
+          mainWindow?.setAlwaysOnTop(menuItem.checked);
+        },
+      }
+    );
+  }
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 }
 
+// IPC Handlers for window controls
+ipcMain.on('window-minimize', () => mainWindow?.minimize());
+ipcMain.on('window-maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow?.maximize();
+  }
+});
+ipcMain.on('window-close', () => mainWindow?.close());
+
 // Handle download requests (for sample downloads)
 app.on('ready', () => {
   createMenu();
   createWindow();
+  
+  // Register media key shortcuts
+  try {
+    globalShortcut.register('MediaPlayPause', () => {
+      mainWindow?.webContents.executeJavaScript(`
+        const audio = document.querySelector('audio');
+        if (audio) {
+          if (audio.paused) audio.play();
+          else audio.pause();
+        }
+      `);
+    });
+    
+    globalShortcut.register('MediaStop', () => {
+      mainWindow?.webContents.executeJavaScript(`
+        const audio = document.querySelector('audio');
+        if (audio) audio.pause();
+      `);
+    });
+  } catch (e) {
+    console.log('Could not register media keys:', e.message);
+  }
 
   // Set up download handling
   mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
@@ -285,6 +338,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  // Unregister all shortcuts when quitting
+  globalShortcut.unregisterAll();
 });
 
 // Security: Prevent new window creation except through our handler
