@@ -376,7 +376,7 @@ ipcMain.on('start-sample-drag', async (event, { sampleId, sampleName }) => {
     
     // Check if already downloaded
     if (!fs.existsSync(tempPath)) {
-      console.log('Downloading sample for drag:', sampleName);
+      // Downloading sample...
       
       // Download via the web session (includes auth cookies)
       const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
@@ -418,7 +418,7 @@ ipcMain.on('start-sample-drag', async (event, { sampleId, sampleName }) => {
       icon: fs.existsSync(iconPath) ? iconPath : undefined,
     });
     
-    console.log('Started drag for:', filename);
+    // Drag started
   } catch (err) {
     console.error('Drag failed:', err);
   }
