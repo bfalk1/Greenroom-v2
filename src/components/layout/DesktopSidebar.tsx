@@ -44,9 +44,9 @@ export function DesktopSidebar() {
 
   return (
     <aside className="w-52 bg-[#0a0a0a] border-r border-[#1a1a1a] flex flex-col h-screen fixed left-0 top-0 z-50">
-      {/* Drag region for window */}
+      {/* Drag region for window - extra padding for macOS traffic lights */}
       <div 
-        className="h-12 flex items-center px-4 border-b border-[#1a1a1a]"
+        className="h-16 flex items-end pb-3 px-4 border-b border-[#1a1a1a]"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         <img
