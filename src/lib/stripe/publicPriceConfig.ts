@@ -1,5 +1,3 @@
-"use client";
-
 export const PUBLIC_SUBSCRIPTION_PACKAGES = [
   {
     name: "General Admission",
