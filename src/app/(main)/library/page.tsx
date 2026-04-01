@@ -599,13 +599,15 @@ export default function LibraryPage() {
     if (!greenroom?.isDesktop || !greenroom.chooseLocalSampleFolder || !greenroom.syncLocalSamplesBatch) {
       return;
     }
+    const chooseLocalSampleFolder = greenroom.chooseLocalSampleFolder;
+    const syncLocalSamplesBatch = greenroom.syncLocalSamplesBatch;
     if (!user) {
       return;
     }
 
     const runAutoSync = async () => {
       try {
-        const folderResult = await greenroom.chooseLocalSampleFolder();
+        const folderResult = await chooseLocalSampleFolder();
         if (!folderResult?.ok) {
           throw new Error(folderResult?.error || "No sample folder selected");
         }
@@ -627,7 +629,7 @@ export default function LibraryPage() {
 
         for (let index = 0; index < missingSamples.length; index += SYNC_BATCH_SIZE) {
           const batch = missingSamples.slice(index, index + SYNC_BATCH_SIZE);
-          const syncResult = await greenroom.syncLocalSamplesBatch(
+          const syncResult = await syncLocalSamplesBatch(
             batch.map((sample) => ({
               sampleId: sample.id,
               sampleName: sample.name,
