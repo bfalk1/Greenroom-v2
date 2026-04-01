@@ -16,6 +16,7 @@ interface WaveformProps {
 }
 
 type OfflineAudioContextWindow = Window & {
+  OfflineAudioContext?: typeof OfflineAudioContext;
   webkitOfflineAudioContext?: typeof OfflineAudioContext;
 };
 
