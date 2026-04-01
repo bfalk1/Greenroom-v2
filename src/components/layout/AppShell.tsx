@@ -20,14 +20,12 @@ export function AppShell({ children }: AppShellProps) {
     // Check if running in Electron desktop app
     const checkDesktop = () => {
       const hasGreenroomAPI = !!(window as any).greenroom?.isDesktop;
-      const hasDesktopClass = document.body.classList.contains('greenroom-desktop');
       const hasElectronUA = navigator.userAgent.toLowerCase().includes('electron');
       
-      const isElectron = hasGreenroomAPI || hasDesktopClass || hasElectronUA;
+      const isElectron = hasGreenroomAPI || hasElectronUA;
       
       if (isElectron) {
         setIsDesktop(true);
-        document.body.classList.add('greenroom-desktop');
       }
       
       return isElectron;
@@ -43,6 +41,14 @@ export function AppShell({ children }: AppShellProps) {
     return () => timers.forEach(t => clearTimeout(t));
   }, []);
 
+  useEffect(() => {
+    if (!mounted || !isDesktop || typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent("greenroom:desktop-shell-ready"));
+  }, [mounted, isDesktop]);
+
   // Prevent hydration mismatch - render web layout on server
   if (!mounted) {
     return (
@@ -57,7 +63,10 @@ export function AppShell({ children }: AppShellProps) {
   // Desktop app layout with sidebar
   if (isDesktop) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
+      <div
+        data-greenroom-desktop-shell="true"
+        className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]"
+      >
         <DesktopSidebar />
         <DesktopTitleBar />
         <main className="ml-52 pt-10 min-h-screen">{children}</main>

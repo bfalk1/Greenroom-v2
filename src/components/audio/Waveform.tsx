@@ -15,6 +15,10 @@ interface WaveformProps {
   backgroundColor?: string;
 }
 
+type OfflineAudioContextWindow = Window & {
+  webkitOfflineAudioContext?: typeof OfflineAudioContext;
+};
+
 export function Waveform({
   audioUrl,
   data,
@@ -45,6 +49,7 @@ export function Waveform({
   useEffect(() => {
     if (data && data.length > 0) return; // Skip if we have pre-computed data
     if (!audioUrl) return;
+    let isCancelled = false;
 
     const generateWaveform = async () => {
       setIsLoading(true);
@@ -54,8 +59,17 @@ export function Waveform({
         const response = await fetch(audioUrl);
         const arrayBuffer = await response.arrayBuffer();
 
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        // Use an offline context so waveform analysis does not consume live output streams.
+        const offlineAudioWindow = window as OfflineAudioContextWindow;
+        const OfflineAudioContextCtor =
+          offlineAudioWindow.OfflineAudioContext || offlineAudioWindow.webkitOfflineAudioContext;
+
+        if (!OfflineAudioContextCtor) {
+          throw new Error("OfflineAudioContext is not supported");
+        }
+
+        const offlineContext = new OfflineAudioContextCtor(1, 44100, 44100);
+        const audioBuffer = await offlineContext.decodeAudioData(arrayBuffer);
 
         // Get the audio data from the first channel
         const rawData = audioBuffer.getChannelData(0);
@@ -82,10 +96,12 @@ export function Waveform({
           ? filteredData.map((n) => n / maxValue)
           : filteredData.map(() => 0.3);
 
-        setWaveformData(normalizedData);
-        audioContext.close();
+        if (!isCancelled) {
+          setWaveformData(normalizedData);
+        }
       } catch (err) {
         console.error("Failed to generate waveform:", err);
+        if (isCancelled) return;
         setError(true);
         // Generate placeholder waveform as fallback
         const fakeData = Array(80)
@@ -93,11 +109,16 @@ export function Waveform({
           .map((_, i) => 0.3 + 0.4 * Math.sin(i * 0.2) * Math.random());
         setWaveformData(fakeData);
       } finally {
-        setIsLoading(false);
+        if (!isCancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     generateWaveform();
+    return () => {
+      isCancelled = true;
+    };
   }, [audioUrl, data]);
 
   // Draw the waveform

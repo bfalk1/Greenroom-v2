@@ -134,7 +134,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);
-    window.location.href = "/";
+    const isDesktop = Boolean((window as { greenroom?: { isDesktop?: boolean } }).greenroom?.isDesktop);
+    window.location.href = isDesktop ? "/login" : "/";
   };
 
   return (

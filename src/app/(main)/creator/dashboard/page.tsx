@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2 } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
+import {
+  getSampleTableRowClass,
+  SAMPLE_TABLE_WAVEFORM_CLASS,
+  SampleTableHeader,
+} from "@/components/marketplace/SampleTable";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
@@ -144,9 +149,9 @@ function CreatorSampleRow({
 
   return (
     <div
-      className={`grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_1fr_80px_45px_45px_70px_80px_100px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
-        isPlayingState ? "bg-[#39b54a]/5" : "hover:bg-[#242424]"
-      }`}
+      className={getSampleTableRowClass("creator", {
+        isActive: isPlayingState,
+      })}
     >
       {/* Cover Art + Play Button */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
@@ -176,29 +181,29 @@ function CreatorSampleRow({
         </button>
       </div>
 
-      {/* Name + Waveform */}
-      <div className="min-w-0 flex items-center gap-4 flex-1">
-        <div className="min-w-0 w-[320px] md:w-[380px] flex-shrink-0">
-          <p className="text-sm font-medium text-white" title={sample.name}>
-            {sample.name}
-          </p>
-          <p className="text-xs text-[#666]">
-            {sample.creditPrice} credits
-          </p>
-        </div>
-        <div className="hidden md:block flex-1 min-w-[100px] max-w-[250px]">
-          <Waveform
-            audioUrl={sample.previewUrl || undefined}
-            data={sample.waveformData || undefined}
-            isPlaying={isPlayingState}
-            progress={progress}
-            height={36}
-            barWidth={2}
-            barGap={1}
-            barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
-            progressColor="#39b54a"
-          />
-        </div>
+      {/* Name */}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-white" title={sample.name}>
+          {sample.name}
+        </p>
+        <p className="text-xs text-[#666]">
+          {sample.creditPrice} credits
+        </p>
+      </div>
+
+      {/* Waveform */}
+      <div className={SAMPLE_TABLE_WAVEFORM_CLASS}>
+        <Waveform
+          audioUrl={sample.previewUrl || undefined}
+          data={sample.waveformData || undefined}
+          isPlaying={isPlayingState}
+          progress={progress}
+          height={36}
+          barWidth={2}
+          barGap={1}
+          barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
+          progressColor="#39b54a"
+        />
       </div>
 
       {/* Genre */}
@@ -435,16 +440,7 @@ export default function CreatorDashboardPage() {
         {filteredSamples.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_1fr_80px_45px_45px_70px_80px_100px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
-              <div className="w-10" />
-              <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Key</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">BPM</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Rating</span>
-              <span className="text-xs font-medium text-[#a1a1a1]">Status</span>
-              <span className="text-xs font-medium text-[#a1a1a1] text-right">Actions</span>
-            </div>
+            <SampleTableHeader variant="creator" />
 
             {/* Rows */}
             <div className="divide-y divide-[#2a2a2a]">

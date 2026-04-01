@@ -2,14 +2,20 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Download, Loader2, CheckSquare, Square, Package, Play, Pause, Heart } from "lucide-react";
+import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
+import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
 import { SampleRating } from "@/components/marketplace/SampleRating";
+import {
+  getSampleTableRowClass,
+  SAMPLE_TABLE_WAVEFORM_CLASS,
+  SampleTableHeader,
+} from "@/components/marketplace/SampleTable";
 import JSZip from "jszip";
 
 interface LibrarySample {
@@ -36,6 +42,19 @@ interface LibrarySample {
   total_ratings: number;
   purchased_at: string;
 }
+
+type GreenroomDesktopApi = {
+  isDesktop?: boolean;
+  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  getLocalSampleStatus?: (
+    sampleId: string,
+    sampleName: string,
+    artistName?: string
+  ) => Promise<{ ok: boolean; status?: { isLocal?: boolean }; error?: string }>;
+  syncLocalSamplesBatch?: (
+    samples: Array<{ sampleId: string; sampleName: string; artistName?: string }>
+  ) => Promise<{ ok: boolean; results?: Array<{ sampleId: string; sampleName: string; localPath: string }>; error?: string }>;
+};
 
 // Global audio state for library
 let libraryAudio: HTMLAudioElement | null = null;
@@ -64,6 +83,7 @@ function LibraryRow({
   isSelected,
   onSelect,
   isChecked,
+  statusRefreshKey,
 }: {
   sample: LibrarySample;
   user: { id: string; email?: string } | null;
@@ -71,14 +91,30 @@ function LibraryRow({
   isSelected: boolean;
   onSelect: (id: string) => void;
   isChecked: boolean;
+  statusRefreshKey: number;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingState, setIsPlayingState] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [isFavorited, setIsFavorited] = useState(false);
   const progressRef = useRef<number | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const {
+    isDesktop,
+    isSyncing,
+    isLocal,
+    isDragging,
+    dragHandleKey,
+    canDrag,
+    handlePointerDown,
+    handlePointerUp,
+  } = useDesktopSampleDrag({
+    sampleId: sample.id,
+    sampleName: sample.name,
+    artistName: sample.artist_name,
+    enabled: true,
+    refreshKey: statusRefreshKey,
+  });
 
   // Register setter
   useEffect(() => {
@@ -176,7 +212,7 @@ function LibraryRow({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       toast.success("Downloaded!");
-    } catch (error) {
+    } catch {
       toast.error("Download failed");
     } finally {
       setIsDownloading(false);
@@ -186,13 +222,11 @@ function LibraryRow({
   return (
     <div
       ref={rowRef}
-      className={`grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
-        isSelected
-          ? "bg-[#39b54a]/10"
-          : isPlayingState
-          ? "bg-[#39b54a]/5"
-          : "hover:bg-[#242424]"
-      }`}
+      className={getSampleTableRowClass("library", {
+        isActive: isSelected || isPlayingState,
+        isDragging,
+      })}
+      style={{ WebkitUserSelect: "none" } as React.CSSProperties}
     >
       {/* Checkbox */}
       <button
@@ -208,6 +242,40 @@ function LibraryRow({
           <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
         )}
       </button>
+
+      {/* Drag Handle */}
+      <div
+        key={dragHandleKey}
+        className={`w-6 h-10 flex items-center justify-center transition ${
+          !isDesktop
+            ? "invisible"
+            : isSyncing
+            ? "cursor-progress text-[#39b54a]"
+            : canDrag
+            ? "cursor-grab active:cursor-grabbing text-[#39b54a] hover:text-white"
+            : "cursor-pointer text-[#3a3a3a] hover:text-[#39b54a]"
+        }`}
+        onMouseDown={handlePointerDown}
+        onMouseUp={handlePointerUp}
+        title={
+          !isDesktop
+            ? ""
+            : isSyncing
+            ? "Syncing sample locally..."
+            : isLocal
+            ? "Drag local sample to DAW"
+            : "Sync sample locally"
+        }
+      >
+        {isDesktop &&
+          (isSyncing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : isLocal ? (
+            <GripVertical className="w-4 h-4" />
+          ) : !isLocal ? (
+            <HardDrive className="w-4 h-4" />
+          ) : null)}
+      </div>
 
       {/* Cover Art + Play Button */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
@@ -237,45 +305,44 @@ function LibraryRow({
         </button>
       </div>
 
-      {/* Name + Artist + Tags + Waveform */}
-      <div className="min-w-0 flex items-center gap-4 flex-1">
-        <div className="min-w-0 w-[320px] md:w-[380px] flex-shrink-0">
-          <p className="text-sm font-medium text-white" title={sample.name}>{sample.name}</p>
-          <div className="flex items-center gap-2 min-w-0">
-            <Link
-              href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
-              className="text-xs text-[#39b54a] hover:text-[#2da03e] truncate transition flex-shrink-0"
-            >
-              {sample.artist_name || "Unknown"}
-            </Link>
-            {sample.tags && sample.tags.length > 0 && (
-              <div className="flex items-center gap-1 overflow-hidden">
-                {sample.tags.slice(0, 3).map((tag, i) => (
-                  <span
-                    key={i}
-                    className="text-[10px] px-1.5 py-0.5 rounded-full border border-[#39b54a]/50 text-[#39b54a] whitespace-nowrap"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+      {/* Name + Artist + Tags */}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-white" title={sample.name}>{sample.name}</p>
+        <div className="min-w-0 flex flex-col items-start gap-1 lg:flex-row lg:items-center lg:gap-2">
+          <Link
+            href={`/artist/${encodeURIComponent(sample.artist_name || sample.creator_id)}`}
+            className="max-w-full truncate text-xs text-[#39b54a] hover:text-[#2da03e] transition"
+          >
+            {sample.artist_name || "Unknown"}
+          </Link>
+          {sample.tags && sample.tags.length > 0 && (
+            <div className="hidden min-w-0 lg:flex items-center gap-1 overflow-hidden">
+              {sample.tags.slice(0, 3).map((tag, i) => (
+                <span
+                  key={i}
+                  className="max-w-[96px] truncate text-[10px] px-1.5 py-0.5 rounded-full border border-[#39b54a]/50 text-[#39b54a] whitespace-nowrap"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-        {/* Waveform */}
-        <div className="hidden md:block flex-1 min-w-[150px] max-w-[350px]">
-          <Waveform
-            audioUrl={sample.preview_url || undefined}
-            data={sample.waveform_data || undefined}
-            isPlaying={isPlayingState}
-            progress={progress}
-            height={36}
-            barWidth={2}
-            barGap={1}
-            barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
-            progressColor="#39b54a"
-          />
-        </div>
+      </div>
+
+      {/* Waveform */}
+      <div className={SAMPLE_TABLE_WAVEFORM_CLASS}>
+        <Waveform
+          audioUrl={sample.preview_url || undefined}
+          data={sample.waveform_data || undefined}
+          isPlaying={isPlayingState}
+          progress={progress}
+          height={36}
+          barWidth={2}
+          barGap={1}
+          barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
+          progressColor="#39b54a"
+        />
       </div>
 
       {/* Genre */}
@@ -328,7 +395,7 @@ function LibraryRow({
 }
 
 const PAGE_SIZE = 20;
-
+const SYNC_BATCH_SIZE = 20;
 export default function LibraryPage() {
   const { user, loading: userLoading } = useUser();
   const [samples, setSamples] = useState<LibrarySample[]>([]);
@@ -339,7 +406,72 @@ export default function LibraryPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const [localStatusRefreshKey, setLocalStatusRefreshKey] = useState(0);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ completed: 0, total: 0 });
   const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const fetchAllLibrarySamples = useCallback(async () => {
+    const allSamples: LibrarySample[] = [];
+    let offset = 0;
+    let totalCount = 0;
+
+    do {
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (searchQuery) {
+        params.set("search", searchQuery);
+      }
+
+      const res = await fetch(`/api/library?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch full library for sync");
+      }
+
+      const pageSamples: LibrarySample[] = data.samples || [];
+      totalCount = typeof data.total === "number" ? data.total : pageSamples.length;
+      allSamples.push(...pageSamples);
+
+      if (pageSamples.length === 0) {
+        break;
+      }
+
+      offset += pageSamples.length;
+    } while (allSamples.length < totalCount);
+
+    return allSamples;
+  }, [searchQuery]);
+
+  const getMissingLocalSamples = useCallback(
+    async (greenroom: GreenroomDesktopApi, allSamples: LibrarySample[]) => {
+      if (!greenroom.getLocalSampleStatus) {
+        return allSamples;
+      }
+
+      const missingSamples: LibrarySample[] = [];
+
+      for (let index = 0; index < allSamples.length; index += SYNC_BATCH_SIZE) {
+        const batch = allSamples.slice(index, index + SYNC_BATCH_SIZE);
+        const statuses = await Promise.all(
+          batch.map((sample) => greenroom.getLocalSampleStatus!(sample.id, sample.name, sample.artist_name))
+        );
+
+        batch.forEach((sample, batchIndex) => {
+          const isLocal = Boolean(statuses[batchIndex]?.ok && statuses[batchIndex]?.status?.isLocal);
+          if (!isLocal) {
+            missingSamples.push(sample);
+          }
+        });
+      }
+
+      return missingSamples;
+    },
+    []
+  );
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -353,11 +485,18 @@ export default function LibraryPage() {
     });
   };
 
-  const selectAll = () => {
-    if (selectedIds.size === samples.length) {
+  const selectAll = async () => {
+    if (selectedIds.size === total && total > 0) {
       setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(samples.map(s => s.id)));
+      return;
+    }
+
+    try {
+      const allSamples = await fetchAllLibrarySamples();
+      setSelectedIds(new Set(allSamples.map((sample) => sample.id)));
+    } catch (error) {
+      console.error("Error selecting all library samples:", error);
+      toast.error("Failed to select all samples");
     }
   };
 
@@ -366,7 +505,10 @@ export default function LibraryPage() {
     
     setBulkDownloading(true);
     try {
-      const selectedSamples = samples.filter(s => selectedIds.has(s.id));
+      const selectedSamples =
+        selectedIds.size > samples.length
+          ? (await fetchAllLibrarySamples()).filter((sample) => selectedIds.has(sample.id))
+          : samples.filter((sample) => selectedIds.has(sample.id));
       const zip = new JSZip();
       
       for (const sample of selectedSamples) {
@@ -423,7 +565,13 @@ export default function LibraryPage() {
 
       if (data.samples) {
         if (append) {
-          setSamples(prev => [...prev, ...data.samples]);
+          setSamples((prev) => {
+            const seenIds = new Set(prev.map((sample) => sample.id));
+            const nextSamples = data.samples.filter(
+              (sample: LibrarySample) => !seenIds.has(sample.id)
+            );
+            return [...prev, ...nextSamples];
+          });
         } else {
           setSamples(data.samples);
         }
@@ -445,6 +593,69 @@ export default function LibraryPage() {
       if (data.ratings) setUserRatings(data.ratings);
     });
   }, [user, fetchLibrary]);
+
+  useEffect(() => {
+    const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
+    if (!greenroom?.isDesktop || !greenroom.chooseLocalSampleFolder || !greenroom.syncLocalSamplesBatch) {
+      return;
+    }
+    if (!user) {
+      return;
+    }
+
+    const runAutoSync = async () => {
+      try {
+        const folderResult = await greenroom.chooseLocalSampleFolder();
+        if (!folderResult?.ok) {
+          throw new Error(folderResult?.error || "No sample folder selected");
+        }
+
+        const allSamples = await fetchAllLibrarySamples();
+        if (allSamples.length === 0) {
+          return;
+        }
+
+        const missingSamples = await getMissingLocalSamples(greenroom, allSamples);
+
+        if (missingSamples.length === 0) {
+          setLocalStatusRefreshKey((prev) => prev + 1);
+          return;
+        }
+
+        setIsAutoSyncing(true);
+        setSyncProgress({ completed: 0, total: missingSamples.length });
+
+        for (let index = 0; index < missingSamples.length; index += SYNC_BATCH_SIZE) {
+          const batch = missingSamples.slice(index, index + SYNC_BATCH_SIZE);
+          const syncResult = await greenroom.syncLocalSamplesBatch(
+            batch.map((sample) => ({
+              sampleId: sample.id,
+              sampleName: sample.name,
+              artistName: sample.artist_name,
+            }))
+          );
+
+          if (!syncResult?.ok) {
+            throw new Error(syncResult?.error || "Library sync failed");
+          }
+
+          setSyncProgress({
+            completed: Math.min(index + batch.length, missingSamples.length),
+            total: missingSamples.length,
+          });
+        }
+
+        setLocalStatusRefreshKey((prev) => prev + 1);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Library sync failed";
+        toast.error(message);
+      } finally {
+        setIsAutoSyncing(false);
+      }
+    };
+
+    void runAutoSync();
+  }, [user, fetchAllLibrarySamples, getMissingLocalSamples]);
 
   // Infinite scroll
   useEffect(() => {
@@ -470,7 +681,7 @@ export default function LibraryPage() {
       if (user) fetchLibrary(0);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [fetchLibrary, searchQuery, user]);
 
   // Keyboard navigation
   const { selectedIndex } = useKeyboardNavigation(samples, {
@@ -509,7 +720,14 @@ export default function LibraryPage() {
                   className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
                 />
               </div>
-              
+
+              {isAutoSyncing && (
+                <div className="flex items-center gap-2 text-sm text-[#39b54a] whitespace-nowrap">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Syncing library {syncProgress.completed}/{syncProgress.total || total}...
+                </div>
+              )}
+
               {selectedIds.size > 0 && (
                 <Button
                   onClick={handleBulkDownload}
@@ -531,22 +749,11 @@ export default function LibraryPage() {
         {samples.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
-              <button onClick={selectAll} className="flex-shrink-0">
-                {selectedIds.size === samples.length && samples.length > 0 ? (
-                  <CheckSquare className="w-4 h-4 text-[#39b54a]" />
-                ) : (
-                  <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
-                )}
-              </button>
-              <div className="w-10" />
-              <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Key</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">BPM</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1] text-center">★</span>
-              <span className="text-xs font-medium text-[#a1a1a1]"></span>
-            </div>
+            <SampleTableHeader
+              variant="library"
+              onToggleAll={selectAll}
+              allSelected={selectedIds.size === total && total > 0}
+            />
 
             {/* Rows */}
             <div className="divide-y divide-[#2a2a2a]">
@@ -559,6 +766,7 @@ export default function LibraryPage() {
                   isSelected={selectedIndex === index}
                   onSelect={toggleSelect}
                   isChecked={selectedIds.has(sample.id)}
+                  statusRefreshKey={localStatusRefreshKey}
                 />
               ))}
             </div>

@@ -3,30 +3,8 @@
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Zap, Loader2 } from "lucide-react";
+import { PUBLIC_CREDIT_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { toast } from "sonner";
-
-const PACKS = [
-  {
-    credits: 50,
-    price: 5.99,
-    priceId: "price_1Sx9xM5k6Fwn7Cbz15vCSHwt",
-    perCredit: "0.12",
-  },
-  {
-    credits: 150,
-    price: 14.99,
-    priceId: "price_1Sx9xi5k6Fwn7CbzioLNev9W",
-    perCredit: "0.10",
-    popular: true,
-  },
-  {
-    credits: 400,
-    price: 34.99,
-    priceId: "price_1Sx9y35k6Fwn7CbzGeA0QXz1",
-    perCredit: "0.09",
-    bestValue: true,
-  },
-];
 
 export function CreditPackages() {
   const [loading, setLoading] = useState<string | null>(null);
@@ -65,7 +43,7 @@ export function CreditPackages() {
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {PACKS.map((pack) => (
+        {PUBLIC_CREDIT_PACKAGES.map((pack) => (
           <div
             key={pack.credits}
             className={`relative rounded-xl border p-5 transition ${
@@ -104,7 +82,7 @@ export function CreditPackages() {
 
             <Button
               onClick={() => handleBuy(pack.priceId)}
-              disabled={loading !== null}
+              disabled={loading !== null || !pack.priceId}
               className={`w-full font-semibold ${
                 pack.popular
                   ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
@@ -113,6 +91,8 @@ export function CreditPackages() {
             >
               {loading === pack.priceId ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
+              ) : !pack.priceId ? (
+                "Unavailable"
               ) : (
                 "Buy Now"
               )}

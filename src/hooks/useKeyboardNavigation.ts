@@ -44,29 +44,26 @@ export function useKeyboardNavigation<T>(
       switch (e.key) {
         case "ArrowUp":
           e.preventDefault();
-          setSelectedIndex((prev) => {
-            const newIndex = prev <= 0 ? items.length - 1 : prev - 1;
+          {
+            const newIndex = selectedIndex <= 0 ? items.length - 1 : selectedIndex - 1;
+            setSelectedIndex(newIndex);
             onSelect?.(newIndex);
-            // Auto-play when navigating
             onPlay?.(newIndex);
-            return newIndex;
-          });
+          }
           break;
 
         case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex((prev) => {
-            // If at end, trigger load more and stay at last item
-            if (prev >= items.length - 1) {
-              onReachEnd?.();
-              return prev;
-            }
-            const newIndex = prev + 1;
+          if (selectedIndex >= items.length - 1) {
+            onReachEnd?.();
+            break;
+          }
+          {
+            const newIndex = selectedIndex + 1;
+            setSelectedIndex(newIndex);
             onSelect?.(newIndex);
-            // Auto-play when navigating
             onPlay?.(newIndex);
-            return newIndex;
-          });
+          }
           break;
 
         case "ArrowRight":

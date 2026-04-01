@@ -4,50 +4,9 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
+import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
-
-const packages = [
-  {
-    name: "General Admission",
-    tierName: "GA",
-    credits: 100,
-    price: 10.99,
-    priceId: "price_1Sx90A5k6Fwn7Cbz1uGYPTpZ",
-    features: [
-      "Unused credits roll over",
-      "Cancel anytime",
-      "100% royalty free samples",
-    ],
-    highlighted: false,
-  },
-  {
-    name: "VIP",
-    tierName: "VIP",
-    credits: 200,
-    price: 18.99,
-    priceId: "price_1Sx90Q5k6Fwn7CbzwN0qSyDO",
-    features: [
-      "Unused credits roll over",
-      "Cancel anytime",
-      "100% royalty free samples",
-    ],
-    highlighted: true,
-  },
-  {
-    name: "All Access",
-    tierName: "AA",
-    credits: 500,
-    price: 34.99,
-    priceId: "price_1Sx90e5k6Fwn7CbzYPkArchS",
-    features: [
-      "Unused credits roll over",
-      "Cancel anytime",
-      "100% royalty free samples",
-    ],
-    highlighted: false,
-  },
-];
 
 export default function PricingPage() {
   return (
@@ -197,7 +156,7 @@ function PricingContent() {
 
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {packages.map((pkg) => (
+          {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => (
             <div
               key={pkg.name}
               className={`relative rounded-2xl border transition-all ${
@@ -252,7 +211,7 @@ function PricingContent() {
                 {/* CTA Button */}
                 <Button
                   onClick={() => handlePurchase(pkg.priceId)}
-                  disabled={loading !== null || userLoading}
+                  disabled={loading !== null || userLoading || !pkg.priceId}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted
                       ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
@@ -264,6 +223,8 @@ function PricingContent() {
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Loading...
                     </>
+                  ) : !pkg.priceId ? (
+                    "Unavailable"
                   ) : hasActiveSub ? (
                     "Change Plan"
                   ) : (

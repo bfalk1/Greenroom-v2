@@ -50,8 +50,16 @@ interface SubscriptionInfo {
   creditsPerMonth: number;
 }
 
+type GreenroomDesktopApi = {
+  isDesktop?: boolean;
+  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+};
+
 export default function AccountPage() {
   const { user, loading: userLoading, logout, refreshUser } = useUser();
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [sampleFolderPath, setSampleFolderPath] = useState<string | null>(null);
+  const [folderLoading, setFolderLoading] = useState(false);
   const [formData, setFormData] = useState({
     full_name: "",
     username: "",
@@ -73,6 +81,11 @@ export default function AccountPage() {
   const [emailSaving, setEmailSaving] = useState(false);
 
   // Set form data when user loads
+  useEffect(() => {
+    const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
+    setIsDesktop(Boolean(greenroom?.isDesktop));
+  }, []);
+
   useEffect(() => {
     if (user) {
       setFormData({
@@ -182,6 +195,30 @@ export default function AccountPage() {
     await logout();
   };
 
+  const handleChooseSampleFolder = async () => {
+    const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
+    if (!greenroom?.chooseLocalSampleFolder) {
+      toast.error("Desktop sample folder selection is unavailable.");
+      return;
+    }
+
+    setFolderLoading(true);
+    try {
+      const result = await greenroom.chooseLocalSampleFolder();
+      if (!result?.ok || !result.sampleFolderPath) {
+        throw new Error(result?.error || "No sample folder selected");
+      }
+
+      setSampleFolderPath(result.sampleFolderPath);
+      toast.success("Greenroom sample folder updated.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to choose sample folder";
+      toast.error(message);
+    } finally {
+      setFolderLoading(false);
+    }
+  };
+
   const handleEmailChange = async () => {
     if (!emailFormData.currentPassword || !emailFormData.newEmail) {
       toast.error("Please fill in all fields");
@@ -236,12 +273,43 @@ export default function AccountPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <h1 className="text-3xl font-bold text-white mb-8">Account Settings</h1>
+        <h1 className="text-3xl font-bold text-white mb-8">
+          {isDesktop ? "Desktop App Settings" : "Account Settings"}
+        </h1>
+
+        {isDesktop && (
+          <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
+            <h2 className="text-lg font-semibold text-white mb-4">Greenroom App</h2>
+            <p className="text-sm text-[#a1a1a1] mb-4">
+              Choose where Greenroom stores synced samples for instant drag and drop from your Library.
+            </p>
+            <div className="space-y-4">
+              <div className="rounded-lg bg-[#0a0a0a] border border-[#2a2a2a] px-4 py-3 text-sm text-[#a1a1a1] break-all">
+                {sampleFolderPath || "No sample folder selected yet."}
+              </div>
+              <Button
+                onClick={handleChooseSampleFolder}
+                disabled={folderLoading}
+                variant="outline"
+                className="border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
+              >
+                {folderLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Choosing Folder...
+                  </>
+                ) : (
+                  "Choose Sample Folder"
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Credits & Stats Section */}
         <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
           <h2 className="text-lg font-semibold text-white mb-6">
-            Account Overview
+            {isDesktop ? "Account Overview" : "Account Overview"}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
@@ -270,6 +338,52 @@ export default function AccountPage() {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Recent Transactions */}
+        {transactions.length > 0 && (
+          <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
+            <h2 className="text-lg font-semibold text-white mb-6">
+              Recent Credit Activity
+            </h2>
+            <div className="space-y-4">
+              {transactions.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between py-3 border-b border-[#2a2a2a] last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    {tx.amount > 0 ? (
+                      <ArrowUpRight className="w-4 h-4 text-green-400" />
+                    ) : (
+                      <ArrowDownRight className="w-4 h-4 text-red-400" />
+                    )}
+                    <div>
+                      <p className="text-white text-sm font-medium">
+                        {tx.note || tx.type}
+                      </p>
+                      <p className="text-[#a1a1a1] text-xs">
+                        {new Date(tx.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`font-semibold ${
+                      tx.amount > 0 ? "text-green-400" : "text-red-400"
+                    }`}
+                  >
+                    {tx.amount > 0 ? "+" : ""}
+                    {tx.amount}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Buy Credits */}
+        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
+          <CreditPackages />
         </div>
 
         {/* Subscription Section */}
@@ -355,52 +469,6 @@ export default function AccountPage() {
             </Button>
           </div>
         )}
-
-        {/* Recent Transactions */}
-        {transactions.length > 0 && (
-          <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
-            <h2 className="text-lg font-semibold text-white mb-6">
-              Recent Credit Activity
-            </h2>
-            <div className="space-y-4">
-              {transactions.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="flex items-center justify-between py-3 border-b border-[#2a2a2a] last:border-0"
-                >
-                  <div className="flex items-center gap-3">
-                    {tx.amount > 0 ? (
-                      <ArrowUpRight className="w-4 h-4 text-green-400" />
-                    ) : (
-                      <ArrowDownRight className="w-4 h-4 text-red-400" />
-                    )}
-                    <div>
-                      <p className="text-white text-sm font-medium">
-                        {tx.note || tx.type}
-                      </p>
-                      <p className="text-[#a1a1a1] text-xs">
-                        {new Date(tx.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className={`font-semibold ${
-                      tx.amount > 0 ? "text-green-400" : "text-red-400"
-                    }`}
-                  >
-                    {tx.amount > 0 ? "+" : ""}
-                    {tx.amount}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Buy Credits */}
-        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
-          <CreditPackages />
-        </div>
 
         {/* Profile Section */}
         <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">

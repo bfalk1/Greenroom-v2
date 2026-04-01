@@ -1,14 +1,37 @@
-const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme } = require('electron');
+/* eslint-disable @typescript-eslint/no-require-imports */
+const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
 const http = require('http');
 
-// Temp directory for drag-and-drop files (set after app ready)
-let TEMP_DIR = null;
+let LOCAL_SAMPLE_DIR = null;
+let LOCAL_SAMPLE_INDEX_PATH = null;
+let LOCAL_SETTINGS_PATH = null;
+const pendingSampleDownloads = new Map();
+let localSampleIndex = {};
+let localSettings = {};
 
-// Production URL
-const GREENROOM_URL = 'https://greenroom-v2.vercel.app';
+const DEV_SERVER_URL = process.env.GREENROOM_DEV_URL || 'http://localhost:3000';
+const PROD_SERVER_URL = 'https://greenroom-v2.vercel.app';
+const GREENROOM_URL =
+  process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
+    ? DEV_SERVER_URL
+    : PROD_SERVER_URL;
+
+function logDragDebug(message, details = {}) {
+  console.log(`[drag-main] ${message}`, {
+    at: new Date().toISOString(),
+    ...details,
+  });
+}
+
+function logLocalStoreDebug(message, details = {}) {
+  console.log(`[local-store] ${message}`, {
+    at: new Date().toISOString(),
+    ...details,
+  });
+}
 
 // Force dark mode for consistent appearance
 nativeTheme.themeSource = 'dark';
@@ -102,48 +125,6 @@ function createWindow() {
   // Start at marketplace
   mainWindow.loadURL(`${GREENROOM_URL}/marketplace`);
   
-  // Inject CSS/JS directly after page loads (backup for preload)
-  mainWindow.webContents.on('did-finish-load', () => {
-    mainWindow.webContents.executeJavaScript(`
-      console.log('%c🎵 GREENROOM Desktop Injection Running', 'color: #39b54a; font-weight: bold;');
-      
-      // Inject CSS
-      if (!document.getElementById('gr-desktop-css')) {
-        const style = document.createElement('style');
-        style.id = 'gr-desktop-css';
-        style.textContent = \`
-          /* Hide footer */
-          footer, [class*="Footer"] { display: none !important; }
-          
-          /* Hide admin/mod/creator nav */
-          a[href*="/admin"], a[href*="/mod"], a[href*="/creator"] { display: none !important; }
-          
-          /* Title bar drag */
-          header { -webkit-app-region: drag; padding-top: 12px !important; }
-          header *, header a, header button { -webkit-app-region: no-drag; }
-          
-          /* Scrollbar */
-          ::-webkit-scrollbar { width: 8px; }
-          ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-        \`;
-        document.head.appendChild(style);
-      }
-      
-      // Hide nav items by text
-      const hideNav = () => {
-        document.querySelectorAll('nav a, header a').forEach(el => {
-          const t = el.textContent?.toLowerCase() || '';
-          if (t.includes('moderation') || t.includes('admin') || t === 'creator' || t.includes('dashboard') || t.includes('earnings')) {
-            el.style.display = 'none';
-          }
-        });
-      };
-      hideNav();
-      setInterval(hideNav, 500);
-      new MutationObserver(hideNav).observe(document.body, { childList: true, subtree: true });
-    `).catch(err => console.error('Injection failed:', err));
-  });
-
   // Handle new window requests
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Same origin check
@@ -335,113 +316,450 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => mainWindow?.close());
 
-// Download file helper
-function downloadFile(url, destPath) {
+function sanitizeSampleFilename(sampleName) {
+  const baseName = String(sampleName || 'sample')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return `${baseName || 'sample'}.wav`;
+}
+
+function sanitizeArtistFolderName(artistName) {
+  return String(artistName || 'Unknown Artist')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Unknown Artist';
+}
+
+function getSampleLocalPath(sampleId, sampleName, artistName) {
+  const artistFolder = sanitizeArtistFolderName(artistName);
+  const filename = sanitizeSampleFilename(sampleName);
+  return path.join(LOCAL_SAMPLE_DIR, artistFolder, filename);
+}
+
+function fileExists(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.isFile() && stats.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+function ensureLocalStoreReady() {
+  if (!LOCAL_SAMPLE_INDEX_PATH) {
+    LOCAL_SAMPLE_INDEX_PATH = path.join(app.getPath('userData'), 'local-samples.json');
+  }
+  if (!LOCAL_SETTINGS_PATH) {
+    LOCAL_SETTINGS_PATH = path.join(app.getPath('userData'), 'desktop-settings.json');
+  }
+}
+
+function loadLocalSettings() {
+  ensureLocalStoreReady();
+  try {
+    if (!fs.existsSync(LOCAL_SETTINGS_PATH)) {
+      localSettings = {};
+      return;
+    }
+
+    const raw = fs.readFileSync(LOCAL_SETTINGS_PATH, 'utf8');
+    localSettings = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.error('[local-store] Failed to load local settings:', error);
+    localSettings = {};
+  }
+}
+
+function saveLocalSettings() {
+  ensureLocalStoreReady();
+  fs.writeFileSync(LOCAL_SETTINGS_PATH, JSON.stringify(localSettings, null, 2));
+}
+
+async function ensureLocalSampleDirectory(promptIfMissing = false) {
+  ensureLocalStoreReady();
+
+  if (localSettings.sampleFolderPath) {
+    LOCAL_SAMPLE_DIR = localSettings.sampleFolderPath;
+    if (!fs.existsSync(LOCAL_SAMPLE_DIR)) {
+      fs.mkdirSync(LOCAL_SAMPLE_DIR, { recursive: true });
+    }
+    return LOCAL_SAMPLE_DIR;
+  }
+
+  if (!promptIfMissing) {
+    return null;
+  }
+
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose Greenroom Sample Folder',
+    buttonLabel: 'Use Folder',
+    defaultPath: path.join(app.getPath('downloads'), 'Greenroom'),
+    properties: ['openDirectory', 'createDirectory'],
+    message: 'Choose where Greenroom should store synced samples for instant drag and drop.',
+  });
+
+  if (result.canceled || !result.filePaths?.[0]) {
+    throw new Error('No sample folder selected');
+  }
+
+  LOCAL_SAMPLE_DIR = result.filePaths[0];
+  fs.mkdirSync(LOCAL_SAMPLE_DIR, { recursive: true });
+  localSettings.sampleFolderPath = LOCAL_SAMPLE_DIR;
+  saveLocalSettings();
+  logLocalStoreDebug('sample folder selected', { sampleFolderPath: LOCAL_SAMPLE_DIR });
+  return LOCAL_SAMPLE_DIR;
+}
+
+function loadLocalSampleIndex() {
+  ensureLocalStoreReady();
+  try {
+    if (!fs.existsSync(LOCAL_SAMPLE_INDEX_PATH)) {
+      localSampleIndex = {};
+      return;
+    }
+
+    const raw = fs.readFileSync(LOCAL_SAMPLE_INDEX_PATH, 'utf8');
+    localSampleIndex = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.error('[local-store] Failed to load local sample index:', error);
+    localSampleIndex = {};
+  }
+}
+
+function saveLocalSampleIndex() {
+  ensureLocalStoreReady();
+  fs.writeFileSync(LOCAL_SAMPLE_INDEX_PATH, JSON.stringify(localSampleIndex, null, 2));
+}
+
+function getStoredSampleRecord(sampleId, sampleName, artistName) {
+  const record = localSampleIndex[sampleId];
+  if (record) {
+    if (!fileExists(record.localPath)) {
+      delete localSampleIndex[sampleId];
+      saveLocalSampleIndex();
+    } else {
+      if (sampleName && record.sampleName !== sampleName) {
+        record.sampleName = sampleName;
+        record.updatedAt = new Date().toISOString();
+        saveLocalSampleIndex();
+      }
+
+      return record;
+    }
+  }
+
+  if (LOCAL_SAMPLE_DIR) {
+    const canonicalLocalPath = getSampleLocalPath(sampleId, sampleName, artistName);
+    if (fileExists(canonicalLocalPath)) {
+      return updateStoredSampleRecord(sampleId, sampleName, canonicalLocalPath);
+    }
+  }
+
+  return null;
+}
+
+function updateStoredSampleRecord(sampleId, sampleName, localPath) {
+  localSampleIndex[sampleId] = {
+    sampleId,
+    sampleName,
+    localPath,
+    syncedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  saveLocalSampleIndex();
+  logLocalStoreDebug('updated sample record', {
+    sampleId,
+    sampleName,
+    filePath: path.basename(localPath),
+  });
+  return localSampleIndex[sampleId];
+}
+
+function getLocalSampleStatus(sampleId, sampleName, artistName) {
+  const record = getStoredSampleRecord(sampleId, sampleName, artistName);
+  if (!record) {
+    return {
+      sampleId,
+      sampleName,
+      isLocal: false,
+    };
+  }
+
+  return {
+    sampleId,
+    sampleName,
+    isLocal: true,
+    localPath: record.localPath,
+    syncedAt: record.syncedAt,
+  };
+}
+
+async function getDesktopDownloadHeaders() {
+  const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
+  const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+  return {
+    'User-Agent': 'GREENROOM-Desktop/1.4.0',
+    ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+  };
+}
+
+function downloadFileWithHeaders(url, destPath, headers, redirectCount = 0) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(destPath);
-    const protocol = url.startsWith('https') ? https : http;
-    
-    protocol.get(url, (response) => {
-      // Handle redirects
-      if (response.statusCode === 301 || response.statusCode === 302) {
-        downloadFile(response.headers.location, destPath)
-          .then(resolve)
-          .catch(reject);
-        return;
+    if (redirectCount > 5) {
+      reject(new Error('Too many redirects while preparing sample drag'));
+      return;
+    }
+
+    const tempDownloadPath = `${destPath}.download`;
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    if (fs.existsSync(tempDownloadPath)) {
+      fs.unlinkSync(tempDownloadPath);
+    }
+
+    const requestUrl = new URL(url);
+    const protocol = requestUrl.protocol === 'https:' ? https : http;
+    const file = fs.createWriteStream(tempDownloadPath);
+
+    const cleanup = () => {
+      file.destroy();
+      fs.unlink(tempDownloadPath, () => {});
+    };
+
+    const request = protocol.get(
+      requestUrl,
+      { headers },
+      (response) => {
+        const { statusCode = 0, headers: responseHeaders } = response;
+
+        if ([301, 302, 303, 307, 308].includes(statusCode)) {
+          file.close(() => {
+            fs.unlink(tempDownloadPath, () => {});
+            const location = responseHeaders.location;
+            if (!location) {
+              reject(new Error('Redirected download missing location header'));
+              return;
+            }
+
+            const nextUrl = new URL(location, requestUrl).toString();
+            const nextHeaders = new URL(nextUrl).origin === new URL(GREENROOM_URL).origin
+              ? headers
+              : { 'User-Agent': headers['User-Agent'] };
+
+            downloadFileWithHeaders(nextUrl, destPath, nextHeaders, redirectCount + 1)
+              .then(resolve)
+              .catch(reject);
+          });
+          return;
+        }
+
+        if (statusCode !== 200) {
+          cleanup();
+          reject(new Error(`Failed to download: ${statusCode}`));
+          return;
+        }
+
+        response.pipe(file);
+        file.on('finish', () => {
+          file.close((closeErr) => {
+            if (closeErr) {
+              reject(closeErr);
+              return;
+            }
+
+            fs.rename(tempDownloadPath, destPath, (renameErr) => {
+              if (renameErr) {
+                fs.unlink(tempDownloadPath, () => {});
+                reject(renameErr);
+                return;
+              }
+              resolve(destPath);
+            });
+          });
+        });
       }
-      
-      if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download: ${response.statusCode}`));
-        return;
-      }
-      
-      response.pipe(file);
-      file.on('finish', () => {
-        file.close();
-        resolve(destPath);
-      });
-    }).on('error', (err) => {
-      fs.unlink(destPath, () => {});
+    );
+
+    request.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
+
+    file.on('error', (err) => {
+      cleanup();
       reject(err);
     });
   });
 }
 
-// IPC Handler for drag-and-drop to DAW
-// Drag to DAW - download and start drag in one call
-ipcMain.on('start-sample-drag', async (event, { sampleId, sampleName }) => {
+async function ensureSampleDownloaded(sampleId, sampleName, artistName) {
+  await ensureLocalSampleDirectory(true);
+  const existingRecord = getStoredSampleRecord(sampleId, sampleName, artistName);
+  if (existingRecord) {
+    logLocalStoreDebug('local sample hit', {
+      sampleId,
+      sampleName,
+      filePath: path.basename(existingRecord.localPath),
+    });
+    return existingRecord.localPath;
+  }
+
+  const cacheKey = `${sampleId}:${sampleName}`;
+  if (pendingSampleDownloads.has(cacheKey)) {
+    logLocalStoreDebug('reuse in-flight sync', { sampleId, sampleName });
+    return pendingSampleDownloads.get(cacheKey);
+  }
+
+  const downloadPromise = (async () => {
+    const startedAt = Date.now();
+    const localPath = getSampleLocalPath(sampleId, sampleName, artistName);
+    logLocalStoreDebug('sync download start', { sampleId, sampleName, artistName });
+    const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
+    const headers = await getDesktopDownloadHeaders();
+    await downloadFileWithHeaders(downloadUrl, localPath, headers);
+    logLocalStoreDebug('sync download finished', {
+      sampleId,
+      sampleName,
+      artistName,
+      elapsedMs: Date.now() - startedAt,
+      filePath: path.basename(localPath),
+    });
+    updateStoredSampleRecord(sampleId, sampleName, localPath);
+    return localPath;
+  })().finally(() => {
+    logLocalStoreDebug('clear in-flight sync', { sampleId, sampleName });
+    pendingSampleDownloads.delete(cacheKey);
+  });
+
+  pendingSampleDownloads.set(cacheKey, downloadPromise);
+  return downloadPromise;
+}
+
+ipcMain.handle('get-local-sample-status', (_event, { sampleId, sampleName, artistName }) => {
   try {
-    const filename = `${sampleName.replace(/[^a-zA-Z0-9-_]/g, '_')}.wav`;
-    const tempPath = path.join(TEMP_DIR, filename);
-    
-    // Check if already downloaded
-    if (!fs.existsSync(tempPath)) {
-      // Downloading sample...
-      
-      // Download via the web session (includes auth cookies)
-      const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
-      const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
-      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-      
-      await new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(tempPath);
-        
-        https.get(downloadUrl, {
-          headers: {
-            'Cookie': cookieHeader,
-            'User-Agent': 'GREENROOM-Desktop/1.4.0',
-          }
-        }, (response) => {
-          if (response.statusCode === 301 || response.statusCode === 302) {
-            https.get(response.headers.location, (redirectRes) => {
-              redirectRes.pipe(file);
-              file.on('finish', () => { file.close(); resolve(null); });
-            }).on('error', reject);
-            return;
-          }
-          
-          if (response.statusCode !== 200) {
-            reject(new Error(`Download failed: ${response.statusCode}`));
-            return;
-          }
-          
-          response.pipe(file);
-          file.on('finish', () => { file.close(); resolve(null); });
-        }).on('error', reject);
+    const status = getLocalSampleStatus(sampleId, sampleName, artistName);
+    const sampleFolderPath = localSettings.sampleFolderPath || null;
+    return { ok: true, status: { ...status, sampleFolderPath } };
+  } catch (err) {
+    console.error('[local-store] Failed to get status:', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to get local sample status',
+    };
+  }
+});
+
+ipcMain.handle('sync-local-sample', async (_event, { sampleId, sampleName, artistName }) => {
+  try {
+    const startedAt = Date.now();
+    logLocalStoreDebug('sync requested', { sampleId, sampleName, artistName });
+    const filePath = await ensureSampleDownloaded(sampleId, sampleName, artistName);
+    const status = getLocalSampleStatus(sampleId, sampleName, artistName);
+    logLocalStoreDebug('sync resolved', {
+      sampleId,
+      sampleName,
+      artistName,
+      elapsedMs: Date.now() - startedAt,
+      filePath: path.basename(filePath),
+    });
+    return { ok: true, status };
+  } catch (err) {
+    console.error('[local-store] Failed to sync sample:', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to sync sample',
+    };
+  }
+});
+
+ipcMain.handle('choose-local-sample-folder', async () => {
+  try {
+    const sampleFolderPath = await ensureLocalSampleDirectory(true);
+    return { ok: true, sampleFolderPath };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to choose sample folder',
+    };
+  }
+});
+
+ipcMain.handle('sync-local-samples-batch', async (_event, { samples = [] }) => {
+  try {
+    const results = [];
+    for (const sample of samples) {
+      const localPath = await ensureSampleDownloaded(sample.sampleId, sample.sampleName, sample.artistName);
+      results.push({
+        sampleId: sample.sampleId,
+        sampleName: sample.sampleName,
+        localPath,
       });
     }
-    
-    // Start native drag
-    const iconPath = path.join(__dirname, 'assets', 'icon.png');
-    event.sender.startDrag({
-      file: tempPath,
-      icon: fs.existsSync(iconPath) ? iconPath : undefined,
-    });
-    
-    // Drag started
+    return { ok: true, results };
   } catch (err) {
-    console.error('Drag failed:', err);
+    console.error('[local-store] Failed to sync sample batch:', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to sync sample batch',
+    };
+  }
+});
+
+// IPC Handler for drag-and-drop to DAW
+ipcMain.on('start-local-sample-drag', (event, { sampleId, sampleName }) => {
+  try {
+    const localStatus = getLocalSampleStatus(sampleId, sampleName);
+    const tempPath = localStatus.localPath;
+    logDragDebug('ipc start drag requested', {
+      sampleId,
+      sampleName,
+      fileExists: tempPath ? fileExists(tempPath) : false,
+      filePath: tempPath ? path.basename(tempPath) : null,
+    });
+    if (!tempPath || !fileExists(tempPath)) {
+      console.warn('[drag-main] Local sample drag requested before file was local:', sampleName);
+      return;
+    }
+
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    const dragPayload = {
+      sampleId,
+      sampleName,
+      filePath: path.basename(tempPath),
+    };
+
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+
+      event.sender.startDrag({
+        file: tempPath,
+        icon: fs.existsSync(iconPath) ? iconPath : undefined,
+      });
+
+      logDragDebug('startDrag invoked', dragPayload);
+    }, 0);
+  } catch (err) {
+    console.error('[drag-main] Drag failed:', err);
   }
 });
 
 // Clean up temp files on quit
 app.on('before-quit', () => {
-  try {
-    if (fs.existsSync(TEMP_DIR)) {
-      fs.rmSync(TEMP_DIR, { recursive: true, force: true });
-    }
-  } catch (e) {
-    console.log('Could not clean temp dir:', e.message);
-  }
+  saveLocalSampleIndex();
 });
 
 // Handle download requests (for sample downloads)
 app.on('ready', () => {
-  // Initialize temp directory for drag-and-drop
-  TEMP_DIR = path.join(app.getPath('temp'), 'greenroom-samples');
-  if (!fs.existsSync(TEMP_DIR)) {
-    fs.mkdirSync(TEMP_DIR, { recursive: true });
+  ensureLocalStoreReady();
+  loadLocalSettings();
+  if (localSettings.sampleFolderPath) {
+    LOCAL_SAMPLE_DIR = localSettings.sampleFolderPath;
   }
+  loadLocalSampleIndex();
   
   createMenu();
   createWindow();
@@ -469,7 +787,7 @@ app.on('ready', () => {
   }
 
   // Set up download handling
-  mainWindow.webContents.session.on('will-download', (event, item, webContents) => {
+  mainWindow.webContents.session.on('will-download', (event, item) => {
     // Let downloads proceed naturally
     item.on('updated', (event, state) => {
       if (state === 'progressing') {

@@ -8,10 +8,33 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search");
     const category = searchParams.get("category");
+    const usedOnly = searchParams.get("usedOnly") === "true";
 
     let instruments;
 
-    if (search || category) {
+    if (usedOnly) {
+      instruments = (
+        await prisma.sample.findMany({
+          where: {
+            status: "PUBLISHED",
+            isActive: true,
+          },
+          distinct: ["instrumentType"],
+          select: { instrumentType: true },
+          orderBy: { instrumentType: "asc" },
+        })
+      )
+        .map((sample) => sample.instrumentType)
+        .filter((name): name is string => Boolean(name))
+        .map((name) => ({
+          id: name,
+          name,
+          normalizedName: name.toLowerCase().replace(/\s+/g, "-"),
+          category: null,
+          usageCount: 0,
+          isActive: true,
+        }));
+    } else if (search || category) {
       const whereClause: Record<string, unknown> = { isActive: true };
       
       if (search) {

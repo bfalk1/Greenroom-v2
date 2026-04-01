@@ -52,6 +52,17 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   
   const PAGE_SIZE = 20;
 
+  const dedupeSamples = useCallback((items: Sample[]) => {
+    const seenIds = new Set<string>();
+    return items.filter((sample) => {
+      if (seenIds.has(sample.id)) {
+        return false;
+      }
+      seenIds.add(sample.id);
+      return true;
+    });
+  }, []);
+
   const fetchArtist = useCallback(async () => {
     try {
       setLoading(true);
@@ -68,7 +79,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
 
       const data = await res.json();
       setArtist(data.artist);
-      setSamples(data.samples);
+      setSamples(dedupeSamples(data.samples || []));
       setHasMore(data.hasMore ?? false);
     } catch (error) {
       console.error("Error fetching artist:", error);
@@ -76,7 +87,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [slug]);
+  }, [dedupeSamples, slug]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
@@ -88,14 +99,17 @@ export default function ArtistPage({ params }: ArtistPageProps) {
       if (!res.ok) throw new Error("Failed to load more samples");
       
       const data = await res.json();
-      setSamples((prev) => [...prev, ...data.samples]);
-      setHasMore(data.hasMore ?? false);
+      const incomingSamples = data.samples || [];
+      setHasMore(
+        incomingSamples.length < PAGE_SIZE ? false : (data.hasMore ?? false)
+      );
+      setSamples((prev) => dedupeSamples([...prev, ...incomingSamples]));
     } catch (error) {
       console.error("Error loading more samples:", error);
     } finally {
       setLoadingMore(false);
     }
-  }, [slug, samples.length, loadingMore, hasMore]);
+  }, [dedupeSamples, slug, samples.length, loadingMore, hasMore]);
 
   const fetchPurchases = useCallback(async () => {
     if (!user) return;

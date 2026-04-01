@@ -3,13 +3,31 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 
 // GET /api/genres - List all active genres
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const genres = await prisma.genre.findMany({
-      where: { isActive: true },
-      orderBy: [{ usageCount: "desc" }, { name: "asc" }],
-      select: { id: true, name: true, usageCount: true },
-    });
+    const { searchParams } = new URL(request.url);
+    const usedOnly = searchParams.get("usedOnly") === "true";
+
+    const genres = usedOnly
+      ? (
+          await prisma.sample.findMany({
+            where: {
+              status: "PUBLISHED",
+              isActive: true,
+            },
+            distinct: ["genre"],
+            select: { genre: true },
+            orderBy: { genre: "asc" },
+          })
+        )
+          .map((sample) => sample.genre)
+          .filter((genre): genre is string => Boolean(genre))
+          .map((name) => ({ id: name, name, usageCount: 0 }))
+      : await prisma.genre.findMany({
+          where: { isActive: true },
+          orderBy: [{ usageCount: "desc" }, { name: "asc" }],
+          select: { id: true, name: true, usageCount: true },
+        });
 
     return NextResponse.json({ genres });
   } catch (error) {

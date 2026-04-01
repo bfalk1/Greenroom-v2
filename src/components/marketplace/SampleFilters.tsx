@@ -152,12 +152,17 @@ function SearchableSelect({
 }
 
 export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
+  const [mounted, setMounted] = useState(false);
   const [genre, setGenre] = useState("all");
   const [instrumentType, setInstrumentType] = useState("all");
   const [sampleType, setSampleType] = useState("all");
   const [key, setKey] = useState("all");
   const [sortBy, setSortBy] = useState("random");
   const [genres, setGenres] = useState<string[]>([]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Fetch genres from API
   useEffect(() => {
@@ -198,6 +203,17 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       sortBy: newSort,
     });
   };
+
+  if (!mounted) {
+    return (
+      <div className="flex flex-wrap gap-4 mb-8 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-[#39b54a]" />
+          <span className="text-sm font-medium text-white">Filter:</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap gap-4 mb-8 p-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">

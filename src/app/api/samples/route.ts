@@ -168,41 +168,64 @@ export async function GET(request: NextRequest) {
       // Get total count
       total = await prisma.sample.count({ where });
       
-      // For random: fetch using raw SQL with RANDOM() for true randomization
-      // Use a seed based on the current hour to provide some consistency for pagination
+      // Build each random page from several seeded windows across the catalog.
+      // This is still "good enough" random, but feels less locally clustered
+      // than shuffling one contiguous slice.
       const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
-      
-      // Fetch with random ordering - we use Prisma but shuffle the results
-      // For better randomization, we fetch a larger pool and shuffle
-      const poolSize = Math.min(total, Math.max(limit * 3, 100));
-      const rawSamples = await prisma.sample.findMany({
-        where,
-        take: poolSize,
-        include: {
-          creator: {
-            select: {
-              id: true,
-              artistName: true,
-              username: true,
-              avatarUrl: true,
-            },
-          },
-        },
-      });
-      
-      // Seeded shuffle for consistent pagination within the hour
+      const randomBatchSize = Math.max(limit * 5, 100);
+      const batchIndex = Math.floor(offset / randomBatchSize);
+      const offsetInBatch = offset - batchIndex * randomBatchSize;
+      const windowCount = Math.min(5, Math.max(2, Math.ceil(randomBatchSize / Math.max(limit, 1))));
+      const windowSize = Math.max(limit * 2, Math.ceil(randomBatchSize / windowCount));
+      const maxWindowStart = Math.max(total - windowSize, 0);
+
       const seededRandom = (seed: number) => {
         const x = Math.sin(seed) * 10000;
         return x - Math.floor(x);
       };
+
+      const windowQueries = Array.from({ length: windowCount }, (_, windowIndex) => {
+        const seed = hourSeed + batchIndex * 997 + windowIndex * 131;
+        const skip = maxWindowStart === 0
+          ? 0
+          : Math.floor(seededRandom(seed) * (maxWindowStart + 1));
+
+        return prisma.sample.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: windowSize,
+          include: {
+            creator: {
+              select: {
+                id: true,
+                artistName: true,
+                username: true,
+                avatarUrl: true,
+              },
+            },
+          },
+        });
+      });
+
+      const windowResults = await Promise.all(windowQueries);
+      const dedupedSamples = new Map<string, (typeof windowResults)[number][number]>();
+      for (const windowSamples of windowResults) {
+        for (const sample of windowSamples) {
+          dedupedSamples.set(sample.id, sample);
+        }
+      }
+
+      const rawSamples = [...dedupedSamples.values()];
       
+      // Seeded shuffle for consistent pagination within the hour
       const shuffled = [...rawSamples].sort((a, b) => {
         const seedA = hourSeed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
         const seedB = hourSeed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
         return seededRandom(seedA) - seededRandom(seedB);
       });
       
-      samples = shuffled.slice(offset, offset + limit);
+      samples = shuffled.slice(offsetInBatch, offsetInBatch + limit);
     } else {
       // For rating/popular sorts, we need to fetch extra to shuffle tied items properly
       const needsTiebreaker = sortBy === "rating" || sortBy === "popular";

@@ -1,14 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
+import { PUBLIC_CREDIT_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { NextResponse } from "next/server";
 
-// Map price IDs to credit amounts
-const CREDIT_PACKS: Record<string, number> = {
-  "price_1Sx9xM5k6Fwn7Cbz15vCSHwt": 50,
-  "price_1Sx9xi5k6Fwn7CbzioLNev9W": 150,
-  "price_1Sx9y35k6Fwn7CbzGeA0QXz1": 400,
-};
+const CREDIT_PACKS = Object.fromEntries(
+  PUBLIC_CREDIT_PACKAGES.filter((pack) => pack.priceId).map((pack) => [
+    pack.priceId,
+    pack.credits,
+  ])
+) as Record<string, number>;
 
 export async function POST(request: Request) {
   try {

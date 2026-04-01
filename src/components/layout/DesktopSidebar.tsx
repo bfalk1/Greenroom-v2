@@ -77,7 +77,7 @@ export function DesktopSidebar() {
               <span className="text-xs text-[#666]">credits</span>
             </div>
             
-            <NavItem href="/account" icon={Settings} label="Settings" />
+            <NavItem href="/account" icon={Settings} label="App Settings" />
             
             <button
               onClick={logout}

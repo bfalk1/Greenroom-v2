@@ -1,8 +1,83 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Preload script - runs before web content loads
 const { contextBridge, ipcRenderer } = require('electron');
 
 const isMac = process.platform === 'darwin';
 const APP_VERSION = '1.4.0';
+const STARTUP_OVERLAY_ID = 'greenroom-desktop-loading-overlay';
+const STARTUP_LOADING_CLASS = 'greenroom-desktop-loading';
+
+function setupStartupLoadingScreen() {
+  let overlayDismissed = false;
+  let fallbackTimer = null;
+
+  const dismissOverlay = () => {
+    if (overlayDismissed) {
+      return;
+    }
+
+    overlayDismissed = true;
+    window.removeEventListener('greenroom:desktop-shell-ready', dismissOverlay);
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer);
+      fallbackTimer = null;
+    }
+
+    const overlay = document.getElementById(STARTUP_OVERLAY_ID);
+    document.documentElement.classList.remove(STARTUP_LOADING_CLASS);
+
+    if (!overlay) {
+      return;
+    }
+
+    overlay.classList.add('is-hidden');
+    window.setTimeout(() => overlay.remove(), 220);
+  };
+
+  const ensureOverlay = () => {
+    if (!document.documentElement || document.getElementById(STARTUP_OVERLAY_ID)) {
+      return;
+    }
+
+    document.documentElement.classList.add(STARTUP_LOADING_CLASS);
+
+    const overlay = document.createElement('div');
+    overlay.id = STARTUP_OVERLAY_ID;
+    overlay.innerHTML = `
+      <div class="greenroom-desktop-loading__content">
+        <div class="greenroom-desktop-loading__logo">GREENROOM</div>
+        <div class="greenroom-desktop-loading__status">Loading desktop app...</div>
+      </div>
+    `;
+
+    if (document.body) {
+      document.body.appendChild(overlay);
+    } else {
+      document.documentElement.appendChild(overlay);
+    }
+  };
+
+  const start = () => {
+    ensureOverlay();
+    window.addEventListener('greenroom:desktop-shell-ready', dismissOverlay, { once: true });
+
+    fallbackTimer = window.setTimeout(() => {
+      dismissOverlay();
+    }, 2500);
+  };
+
+  if (document.readyState === 'loading') {
+    if (document.documentElement) {
+      start();
+    } else {
+      window.addEventListener('DOMContentLoaded', start, { once: true });
+    }
+  } else {
+    start();
+  }
+}
+
+setupStartupLoadingScreen();
 
 // Expose limited APIs to the renderer
 contextBridge.exposeInMainWorld('greenroom', {
@@ -12,10 +87,23 @@ contextBridge.exposeInMainWorld('greenroom', {
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
-  startSampleDrag: (sampleId, sampleName) => ipcRenderer.send('start-sample-drag', { sampleId, sampleName }),
+  getLocalSampleStatus: async (sampleId, sampleName, artistName) => {
+    return ipcRenderer.invoke('get-local-sample-status', { sampleId, sampleName, artistName });
+  },
+  chooseLocalSampleFolder: () => ipcRenderer.invoke('choose-local-sample-folder'),
+  syncLocalSample: async (sampleId, sampleName, artistName) => {
+    return ipcRenderer.invoke('sync-local-sample', { sampleId, sampleName, artistName });
+  },
+  syncLocalSamplesBatch: (samples) => ipcRenderer.invoke('sync-local-samples-batch', { samples }),
+  startSampleDrag: (sampleId, sampleName) => ipcRenderer.send('start-local-sample-drag', { sampleId, sampleName }),
+  onNativeDragRecovery: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('native-drag-recovery', listener);
+    return () => ipcRenderer.removeListener('native-drag-recovery', listener);
+  },
 });
-
-console.log('%c🎵 GREENROOM Desktop v' + APP_VERSION, 'color: #39b54a; font-weight: bold; font-size: 14px;');
 
 // Inject CSS immediately (before DOMContentLoaded)
 const injectStyles = () => {
@@ -23,22 +111,56 @@ const injectStyles = () => {
   style.id = 'greenroom-desktop-styles';
   style.textContent = `
     /* GREENROOM DESKTOP APP STYLES */
-    
-    /* Hide footer */
-    footer, .footer, [class*="Footer"] {
-      display: none !important;
+
+    html.${STARTUP_LOADING_CLASS}, html.${STARTUP_LOADING_CLASS} body {
+      background: linear-gradient(180deg, #0a0a0a 0%, #141414 55%, #0a0a0a 100%) !important;
     }
-    
-    /* Hide admin/mod/creator nav - multiple selectors */
-    a[href*="/admin"],
-    a[href*="/mod"],
-    a[href*="/creator"],
-    a[href*="admin"],
-    a[href*="mod"],
-    a[href*="creator"] {
-      display: none !important;
+
+    html.${STARTUP_LOADING_CLASS} body > *:not(#${STARTUP_OVERLAY_ID}):not(script):not(style) {
+      visibility: hidden !important;
     }
-    
+
+    #${STARTUP_OVERLAY_ID} {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(180deg, #0a0a0a 0%, #141414 55%, #0a0a0a 100%);
+      color: #ffffff;
+      opacity: 1;
+      transition: opacity 180ms ease;
+      pointer-events: none;
+    }
+
+    #${STARTUP_OVERLAY_ID}.is-hidden {
+      opacity: 0;
+    }
+
+    .greenroom-desktop-loading__content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .greenroom-desktop-loading__logo {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.35em;
+      padding-left: 0.35em;
+    }
+
+    .greenroom-desktop-loading__status {
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.55);
+    }
+
     /* Draggable title bar */
     header {
       -webkit-app-region: drag;
@@ -75,49 +197,35 @@ const injectStyles = () => {
 if (document.head) {
   injectStyles();
 } else {
-  // Wait for head to exist
-  const observer = new MutationObserver(() => {
+  // Wait for the document tree to exist before observing it.
+  const startObserving = () => {
     if (document.head) {
-      observer.disconnect();
       injectStyles();
+      return;
     }
-  });
-  observer.observe(document.documentElement, { childList: true });
+
+    if (!document.documentElement) {
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      if (document.head) {
+        observer.disconnect();
+        injectStyles();
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  };
+
+  if (document.documentElement) {
+    startObserving();
+  } else {
+    window.addEventListener('DOMContentLoaded', startObserving, { once: true });
+  }
 }
 
-// Hide nav items by text content (runs after page loads)
 window.addEventListener('DOMContentLoaded', () => {
-  console.log('%c🎵 GREENROOM Desktop - Preload loaded', 'color: #39b54a; font-weight: bold;');
-  
-  document.body.classList.add('greenroom-desktop');
-  
-  const hideNavItems = () => {
-    // Hide by text content
-    const textsToHide = ['moderation', 'admin', 'creator', 'dashboard', 'earnings', 'become a creator'];
-    
-    document.querySelectorAll('nav a, header a, nav button, header button').forEach(el => {
-      const text = el.textContent?.trim().toLowerCase();
-      if (textsToHide.some(t => text?.includes(t))) {
-        el.style.setProperty('display', 'none', 'important');
-      }
-    });
-    
-    // Also hide by href
-    document.querySelectorAll('a').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (href.includes('/admin') || href.includes('/mod') || href.includes('/creator')) {
-        a.style.setProperty('display', 'none', 'important');
-      }
-    });
-  };
-  
-  // Run immediately and on interval (for dynamic content)
-  hideNavItems();
-  setInterval(hideNavItems, 300);
-  
-  // Also observe DOM changes
-  const observer = new MutationObserver(hideNavItems);
-  observer.observe(document.body, { childList: true, subtree: true });
+  // React handles desktop-specific layout after hydration.
 });
 
 // Keyboard shortcuts

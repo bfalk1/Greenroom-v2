@@ -22,6 +22,16 @@ interface FollowedArtist {
   total_samples: number;
 }
 
+type GreenroomDesktopApi = {
+  isDesktop?: boolean;
+  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  syncLocalSample?: (
+    sampleId: string,
+    sampleName: string,
+    artistName?: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+};
+
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -47,6 +57,7 @@ export default function MarketplacePage() {
   const [sortColumn, setSortColumn] = useState<string>("popular");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasFetchedInitiallyRef = useRef(false);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -151,19 +162,18 @@ export default function MarketplacePage() {
         const data = await res.json();
 
         if (append) {
-          // De-duplicate samples when appending
-          const newSamples = data.samples.filter((s: Sample) => 
-            !samples.some(existing => existing.id === s.id)
-          );
-          
-          // If no new samples or less than page size, we've reached the end
-          if (newSamples.length === 0 || data.samples.length < PAGE_SIZE) {
-            setHasMore(false);
-          }
-          
-          if (newSamples.length > 0) {
-            setSamples((prev) => [...prev, ...newSamples]);
-          }
+          setSamples((prev) => {
+            const seenIds = new Set(prev.map((sample) => sample.id));
+            const newSamples = data.samples.filter(
+              (sample: Sample) => !seenIds.has(sample.id)
+            );
+
+            if (newSamples.length === 0 || data.samples.length < PAGE_SIZE) {
+              setHasMore(false);
+            }
+
+            return newSamples.length > 0 ? [...prev, ...newSamples] : prev;
+          });
         } else {
           setSamples(data.samples);
           setHasMore(data.samples.length >= PAGE_SIZE);
@@ -290,6 +300,7 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     fetchSamples(0, false);
+    hasFetchedInitiallyRef.current = true;
   }, [fetchSamples]);
 
   useEffect(() => {
@@ -308,6 +319,10 @@ export default function MarketplacePage() {
 
   // Debounce search and sort changes
   useEffect(() => {
+    if (!hasFetchedInitiallyRef.current) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       fetchSamples(0, false);
     }, 300);
@@ -345,6 +360,19 @@ export default function MarketplacePage() {
       setPurchasedIds((prev) => new Set([...prev, sample.id]));
       // Refresh user credits
       refreshUser();
+
+      const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
+      if (greenroom?.isDesktop && greenroom.chooseLocalSampleFolder && greenroom.syncLocalSample) {
+        try {
+          const folderResult = await greenroom.chooseLocalSampleFolder();
+          if (folderResult?.ok) {
+            await greenroom.syncLocalSample(sample.id, sample.name, sample.artist_name);
+          }
+        } catch (syncError) {
+          console.error("Desktop sync after purchase failed:", syncError);
+        }
+      }
+
       toast.success(`Purchased "${sample.name}" 🎵`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Purchase failed";
@@ -493,7 +521,7 @@ export default function MarketplacePage() {
         {/* Search Bar */}
         <div className="mb-6">
           <div className="relative">
-            <Search className="absolute left-4 top-3.5 w-5 h-5 text-[#a1a1a1]" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a1a1a1]" />
             <Input
               type="text"
               placeholder="Search samples, creators, genres..."
