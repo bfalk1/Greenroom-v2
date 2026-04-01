@@ -48,6 +48,8 @@ export const PUBLIC_CREDIT_PACKAGES = [
     price: 5.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_CREDITS_50_PRICE_ID ?? "",
     perCredit: "0.12",
+    popular: false,
+    bestValue: false,
   },
   {
     credits: 150,
@@ -55,12 +57,14 @@ export const PUBLIC_CREDIT_PACKAGES = [
     priceId: process.env.NEXT_PUBLIC_STRIPE_CREDITS_150_PRICE_ID ?? "",
     perCredit: "0.10",
     popular: true,
+    bestValue: false,
   },
   {
     credits: 400,
     price: 34.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_CREDITS_400_PRICE_ID ?? "",
     perCredit: "0.09",
+    popular: false,
     bestValue: true,
   },
 ] as const;
