@@ -26,7 +26,7 @@ type GreenroomDesktopApi = {
   ) => Promise<{ ok: boolean; status?: LocalSampleStatus; error?: string }>;
   startSampleDrag?: (sampleId: string, sampleName: string) => void;
   onNativeDragRecovery?: (
-    callback: (payload?: { reason?: string; at?: string }) => void
+    callback: (payload?: { sampleId?: string; sampleName?: string; filePath?: string; reason?: string; at?: string }) => void
   ) => () => void;
 };
 
