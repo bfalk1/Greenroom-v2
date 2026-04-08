@@ -51,7 +51,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/api/samples") ||
     pathname.startsWith("/api/genres") ||
     pathname.startsWith("/artist/") ||
-    pathname === "/api/invites/verify";
+    pathname === "/api/invites/verify" ||
+    pathname === "/api/beta-invites/verify";
 
   if (isPublicPath) {
     return supabaseResponse;

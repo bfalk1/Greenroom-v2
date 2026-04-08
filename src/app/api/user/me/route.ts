@@ -79,13 +79,55 @@ export async function GET() {
         });
       }
 
+      // Check for beta invite
+      let betaCredits = 0;
+      if (authUser.email) {
+        const betaInvite = await prisma.betaInvite.findUnique({
+          where: { email: authUser.email },
+        });
+        if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
+          betaCredits = betaInvite.credits;
+
+          // Mark beta invite as used
+          await prisma.betaInvite.update({
+            where: { email: authUser.email },
+            data: { usedAt: new Date(), usedByUserId: user.id },
+          });
+
+          // Set subscription status to active (bypass paywall)
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              subscriptionStatus: "active",
+              credits: betaCredits,
+            },
+            include: {
+              creditBalance: true,
+              subscription: { include: { tier: true } },
+            },
+          });
+        }
+      }
+
       // Create credit balance
       await prisma.creditBalance.create({
         data: {
           userId: authUser.id,
-          balance: 0,
+          balance: betaCredits,
         },
       });
+
+      // Log beta credits as a transaction
+      if (betaCredits > 0) {
+        await prisma.creditTransaction.create({
+          data: {
+            userId: authUser.id,
+            amount: betaCredits,
+            type: "ADMIN_ADJUSTMENT",
+            note: "Beta invite credits",
+          },
+        });
+      }
 
       // Create approved application for invited creators
       if (role === "CREATOR") {
@@ -142,6 +184,47 @@ export async function GET() {
               reviewNote: "Auto-approved via admin invite",
               reviewedAt: new Date(),
             },
+          });
+        }
+      }
+
+      // Check for pending beta invite for existing users
+      if (authUser.email) {
+        const betaInvite = await prisma.betaInvite.findUnique({
+          where: { email: authUser.email },
+        });
+        if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              subscriptionStatus: "active",
+              credits: { increment: betaInvite.credits },
+            },
+            include: {
+              creditBalance: true,
+              subscription: { include: { tier: true } },
+            },
+          });
+
+          if (user.creditBalance) {
+            await prisma.creditBalance.update({
+              where: { userId: user.id },
+              data: { balance: { increment: betaInvite.credits } },
+            });
+          }
+
+          await prisma.creditTransaction.create({
+            data: {
+              userId: user.id,
+              amount: betaInvite.credits,
+              type: "ADMIN_ADJUSTMENT",
+              note: "Beta invite credits",
+            },
+          });
+
+          await prisma.betaInvite.update({
+            where: { email: authUser.email },
+            data: { usedAt: new Date(), usedByUserId: user.id },
           });
         }
       }

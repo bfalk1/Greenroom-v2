@@ -14,6 +14,11 @@ interface InviteData {
   artistName: string;
 }
 
+interface BetaInviteData {
+  email: string;
+  credits: number;
+}
+
 function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,19 +27,39 @@ function SignupForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [invite, setInvite] = useState<InviteData | null>(null);
+  const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Check for invite token on mount (optional - for creator invites)
+  // Check for invite token on mount (creator or beta invites)
   useEffect(() => {
     const inviteToken = searchParams.get("invite");
-    
-    // No invite token = public signup (allowed now)
-    if (!inviteToken) {
+    const betaToken = searchParams.get("beta");
+
+    if (betaToken) {
+      setInviteLoading(true);
+      fetch(`/api/beta-invites/verify?token=${encodeURIComponent(betaToken)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.valid && data.email) {
+            setBetaInvite({ email: data.email, credits: data.credits });
+            setEmail(data.email);
+          } else if (data.error) {
+            console.warn("Invalid beta invite:", data.error);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to verify beta invite:", err);
+        })
+        .finally(() => {
+          setInviteLoading(false);
+        });
       return;
     }
-    
+
+    if (!inviteToken) return;
+
     setInviteLoading(true);
     fetch(`/api/invites/verify?token=${encodeURIComponent(inviteToken)}`)
       .then((res) => res.json())
@@ -46,7 +71,6 @@ function SignupForm() {
           });
           setEmail(data.email);
         } else if (data.error) {
-          // Invalid invite - just ignore and allow public signup
           console.warn("Invalid invite token:", data.error);
         }
       })
@@ -89,13 +113,14 @@ function SignupForm() {
         return;
       }
 
-      // If session exists, email confirmation is off — redirect to pricing (paywall)
+      // If session exists, email confirmation is off — redirect
       if (data.session) {
         await fetch("/api/user/me");
-        trackSignup(invite ? "invite" : "email");
-        // Creator invites go to onboarding, regular signups go to pricing
+        trackSignup(invite ? "invite" : betaInvite ? "invite" : "email");
         if (invite) {
           router.push("/onboarding");
+        } else if (betaInvite) {
+          router.push("/marketplace");
         } else {
           router.push("/pricing?welcome=true");
         }
@@ -103,7 +128,7 @@ function SignupForm() {
       }
 
       // Email confirmation is on — show check email screen
-      trackSignup(invite ? "invite" : "email");
+      trackSignup(invite ? "invite" : betaInvite ? "invite" : "email");
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);

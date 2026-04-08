@@ -25,6 +25,8 @@ export async function GET(request: Request) {
 
       let isNewUser = false;
       let hasCreatorInvite = false;
+      let hasBetaInvite = false;
+      let betaCredits = 0;
       let inviteArtistName: string | null = null;
 
       // Check for a valid creator invite (for both new and existing users)
@@ -36,6 +38,16 @@ export async function GET(request: Request) {
         if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
           hasCreatorInvite = true;
           inviteArtistName = invite.artistName;
+        }
+
+        // Check for beta invite
+        const betaInvite = await prisma.betaInvite.findUnique({
+          where: { email: data.user.email },
+        });
+
+        if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
+          hasBetaInvite = true;
+          betaCredits = betaInvite.credits;
         }
       }
 
@@ -58,9 +70,34 @@ export async function GET(request: Request) {
         await prisma.creditBalance.create({
           data: {
             userId: data.user.id,
-            balance: 0,
+            balance: hasBetaInvite ? betaCredits : 0,
           },
         });
+
+        // Apply beta invite: credits + subscription bypass
+        if (hasBetaInvite && data.user.email) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: {
+              subscriptionStatus: "active",
+              credits: betaCredits,
+            },
+          });
+
+          await prisma.creditTransaction.create({
+            data: {
+              userId: user.id,
+              amount: betaCredits,
+              type: "ADMIN_ADJUSTMENT",
+              note: "Beta invite credits",
+            },
+          });
+
+          await prisma.betaInvite.update({
+            where: { email: data.user.email },
+            data: { usedAt: new Date(), usedByUserId: user.id },
+          });
+        }
       } else if (hasCreatorInvite && user.role === "USER") {
         // Existing user with pending invite - upgrade to CREATOR
         user = await prisma.user.update({
@@ -102,11 +139,48 @@ export async function GET(request: Request) {
         }
       }
 
+      // Handle beta invite for existing users
+      if (hasBetaInvite && !isNewUser && data.user.email) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            subscriptionStatus: "active",
+            credits: { increment: betaCredits },
+          },
+        });
+
+        const existingBalance = await prisma.creditBalance.findUnique({
+          where: { userId: user.id },
+        });
+        if (existingBalance) {
+          await prisma.creditBalance.update({
+            where: { userId: user.id },
+            data: { balance: { increment: betaCredits } },
+          });
+        }
+
+        await prisma.creditTransaction.create({
+          data: {
+            userId: user.id,
+            amount: betaCredits,
+            type: "ADMIN_ADJUSTMENT",
+            note: "Beta invite credits",
+          },
+        });
+
+        await prisma.betaInvite.update({
+          where: { email: data.user.email },
+          data: { usedAt: new Date(), usedByUserId: user.id },
+        });
+      }
+
       // Redirect based on profile completion
       if (!user.profileCompleted) {
-        // If invited creator, redirect to creator onboarding
         if (hasCreatorInvite || user.role === "CREATOR") {
           return NextResponse.redirect(`${origin}/onboarding?creator=true`);
+        }
+        if (hasBetaInvite) {
+          return NextResponse.redirect(`${origin}/marketplace`);
         }
         return NextResponse.redirect(`${origin}/onboarding`);
       }
