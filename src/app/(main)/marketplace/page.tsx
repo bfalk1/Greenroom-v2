@@ -10,6 +10,7 @@ import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRow } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
+import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -58,14 +59,19 @@ export default function MarketplacePage() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const hasFetchedInitiallyRef = useRef(false);
+  const playedSampleIdsRef = useRef<Set<string>>(new Set());
 
   const handleSort = (column: string) => {
+    const newDirection = sortColumn === column
+      ? (sortDirection === "asc" ? "desc" : "asc")
+      : "desc";
     if (sortColumn === column) {
       setSortDirection(prev => prev === "asc" ? "desc" : "asc");
     } else {
       setSortColumn(column);
       setSortDirection("desc");
     }
+    trackSortChange(column, newDirection);
     // Update filters to trigger refetch
     const sortMap: Record<string, string> = {
       name: "name",
@@ -95,6 +101,17 @@ export default function MarketplacePage() {
       </span>
     </button>
   );
+
+  // Track which samples have been played for play-before-buy analysis
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const playingId = getGlobalPlayingId();
+      if (playingId) {
+        playedSampleIdsRef.current.add(playingId);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Keyboard navigation for samples
   const handleKeyboardPlay = useCallback((index: number) => {
@@ -160,6 +177,10 @@ export default function MarketplacePage() {
         if (!res.ok) throw new Error("Failed to fetch samples");
 
         const data = await res.json();
+
+        if (!append && searchQuery) {
+          trackSearch(searchQuery, data.total);
+        }
 
         if (append) {
           setSamples((prev) => {
@@ -330,6 +351,12 @@ export default function MarketplacePage() {
   }, [searchQuery, filters, sortDirection]);
 
   const handleFilterChange = (newFilters: typeof filters) => {
+    trackFilterChange({
+      genre: newFilters.genre !== "all" ? newFilters.genre : undefined,
+      instrumentType: newFilters.instrumentType !== "all" ? newFilters.instrumentType : undefined,
+      sampleType: newFilters.sampleType !== "all" ? newFilters.sampleType : undefined,
+      key: newFilters.key !== "all" ? newFilters.key : undefined,
+    });
     setFilters(newFilters);
   };
 
@@ -353,8 +380,17 @@ export default function MarketplacePage() {
       const data = await res.json();
 
       if (!res.ok) {
+        trackPurchaseFailed(sample.id, data.error?.includes("insufficient") ? "insufficient_credits" : "error");
         throw new Error(data.error || "Purchase failed");
       }
+
+      trackSamplePurchase({
+        sampleId: sample.id,
+        name: sample.name,
+        artist: sample.artist_name || "Unknown",
+        creditPrice: sample.credit_price,
+        playedBeforeBuy: playedSampleIdsRef.current.has(sample.id),
+      });
 
       // Update purchased set
       setPurchasedIds((prev) => new Set([...prev, sample.id]));

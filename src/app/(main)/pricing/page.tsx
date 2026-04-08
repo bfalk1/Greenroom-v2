@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
+import { trackPaywallViewed, trackSubscriptionCheckout, trackSubscriptionActivated } from "@/lib/analytics";
 import { toast } from "sonner";
 
 export default function PricingPage() {
@@ -28,9 +29,16 @@ function PricingContent() {
 
   const isWelcome = searchParams.get("welcome") === "true";
 
+  // Track paywall view
+  useEffect(() => {
+    const redirectFrom = searchParams.get("redirect") || undefined;
+    trackPaywallViewed(redirectFrom);
+  }, [searchParams]);
+
   // Handle success/canceled URL params
   useEffect(() => {
     if (searchParams.get("success") === "true") {
+      trackSubscriptionActivated("unknown");
       toast.success("Subscription activated! Your credits are ready to use.");
       // Clean URL
       window.history.replaceState({}, "", "/marketplace");
@@ -63,6 +71,8 @@ function PricingContent() {
       }
 
       if (data.url) {
+        const pkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(p => p.priceId === priceId);
+        trackSubscriptionCheckout(pkg?.name || "unknown", priceId);
         window.location.href = data.url;
       }
     } catch (error) {

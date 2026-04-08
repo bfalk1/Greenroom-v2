@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import { Analytics } from "@vercel/analytics/react";
 import { UserProvider } from "@/lib/context/UserContext";
+import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,10 +24,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans antialiased`}>
-        <UserProvider>
-          {children}
-          <Toaster theme="dark" position="bottom-right" richColors />
-        </UserProvider>
+        <PostHogProvider>
+          <UserProvider>
+            {children}
+            <Toaster theme="dark" position="bottom-right" richColors />
+          </UserProvider>
+        </PostHogProvider>
         <Analytics />
       </body>
     </html>

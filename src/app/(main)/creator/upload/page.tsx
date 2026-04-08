@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { createClient } from "@/lib/supabase/client";
+import { trackSampleUpload } from "@/lib/analytics";
 import { toast } from "sonner";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { KeySelector } from "@/components/ui/KeySelector";
@@ -402,6 +403,11 @@ export default function CreatorUploadPage() {
         throw new Error(err.error || "Failed to create sample");
       }
 
+      trackSampleUpload({
+        genre: formData.genre,
+        sampleType: formData.sampleType,
+        creditPrice: Number(formData.creditPrice),
+      });
       toast.success("Sample uploaded successfully! 🎵");
       router.push("/creator/dashboard");
     } catch (error) {

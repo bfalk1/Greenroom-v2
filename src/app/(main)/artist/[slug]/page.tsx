@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
+import { trackArtistFollow, trackArtistProfileViewed } from "@/lib/analytics";
 import { toast } from "sonner";
 
 interface Artist {
@@ -79,6 +80,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
 
       const data = await res.json();
       setArtist(data.artist);
+      trackArtistProfileViewed(slug);
       setSamples(dedupeSamples(data.samples || []));
       setHasMore(data.hasMore ?? false);
     } catch (error) {
@@ -175,6 +177,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
         is_following: data.following,
         follower_count: data.follower_count,
       });
+      trackArtistFollow(artist.id, data.following);
 
       toast.success(
         data.following

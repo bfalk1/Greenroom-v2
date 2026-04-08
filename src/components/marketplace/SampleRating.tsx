@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Star } from "lucide-react";
+import { trackSampleRate } from "@/lib/analytics";
 import { toast } from "sonner";
 import type { Sample, UserType } from "./SampleCard";
 
@@ -72,6 +73,7 @@ export function SampleRating({
       setUserRating(rating);
       setAverageRating(data.sampleStats.average);
       setRatingCount(data.sampleStats.count);
+      trackSampleRate(sample.id, rating);
       onRatingChange?.(sample.id, rating, data.sampleStats);
       
       toast.success(`Rated ${rating} star${rating !== 1 ? "s" : ""} ⭐`);

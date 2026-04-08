@@ -12,6 +12,7 @@ import {
 import { Waveform } from "@/components/audio/Waveform";
 import { SampleRating } from "@/components/marketplace/SampleRating";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
+import { trackSamplePlay, trackSamplePause, trackSampleFavorite, trackSampleDownload } from "@/lib/analytics";
 import { toast } from "sonner";
 
 export { SampleTableHeader } from "@/components/marketplace/SampleTable";
@@ -49,6 +50,7 @@ export function SampleRow({
   const [progress, setProgress] = useState(0);
   const rowRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<number | null>(null);
+  const playStartRef = useRef<number | null>(null);
   const {
     isDesktop,
     isSyncing,
@@ -84,6 +86,9 @@ export function SampleRow({
 
     // If this sample is currently playing, pause it
     if (currentPlayingId === sample.id) {
+      const duration = playStartRef.current ? Date.now() - playStartRef.current : 0;
+      trackSamplePause(sample.id, duration);
+      playStartRef.current = null;
       audio.pause();
       setIsPlayingState(false);
       setGlobalPlayingId(null);
@@ -120,6 +125,14 @@ export function SampleRow({
       await audio.play();
       setGlobalPlayingId(sample.id);
       setIsPlayingState(true);
+      playStartRef.current = Date.now();
+      trackSamplePlay({
+        sampleId: sample.id,
+        name: sample.name,
+        artist: sample.artist_name || "Unknown",
+        genre: sample.genre,
+        source: "marketplace",
+      });
     } catch (err) {
       console.error("Play error:", err);
     } finally {
@@ -204,6 +217,7 @@ export function SampleRow({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      trackSampleDownload(sample.id, sample.name, "marketplace");
       toast.success(`Downloaded "${sample.name}" 🎵`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Download failed";
@@ -232,6 +246,7 @@ export function SampleRow({
       const data = await res.json();
       setIsFavorited(data.favorited);
       onFavoriteChange?.(sample.id, data.favorited);
+      trackSampleFavorite(sample.id, data.favorited);
       if (data.favorited) toast.success("Added to favorites ❤️");
     } catch {
       toast.error("Failed to update favorite");

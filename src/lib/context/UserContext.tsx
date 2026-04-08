@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
+import { identifyUser, resetAnalytics, trackLogout } from "@/lib/analytics";
 
 export interface AppUser {
   id: string;
@@ -76,6 +77,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           setUser(data.user);
+          identifyUser(data.user);
         } else {
           setUser({
             id: authUser.id,
@@ -116,10 +118,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         fetchUser();
-      } else {
+      } else if (event === "SIGNED_OUT") {
+        // Only clear user state on explicit sign-out, not transient states
+        resetAnalytics();
         setUser(null);
         setSupabaseUser(null);
         setLoading(false);
@@ -131,6 +135,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     if (!supabase) return;
+    trackLogout();
+    resetAnalytics();
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);
