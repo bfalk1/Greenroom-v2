@@ -4,6 +4,7 @@ import React, { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { trackSignup } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sparkles, Loader2 } from "lucide-react";
@@ -91,6 +92,7 @@ function SignupForm() {
       // If session exists, email confirmation is off — redirect to pricing (paywall)
       if (data.session) {
         await fetch("/api/user/me");
+        trackSignup(invite ? "invite" : "email");
         // Creator invites go to onboarding, regular signups go to pricing
         if (invite) {
           router.push("/onboarding");
@@ -101,6 +103,7 @@ function SignupForm() {
       }
 
       // Email confirmation is on — show check email screen
+      trackSignup(invite ? "invite" : "email");
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { trackLogin } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 export default function LoginPage() {
@@ -40,6 +41,7 @@ export default function LoginPage() {
         }
       }
 
+      trackLogin();
       router.push("/marketplace");
       router.refresh();
     } catch (err) {

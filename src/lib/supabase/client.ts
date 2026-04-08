@@ -18,6 +18,12 @@ export function createClient() {
     throw new Error("Supabase URL and anon key are required");
   }
   
-  client = createBrowserClient(url, key);
+  client = createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
   return client;
 }

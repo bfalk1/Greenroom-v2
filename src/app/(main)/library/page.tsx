@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
+import { trackLibraryViewed } from "@/lib/analytics";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
 import { SampleRating } from "@/components/marketplace/SampleRating";
@@ -564,6 +565,9 @@ export default function LibraryPage() {
       const data = await res.json();
 
       if (data.samples) {
+        if (!append) {
+          trackLibraryViewed(data.total);
+        }
         if (append) {
           setSamples((prev) => {
             const seenIds = new Set(prev.map((sample) => sample.id));
