@@ -114,6 +114,8 @@ model User {
   auditLogs            AuditLog[]
   sentInvites          CreatorInvite[]    @relation("InvitedBy")
   usedInvite           CreatorInvite?     @relation("InviteUsedBy")
+  betaInvitesSent      BetaInvite[]      @relation("BetaInvitedBy")
+  betaInviteUsed       BetaInvite?       @relation("BetaInviteUsedBy")
 
   @@map("users")
 }
@@ -332,6 +334,28 @@ model CreatorInvite {
   usedBy  User? @relation("InviteUsedBy", fields: [usedByUserId], references: [id])
 
   @@map("creator_invites")
+}
+
+model BetaInvite {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  message      String?
+  invitedBy    String    @map("invited_by") @db.Uuid
+  token        String    @unique @default(uuid()) @db.Uuid
+  expiresAt    DateTime  @map("expires_at")
+  usedAt       DateTime? @map("used_at")
+  usedByUserId String?   @unique @map("used_by_user_id") @db.Uuid
+  emailStatus  String    @default("pending") @map("email_status")
+  emailError   String?   @map("email_error")
+  emailSentAt  DateTime? @map("email_sent_at")
+  retryCount   Int       @default(0) @map("retry_count")
+  credits      Int       @default(100)
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  inviter User  @relation("BetaInvitedBy", fields: [invitedBy], references: [id])
+  usedBy  User? @relation("BetaInviteUsedBy", fields: [usedByUserId], references: [id])
+
+  @@map("beta_invites")
 }
 
 model CreatorApplication {
