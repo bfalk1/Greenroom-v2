@@ -62,6 +62,7 @@ export async function GET() {
           profileCompleted: false,
           role,
           isActive: true,
+          termsAcceptedAt: new Date(),
         },
         include: {
           creditBalance: true,
@@ -283,6 +284,7 @@ export async function PATCH(request: NextRequest) {
       social_links,
       avatar_url,
       banner_url,
+      terms_accepted_at,
     } = body;
 
     // Validate username if provided
@@ -363,6 +365,7 @@ export async function PATCH(request: NextRequest) {
     if (social_links !== undefined) updateData.socialLinks = social_links;
     if (avatar_url !== undefined) updateData.avatarUrl = avatar_url;
     if (banner_url !== undefined) updateData.bannerUrl = banner_url;
+    if (terms_accepted_at !== undefined) updateData.termsAcceptedAt = new Date(terms_accepted_at);
 
     const user = await prisma.user.update({
       where: { id: authUser.id },

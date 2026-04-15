@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { trackSignup } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Sparkles, Loader2 } from "lucide-react";
 
 interface InviteData {
@@ -23,6 +24,7 @@ function SignupForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -93,6 +95,11 @@ function SignupForm() {
 
     if (password.length < 6) {
       setError("Password must be at least 6 characters");
+      return;
+    }
+
+    if (!termsAccepted) {
+      setError("You must accept the Terms of Use and Privacy Policy");
       return;
     }
 
@@ -250,9 +257,52 @@ function SignupForm() {
           />
         </div>
 
+        {/* Terms Acceptance */}
+        <div className="flex items-start gap-3">
+          <Checkbox
+            checked={termsAccepted}
+            onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
+            className="mt-1"
+          />
+          <label className="text-sm text-[#a1a1a1]">
+            I agree to the{" "}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#39b54a] hover:underline"
+            >
+              User Terms of Use
+            </a>
+            {invite && (
+              <>
+                ,{" "}
+                <a
+                  href="/creator-terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#39b54a] hover:underline"
+                >
+                  Creator Terms of Use
+                </a>
+              </>
+            )}
+            {" "}and{" "}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#39b54a] hover:underline"
+            >
+              Privacy Policy
+            </a>
+            <span className="text-red-500"> *</span>
+          </label>
+        </div>
+
         <Button
           type="submit"
-          disabled={loading || inviteLoading}
+          disabled={loading || inviteLoading || !termsAccepted}
           className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3"
         >
           {loading

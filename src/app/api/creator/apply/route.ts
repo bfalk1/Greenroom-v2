@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { artistName, bio, socialLinks, sampleZipUrl } = body;
+  const { artistName, bio, socialLinks, sampleZipUrl, termsAcceptedAt } = body;
 
   // Validate required fields
   if (!artistName || !sampleZipUrl) {
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
         bio: bio || null,
         socialLinks: socialLinks || null,
         sampleZipUrl,
+        termsAcceptedAt: termsAcceptedAt ? new Date(termsAcceptedAt) : null,
         status: "PENDING",
         reviewedBy: null,
         reviewNote: null,
@@ -85,6 +86,7 @@ export async function POST(req: NextRequest) {
       bio: bio || null,
       socialLinks: socialLinks || null,
       sampleZipUrl,
+      termsAcceptedAt: termsAcceptedAt ? new Date(termsAcceptedAt) : null,
       status: "PENDING",
     },
   });

@@ -124,6 +124,7 @@ model User {
   flaggedBy          String?   @map("flagged_by") @db.Uuid
   isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
   customPayoutRate   Int?      @map("custom_payout_rate")
+  termsAcceptedAt    DateTime? @map("terms_accepted_at")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -460,6 +461,7 @@ model CreatorApplication {
   status       ApplicationStatus @default(PENDING)
   reviewedBy   String?           @map("reviewed_by") @db.Uuid
   reviewNote   String?           @map("review_note")
+  termsAcceptedAt DateTime?      @map("terms_accepted_at")
   createdAt    DateTime          @default(now()) @map("created_at")
   reviewedAt   DateTime?         @map("reviewed_at")
 

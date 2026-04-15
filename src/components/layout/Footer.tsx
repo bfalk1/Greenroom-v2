@@ -58,12 +58,27 @@ export function Footer() {
             <ul className="space-y-2 text-sm text-[#a1a1a1]">
               <li>
                 <a href="/terms" className="hover:text-white transition">
-                  Terms of Service
+                  Terms of Use
                 </a>
               </li>
               <li>
                 <a href="/privacy" className="hover:text-white transition">
                   Privacy Policy
+                </a>
+              </li>
+              <li>
+                <a href="/creator-terms" className="hover:text-white transition">
+                  Creator Terms
+                </a>
+              </li>
+              <li>
+                <a href="/license" className="hover:text-white transition">
+                  Sample License
+                </a>
+              </li>
+              <li>
+                <a href="/copyright" className="hover:text-white transition">
+                  Copyright Policy
                 </a>
               </li>
             </ul>

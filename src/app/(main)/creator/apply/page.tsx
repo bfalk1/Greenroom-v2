@@ -160,6 +160,7 @@ export default function CreatorApplicationPage() {
             instagram: formData.instagram_url || undefined,
           },
           sampleZipUrl: formData.zip_file_path,
+          termsAcceptedAt: new Date().toISOString(),
         }),
       });
 
@@ -451,8 +452,16 @@ export default function CreatorApplicationPage() {
               className="mt-1"
             />
             <label className="text-sm text-[#a1a1a1]">
-              I agree to GREENROOM Creator Terms of Service and understand that
-              my samples must be original or properly licensed.
+              I agree to the{" "}
+              <a
+                href="/creator-terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#39b54a] hover:underline"
+              >
+                Creator Terms of Use
+              </a>{" "}
+              and understand that my samples must be original or properly licensed.
               <span className="text-red-500"> *</span>
             </label>
           </div>
