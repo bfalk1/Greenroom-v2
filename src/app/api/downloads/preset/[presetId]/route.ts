@@ -3,12 +3,23 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 
+// File extension to MIME type mapping for preset files
+const PRESET_MIME_TYPES: Record<string, string> = {
+  ".fxp": "application/octet-stream",
+  ".vital": "application/octet-stream",
+  ".phaseplant": "application/octet-stream",
+  ".nmsv": "application/octet-stream",
+  ".aupreset": "application/octet-stream",
+  ".zip": "application/zip",
+  ".syx": "application/octet-stream",
+};
+
 export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ sampleId: string }> }
+  _request: Request,
+  { params }: { params: Promise<{ presetId: string }> }
 ) {
   try {
-    const { sampleId } = await params;
+    const { presetId } = await params;
     const supabase = await createClient();
     const {
       data: { user: authUser },
@@ -18,25 +29,23 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check user owns this sample
-    const purchase = await prisma.purchase.findUnique({
+    // Check user owns this preset
+    const purchase = await prisma.purchase.findFirst({
       where: {
-        userId_sampleId: {
-          userId: authUser.id,
-          sampleId,
-        },
+        userId: authUser.id,
+        presetId,
       },
-      include: { sample: true },
+      include: { preset: true },
     });
 
-    if (!purchase) {
+    if (!purchase || !purchase.preset) {
       return NextResponse.json(
-        { error: "Sample not purchased" },
+        { error: "Preset not purchased" },
         { status: 403 }
       );
     }
 
-    const fileUrl = purchase.sample!.fileUrl;
+    const fileUrl = purchase.preset.fileUrl;
     if (!fileUrl) {
       return NextResponse.json(
         { error: "No file available" },
@@ -45,12 +54,11 @@ export async function GET(
     }
 
     // Extract bucket and path from the stored fileUrl
-    // Format: "samples/userId/filename.wav"
+    // Format: "presets/userId/filename.fxp"
     const parts = fileUrl.split("/");
     const bucket = parts[0];
     const path = parts.slice(1).join("/");
 
-    // Create a service client to download the actual file
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -73,27 +81,30 @@ export async function GET(
       data: {
         purchaseId: purchase.id,
         userId: authUser.id,
-        sampleId,
+        presetId,
       },
     });
 
-    // Generate a clean filename from the sample name
-    const filename = purchase.sample!.name
+    // Determine file extension and MIME type
+    const ext = fileUrl.substring(fileUrl.lastIndexOf(".")).toLowerCase();
+    const contentType = PRESET_MIME_TYPES[ext] || "application/octet-stream";
+
+    // Generate a clean filename
+    const filename = purchase.preset.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") + ".wav";
+      .replace(/(^-|-$)/g, "") + ext;
 
-    // Return the file directly with proper headers for download
     const buffer = await data.arrayBuffer();
     return new NextResponse(buffer, {
       headers: {
-        "Content-Type": "audio/wav",
+        "Content-Type": contentType,
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Length": buffer.byteLength.toString(),
       },
     });
   } catch (error) {
-    console.error("Download error:", error);
+    console.error("Preset download error:", error);
     return NextResponse.json(
       { error: "Failed to process download" },
       { status: 500 }

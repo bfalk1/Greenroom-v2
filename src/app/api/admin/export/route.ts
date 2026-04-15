@@ -92,6 +92,7 @@ export async function GET(request: NextRequest) {
 
         csv = "Date,User Email,Username,Sample Name,Creator,Credits Spent\n";
         downloads.forEach((d) => {
+          if (!d.sample) return;
           csv += `${d.createdAt.toISOString()},${d.user.email || ""},${d.user.username || ""},${d.sample.name},${d.sample.creator.artistName || d.sample.creator.username},${d.creditsSpent}\n`;
         });
 

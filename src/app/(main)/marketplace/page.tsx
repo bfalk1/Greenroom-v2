@@ -2,12 +2,15 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRow } from "@/components/marketplace/SampleRow";
+import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
+import { PresetFilters, PresetFilterState } from "@/components/marketplace/PresetFilters";
+import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
@@ -35,6 +38,7 @@ type GreenroomDesktopApi = {
 
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
+  const [activeTab, setActiveTab] = useState<MarketplaceTab>("samples");
   const [samples, setSamples] = useState<Sample[]>([]);
   const [followedArtists, setFollowedArtists] = useState<FollowedArtist[]>([]);
   const [followingSamples, setFollowingSamples] = useState<Sample[]>([]);
@@ -48,6 +52,24 @@ export default function MarketplacePage() {
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+
+  // Preset-specific state
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetTotal, setPresetTotal] = useState(0);
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetLoadingMore, setPresetLoadingMore] = useState(false);
+  const [presetHasMore, setPresetHasMore] = useState(true);
+  const [purchasedPresetIds, setPurchasedPresetIds] = useState<Set<string>>(new Set());
+  const [favoritedPresetIds, setFavoritedPresetIds] = useState<Set<string>>(new Set());
+  const [userPresetRatings, setUserPresetRatings] = useState<Record<string, number>>({});
+  const [presetFilters, setPresetFilters] = useState<PresetFilterState>({
+    synthName: "all",
+    category: "all",
+    genre: "all",
+    sortBy: "random",
+  });
+  const presetLoadMoreRef = useRef<HTMLDivElement>(null);
+  const hasFetchedPresetsRef = useRef(false);
   const [filters, setFilters] = useState({
     genre: "all",
     instrumentType: "all",
@@ -287,6 +309,7 @@ export default function MarketplacePage() {
       if (res.ok) {
         const data = await res.json();
         setPurchasedIds(new Set(data.sampleIds));
+        setPurchasedPresetIds(new Set(data.presetIds || []));
       }
     } catch {
       // silently fail
@@ -300,6 +323,7 @@ export default function MarketplacePage() {
       if (res.ok) {
         const data = await res.json();
         setFavoritedIds(new Set(data.sampleIds || []));
+        setFavoritedPresetIds(new Set(data.presetIds || []));
       }
     } catch {
       // silently fail
@@ -313,11 +337,60 @@ export default function MarketplacePage() {
       if (res.ok) {
         const data = await res.json();
         setUserRatings(data.ratings || {});
+        setUserPresetRatings(data.presetRatings || {});
       }
     } catch {
       // silently fail
     }
   }, [user]);
+
+  // Preset fetching
+  const fetchPresets = useCallback(
+    async (offset = 0, append = false) => {
+      try {
+        if (offset === 0) setPresetLoading(true);
+        else setPresetLoadingMore(true);
+
+        const params = new URLSearchParams();
+        if (searchQuery) params.set("search", searchQuery);
+        if (presetFilters.synthName !== "all") params.set("synthName", presetFilters.synthName);
+        if (presetFilters.category !== "all") params.set("category", presetFilters.category);
+        if (presetFilters.genre !== "all") params.set("genre", presetFilters.genre);
+        params.set("sortBy", presetFilters.sortBy);
+        params.set("limit", String(PAGE_SIZE));
+        params.set("offset", String(offset));
+
+        const res = await fetch(`/api/presets?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch presets");
+
+        const data = await res.json();
+
+        if (append) {
+          setPresets((prev) => {
+            const seenIds = new Set(prev.map((p) => p.id));
+            const newPresets = data.presets.filter(
+              (p: Preset) => !seenIds.has(p.id)
+            );
+            if (newPresets.length === 0 || data.presets.length < PAGE_SIZE) {
+              setPresetHasMore(false);
+            }
+            return newPresets.length > 0 ? [...prev, ...newPresets] : prev;
+          });
+        } else {
+          setPresets(data.presets);
+          setPresetHasMore(data.presets.length >= PAGE_SIZE);
+        }
+        setPresetTotal(data.total);
+      } catch (error) {
+        console.error("Error fetching presets:", error);
+        toast.error("Failed to load presets");
+      } finally {
+        setPresetLoading(false);
+        setPresetLoadingMore(false);
+      }
+    },
+    [searchQuery, presetFilters]
+  );
 
   useEffect(() => {
     fetchSamples(0, false);
@@ -333,6 +406,60 @@ export default function MarketplacePage() {
     fetchFavorites();
     fetchRatings();
   }, [fetchPurchases, fetchFavorites, fetchRatings]);
+
+  // Fetch presets when tab switches or filters change
+  useEffect(() => {
+    if (activeTab === "presets") {
+      if (!hasFetchedPresetsRef.current) {
+        fetchPresets(0, false);
+        hasFetchedPresetsRef.current = true;
+      }
+    }
+  }, [activeTab, fetchPresets]);
+
+  // Refetch presets on filter/search change
+  useEffect(() => {
+    if (activeTab !== "presets" || !hasFetchedPresetsRef.current) return;
+    const timer = setTimeout(() => {
+      fetchPresets(0, false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, presetFilters]);
+
+  // Preset infinite scroll
+  useEffect(() => {
+    if (activeTab !== "presets") return;
+    const sentinel = presetLoadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0].isIntersecting &&
+          !presetLoading &&
+          !presetLoadingMore &&
+          presetHasMore &&
+          presets.length < presetTotal
+        ) {
+          fetchPresets(presets.length, true);
+        }
+      },
+      { threshold: 0.1, rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [activeTab, presetLoading, presetLoadingMore, presets.length, presetTotal, presetHasMore, fetchPresets]);
+
+  // Reset preset hasMore when filters change
+  useEffect(() => {
+    setPresetHasMore(true);
+  }, [presetFilters, searchQuery]);
+
+  const handleTabChange = (tab: MarketplaceTab) => {
+    setActiveTab(tab);
+    stopGlobalPlayback();
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -426,6 +553,50 @@ export default function MarketplacePage() {
         return next;
       });
     }
+  };
+
+  const handlePresetPurchase = async (preset: Preset) => {
+    if (!user) {
+      toast.error("Please log in to purchase presets");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presetId: preset.id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Purchase failed");
+      }
+
+      setPurchasedPresetIds((prev) => new Set([...prev, preset.id]));
+      refreshUser();
+      toast.success(`Purchased "${preset.name}"`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Purchase failed";
+      toast.error(message);
+    }
+  };
+
+  const handlePresetFavoriteChange = (presetId: string, favorited: boolean) => {
+    if (favorited) {
+      setFavoritedPresetIds((prev) => new Set([...prev, presetId]));
+    } else {
+      setFavoritedPresetIds((prev) => {
+        const next = new Set(prev);
+        next.delete(presetId);
+        return next;
+      });
+    }
+  };
+
+  const handlePresetFilterChange = (newFilters: PresetFilterState) => {
+    setPresetFilters(newFilters);
   };
 
   const userForCard = user
@@ -560,7 +731,7 @@ export default function MarketplacePage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a1a1a1]" />
             <Input
               type="text"
-              placeholder="Search samples, creators, genres..."
+              placeholder={activeTab === "samples" ? "Search samples, creators, genres..." : "Search presets, synths, creators..."}
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
@@ -568,11 +739,18 @@ export default function MarketplacePage() {
           </div>
         </div>
 
+        {/* Tabs */}
+        <MarketplaceTabs activeTab={activeTab} onTabChange={handleTabChange} />
+
         {/* Filters */}
-        <SampleFilters onFilterChange={handleFilterChange} />
+        {activeTab === "samples" ? (
+          <SampleFilters onFilterChange={handleFilterChange} />
+        ) : (
+          <PresetFilters onFilterChange={handlePresetFilterChange} />
+        )}
 
         {/* Keyboard Navigation Hint */}
-        {samples.length > 0 && !loading && (
+        {activeTab === "samples" && samples.length > 0 && !loading && (
           <div className="mb-4 text-xs text-[#666] flex items-center gap-2">
             <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">↑↓</span> navigate
             <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
@@ -580,92 +758,181 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {/* Results Grid */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-[#a1a1a1]">
-              {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
-            </h2>
+        {/* Samples Tab Content */}
+        {activeTab === "samples" && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-[#a1a1a1]">
+                {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
+              </h2>
+            </div>
+
+            {loading ? (
+              <div className="space-y-2">
+                {Array(8)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse"
+                    />
+                  ))}
+              </div>
+            ) : samples.length > 0 ? (
+              <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+                {/* Table Header */}
+                <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                  <div className="w-10" /> {/* Play button column */}
+                  <SortHeader column="name" label="Name" />
+                  <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
+                  <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
+                  <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
+                  <div className="hidden md:block"><SortHeader column="rating" label="★" /></div>
+                  <div className="text-xs font-medium text-[#a1a1a1]"></div>
+                </div>
+
+                {/* Table Body */}
+                <div className="divide-y divide-[#2a2a2a]">
+                  {samples.map((sample, index) => (
+                    <SampleRow
+                      key={sample.id}
+                      sample={sample}
+                      user={userForCard}
+                      isOwned={purchasedIds.has(sample.id)}
+                      isFavorited={favoritedIds.has(sample.id)}
+                      userRating={userRatings[sample.id]}
+                      isSelected={isKeyboardSelected(index)}
+                      onPurchase={handlePurchase}
+                      onFavoriteChange={handleFavoriteChange}
+                      refreshUser={refreshUser}
+                    />
+                  ))}
+                </div>
+
+                {/* Infinite scroll sentinel / Load more */}
+                {hasMore && samples.length < total && (
+                  <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
+                    {loadingMore ? (
+                      <div className="flex items-center gap-2 text-[#a1a1a1]">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading more...
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
+                        <button
+                          onClick={() => fetchSamples(samples.length, true)}
+                          className="text-sm text-[#39b54a] hover:text-white transition"
+                        >
+                          Load more
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {!hasMore && samples.length > 0 && (
+                  <div className="text-center py-6 border-t border-[#2a2a2a]">
+                    <span className="text-[#3a3a3a] text-sm">All {samples.length} samples loaded</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
+                <p className="text-[#a1a1a1]">
+                  No samples found matching your filters.
+                </p>
+              </div>
+            )}
           </div>
+        )}
 
-          {loading ? (
-            <div className="space-y-2">
-              {Array(8)
-                .fill(0)
-                .map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse"
-                  />
-                ))}
+        {/* Presets Tab Content */}
+        {activeTab === "presets" && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-[#a1a1a1]">
+                {presetTotal} preset{presetTotal !== 1 ? "s" : ""}
+              </h2>
             </div>
-          ) : samples.length > 0 ? (
-            <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
-              {/* Table Header */}
-              <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
-                <div className="w-10" /> {/* Play button column */}
-                <SortHeader column="name" label="Name" />
-                <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
-                <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
-                <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
-                <div className="hidden md:block"><SortHeader column="rating" label="★" /></div>
-                <div className="text-xs font-medium text-[#a1a1a1]"></div>
+
+            {presetLoading ? (
+              <div className="space-y-2">
+                {Array(8)
+                  .fill(0)
+                  .map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse"
+                    />
+                  ))}
               </div>
+            ) : presets.length > 0 ? (
+              <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+                {/* Table Header */}
+                <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                  <div className="w-10" />
+                  <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
+                  <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+                  <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
+                  <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+                  <span className="hidden md:block text-xs font-medium text-[#a1a1a1] text-center">&#9733;</span>
+                  <div className="text-xs font-medium text-[#a1a1a1]"></div>
+                </div>
 
-              {/* Table Body */}
-              <div className="divide-y divide-[#2a2a2a]">
-                {samples.map((sample, index) => (
-                  <SampleRow
-                    key={sample.id}
-                    sample={sample}
-                    user={userForCard}
-                    isOwned={purchasedIds.has(sample.id)}
-                    isFavorited={favoritedIds.has(sample.id)}
-                    userRating={userRatings[sample.id]}
-                    isSelected={isKeyboardSelected(index)}
-                    onPurchase={handlePurchase}
-                    onFavoriteChange={handleFavoriteChange}
-                    refreshUser={refreshUser}
-                  />
-                ))}
+                {/* Table Body */}
+                <div className="divide-y divide-[#2a2a2a]">
+                  {presets.map((preset) => (
+                    <PresetRow
+                      key={preset.id}
+                      preset={preset}
+                      user={userForCard}
+                      isOwned={purchasedPresetIds.has(preset.id)}
+                      isFavorited={favoritedPresetIds.has(preset.id)}
+                      userRating={userPresetRatings[preset.id]}
+                      onPurchase={handlePresetPurchase}
+                      onFavoriteChange={handlePresetFavoriteChange}
+                    />
+                  ))}
+                </div>
+
+                {/* Infinite scroll sentinel */}
+                {presetHasMore && presets.length < presetTotal && (
+                  <div ref={presetLoadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
+                    {presetLoadingMore ? (
+                      <div className="flex items-center gap-2 text-[#a1a1a1]">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading more...
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-[#3a3a3a] text-sm">{presets.length} of {presetTotal}</span>
+                        <button
+                          onClick={() => fetchPresets(presets.length, true)}
+                          className="text-sm text-[#39b54a] hover:text-white transition"
+                        >
+                          Load more
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {!presetHasMore && presets.length > 0 && (
+                  <div className="text-center py-6 border-t border-[#2a2a2a]">
+                    <span className="text-[#3a3a3a] text-sm">All {presets.length} presets loaded</span>
+                  </div>
+                )}
               </div>
-
-              {/* Infinite scroll sentinel / Load more */}
-              {hasMore && samples.length < total && (
-                <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
-                  {loadingMore ? (
-                    <div className="flex items-center gap-2 text-[#a1a1a1]">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading more...
-                    </div>
-                  ) : (
-                    <>
-                      <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
-                      <button
-                        onClick={() => fetchSamples(samples.length, true)}
-                        className="text-sm text-[#39b54a] hover:text-white transition"
-                      >
-                        Load more
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-              {!hasMore && samples.length > 0 && (
-                <div className="text-center py-6 border-t border-[#2a2a2a]">
-                  <span className="text-[#3a3a3a] text-sm">All {samples.length} samples loaded</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-16">
-              <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
-              <p className="text-[#a1a1a1]">
-                No samples found matching your filters.
-              </p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="text-center py-16">
+                <Sliders className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
+                <p className="text-[#a1a1a1]">
+                  No presets found matching your filters.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -64,7 +64,7 @@ export function trackSamplePlay(props: {
   name: string;
   artist: string;
   genre?: string;
-  source: "marketplace" | "library" | "favorites";
+  source: "marketplace" | "library" | "favorites" | "marketplace-presets";
 }) {
   posthog.capture("sample_play", {
     sample_id: props.sampleId,
@@ -138,7 +138,7 @@ export function trackArtistFollow(artistId: string, following: boolean) {
   });
 }
 
-export function trackSampleDownload(sampleId: string, name: string, source: "library" | "marketplace") {
+export function trackSampleDownload(sampleId: string, name: string, source: "library" | "marketplace" | "marketplace-presets") {
   posthog.capture("sample_download", {
     sample_id: sampleId,
     sample_name: name,

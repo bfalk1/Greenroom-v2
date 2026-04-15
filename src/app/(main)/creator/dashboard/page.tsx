@@ -393,7 +393,7 @@ export default function CreatorDashboardPage() {
               — Manage your samples and track earnings
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               onClick={() => router.push("/creator/batch-upload")}
               variant="outline"
@@ -408,6 +408,22 @@ export default function CreatorDashboardPage() {
             >
               <Plus className="w-4 h-4 mr-2" />
               Upload Sample
+            </Button>
+            <Button
+              onClick={() => router.push("/creator/upload-preset")}
+              variant="outline"
+              className="border-[#39b54a] text-[#39b54a] hover:bg-[#39b54a]/10"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Upload Preset
+            </Button>
+            <Button
+              onClick={() => router.push("/creator/batch-upload-presets")}
+              variant="outline"
+              className="border-[#39b54a] text-[#39b54a] hover:bg-[#39b54a]/10"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Batch Presets
             </Button>
           </div>
         </div>

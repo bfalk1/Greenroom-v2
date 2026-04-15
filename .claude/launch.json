@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "next-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/opt/homebrew/opt/node@20/bin/node",
+      "runtimeArgs": ["./node_modules/.bin/next", "dev"],
       "port": 3000,
       "autoPort": true
     }

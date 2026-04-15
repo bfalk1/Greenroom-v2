@@ -104,7 +104,7 @@ export async function GET(_request: NextRequest) {
     const mappedPurchases = purchases.map((p) => ({
       id: p.id,
       sampleId: p.sampleId,
-      sampleName: sampleMap[p.sampleId]?.name || "Unknown",
+      sampleName: (p.sampleId ? sampleMap[p.sampleId]?.name : null) || "Unknown",
       buyerUsername: p.user.username || p.user.email,
       creditsSpent: p.creditsSpent,
       downloadCount: p._count.downloads,

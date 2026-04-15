@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 
-// POST /api/purchases — Auth required, purchase a sample
+// POST /api/purchases — Auth required, purchase a sample or preset
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -15,41 +15,81 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sampleId } = body;
+    const { sampleId, presetId } = body;
 
-    if (!sampleId) {
+    if (!sampleId && !presetId) {
       return NextResponse.json(
-        { error: "sampleId is required" },
+        { error: "sampleId or presetId is required" },
+        { status: 400 }
+      );
+    }
+
+    if (sampleId && presetId) {
+      return NextResponse.json(
+        { error: "Provide either sampleId or presetId, not both" },
         { status: 400 }
       );
     }
 
     // Atomic transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Check sample exists and is active
-      const sample = await tx.sample.findUnique({
-        where: { id: sampleId },
-      });
+      let itemName: string;
+      let itemPrice: number;
+      let itemType: "sample" | "preset";
 
-      if (!sample || !sample.isActive || sample.status !== "PUBLISHED") {
-        throw new Error("Sample not found or not available");
-      }
+      if (sampleId) {
+        // Sample purchase
+        const sample = await tx.sample.findUnique({
+          where: { id: sampleId },
+        });
 
-      // 2. Check not already purchased
-      const existingPurchase = await tx.purchase.findUnique({
-        where: {
-          userId_sampleId: {
-            userId: authUser.id,
-            sampleId,
+        if (!sample || !sample.isActive || sample.status !== "PUBLISHED") {
+          throw new Error("Sample not found or not available");
+        }
+
+        const existingPurchase = await tx.purchase.findUnique({
+          where: {
+            userId_sampleId: {
+              userId: authUser.id,
+              sampleId,
+            },
           },
-        },
-      });
+        });
 
-      if (existingPurchase) {
-        throw new Error("You already own this sample");
+        if (existingPurchase) {
+          throw new Error("You already own this sample");
+        }
+
+        itemName = sample.name;
+        itemPrice = sample.creditPrice;
+        itemType = "sample";
+      } else {
+        // Preset purchase
+        const preset = await tx.preset.findUnique({
+          where: { id: presetId },
+        });
+
+        if (!preset || !preset.isActive || preset.status !== "PUBLISHED") {
+          throw new Error("Preset not found or not available");
+        }
+
+        const existingPurchase = await tx.purchase.findFirst({
+          where: {
+            userId: authUser.id,
+            presetId,
+          },
+        });
+
+        if (existingPurchase) {
+          throw new Error("You already own this preset");
+        }
+
+        itemName = preset.name;
+        itemPrice = preset.creditPrice;
+        itemType = "preset";
       }
 
-      // 3. Check sufficient credits
+      // Check sufficient credits
       const user = await tx.user.findUnique({
         where: { id: authUser.id },
         include: { creditBalance: true },
@@ -61,51 +101,59 @@ export async function POST(request: NextRequest) {
 
       const userCredits = user.creditBalance?.balance ?? user.credits ?? 0;
 
-      if (userCredits < sample.creditPrice) {
+      if (userCredits < itemPrice) {
         throw new Error(
-          `Insufficient credits. You have ${userCredits}, need ${sample.creditPrice}`
+          `Insufficient credits. You have ${userCredits}, need ${itemPrice}`
         );
       }
 
-      // 4. Deduct credits from creditBalance
+      // Deduct credits from creditBalance
       if (user.creditBalance) {
         await tx.creditBalance.update({
           where: { userId: authUser.id },
-          data: { balance: { decrement: sample.creditPrice } },
+          data: { balance: { decrement: itemPrice } },
         });
       }
 
-      // 5. Deduct from user.credits too
+      // Deduct from user.credits too
       await tx.user.update({
         where: { id: authUser.id },
-        data: { credits: { decrement: sample.creditPrice } },
+        data: { credits: { decrement: itemPrice } },
       });
 
-      // 6. Create purchase record
+      // Create purchase record
       const purchase = await tx.purchase.create({
         data: {
           userId: authUser.id,
-          sampleId,
-          creditsSpent: sample.creditPrice,
+          sampleId: itemType === "sample" ? sampleId : null,
+          presetId: itemType === "preset" ? presetId : null,
+          creditsSpent: itemPrice,
         },
       });
 
-      // 7. Create credit transaction record
+      // Create credit transaction record
       await tx.creditTransaction.create({
         data: {
           userId: authUser.id,
-          amount: -sample.creditPrice,
+          amount: -itemPrice,
           type: "PURCHASE",
           referenceId: purchase.id,
-          note: `Purchased sample: ${sample.name}`,
+          note: `Purchased ${itemType}: ${itemName}`,
         },
       });
 
-      // 8. Increment sample downloadCount
-      await tx.sample.update({
-        where: { id: sampleId },
-        data: { downloadCount: { increment: 1 } },
-      });
+      // Increment download count on the item
+      if (itemType === "sample") {
+        await tx.sample.update({
+          where: { id: sampleId },
+          data: { downloadCount: { increment: 1 } },
+        });
+      } else {
+        await tx.preset.update({
+          where: { id: presetId },
+          data: { downloadCount: { increment: 1 } },
+        });
+      }
 
       return purchase;
     });
@@ -128,7 +176,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/purchases — Auth required, return user's purchased sample IDs
+// GET /api/purchases — Auth required, return user's purchased sample & preset IDs
 export async function GET(_request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -142,12 +190,18 @@ export async function GET(_request: NextRequest) {
 
     const purchases = await prisma.purchase.findMany({
       where: { userId: authUser.id },
-      select: { sampleId: true },
+      select: { sampleId: true, presetId: true },
     });
 
-    const sampleIds = purchases.map((p) => p.sampleId);
+    const sampleIds = purchases
+      .filter((p) => p.sampleId !== null)
+      .map((p) => p.sampleId as string);
 
-    return NextResponse.json({ sampleIds });
+    const presetIds = purchases
+      .filter((p) => p.presetId !== null)
+      .map((p) => p.presetId as string);
+
+    return NextResponse.json({ sampleIds, presetIds });
   } catch (error) {
     console.error("GET /api/purchases error:", error);
     return NextResponse.json(
