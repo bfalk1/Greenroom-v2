@@ -126,9 +126,10 @@ export async function GET(request: NextRequest) {
       const pgSeed = Math.max(-1, Math.min(1, randomSeed * 2 - 1));
 
       // Build WHERE clause conditions for raw SQL
+      // $1=limit, $2=offset, then filter params start at $3
       const conditions: string[] = ["s.status = 'PUBLISHED'", "s.is_active = true"];
-      const params: unknown[] = [pgSeed, limit, offset];
-      let paramIndex = 4; // $1=seed, $2=limit, $3=offset
+      const filterParams: unknown[] = [];
+      let paramIndex = 3;
 
       if (search) {
         conditions.push(`(
@@ -137,87 +138,90 @@ export async function GET(request: NextRequest) {
           u.artist_name ILIKE $${paramIndex} OR
           u.username ILIKE $${paramIndex}
         )`);
-        params.push(`%${search}%`, search.toLowerCase());
+        filterParams.push(`%${search}%`, search.toLowerCase());
         paramIndex += 2;
       }
       if (genre && genre !== "all") {
         conditions.push(`s.genre = $${paramIndex}`);
-        params.push(genre);
+        filterParams.push(genre);
         paramIndex++;
       }
       if (instrumentType && instrumentType !== "all") {
         conditions.push(`s.instrument_type = $${paramIndex}`);
-        params.push(instrumentType);
+        filterParams.push(instrumentType);
         paramIndex++;
       }
       if (sampleType && sampleType !== "all") {
         conditions.push(`s.sample_type = $${paramIndex}`);
-        params.push(sampleType.toUpperCase());
+        filterParams.push(sampleType.toUpperCase());
         paramIndex++;
       }
       if (key && key !== "all" && scale && scale !== "all") {
         conditions.push(`s.key = $${paramIndex}`);
-        params.push(`${key} ${scale}`);
+        filterParams.push(`${key} ${scale}`);
         paramIndex++;
       } else if (key && key !== "all") {
         conditions.push(`s.key LIKE $${paramIndex}`);
-        params.push(`${key}%`);
+        filterParams.push(`${key}%`);
         paramIndex++;
       } else if (scale && scale !== "all") {
         conditions.push(`s.key LIKE $${paramIndex}`);
-        params.push(`%${scale}`);
+        filterParams.push(`%${scale}`);
         paramIndex++;
       }
       if (bpmMin) {
         conditions.push(`s.bpm >= $${paramIndex}`);
-        params.push(parseInt(bpmMin));
+        filterParams.push(parseInt(bpmMin));
         paramIndex++;
       }
       if (bpmMax) {
         conditions.push(`s.bpm <= $${paramIndex}`);
-        params.push(parseInt(bpmMax));
+        filterParams.push(parseInt(bpmMax));
         paramIndex++;
       }
 
       const whereClause = conditions.join(" AND ");
 
-      const rawSamples = await prisma.$queryRawUnsafe<Array<{
-        id: string;
-        name: string;
-        slug: string;
-        creator_id: string;
-        genre: string;
-        instrument_type: string;
-        sample_type: string;
-        key: string | null;
-        bpm: number | null;
-        credit_price: number;
-        tags: string[];
-        file_url: string;
-        preview_url: string | null;
-        cover_image_url: string | null;
-        waveform_data: unknown;
-        rating_avg: number;
-        rating_count: number;
-        download_count: number;
-        created_at: Date;
-        artist_name: string | null;
-        username: string | null;
-        avatar_url: string | null;
-      }>>(
-        `SELECT setseed($1);
-         SELECT s.id, s.name, s.slug, s.creator_id, s.genre, s.instrument_type,
-                s.sample_type, s.key, s.bpm, s.credit_price, s.tags, s.file_url,
-                s.preview_url, s.cover_image_url, s.waveform_data, s.rating_avg,
-                s.rating_count, s.download_count, s.created_at,
-                u.artist_name, u.username, u.avatar_url
-         FROM samples s
-         JOIN users u ON u.id = s.creator_id
-         WHERE ${whereClause}
-         ORDER BY random()
-         LIMIT $2 OFFSET $3`,
-        ...params
-      );
+      // Use a transaction so setseed + query share the same connection
+      const rawSamples = await prisma.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe<unknown[]>(`SELECT setseed($1)::text`, pgSeed);
+        return tx.$queryRawUnsafe<Array<{
+          id: string;
+          name: string;
+          slug: string;
+          creator_id: string;
+          genre: string;
+          instrument_type: string;
+          sample_type: string;
+          key: string | null;
+          bpm: number | null;
+          credit_price: number;
+          tags: string[];
+          file_url: string;
+          preview_url: string | null;
+          cover_image_url: string | null;
+          waveform_data: unknown;
+          rating_avg: number;
+          rating_count: number;
+          download_count: number;
+          created_at: Date;
+          artist_name: string | null;
+          username: string | null;
+          avatar_url: string | null;
+        }>>(
+          `SELECT s.id, s.name, s.slug, s.creator_id, s.genre, s.instrument_type,
+                  s.sample_type, s.key, s.bpm, s.credit_price, s.tags, s.file_url,
+                  s.preview_url, s.cover_image_url, s.waveform_data, s.rating_avg,
+                  s.rating_count, s.download_count, s.created_at,
+                  u.artist_name, u.username, u.avatar_url
+           FROM samples s
+           JOIN users u ON u.id = s.creator_id
+           WHERE ${whereClause}
+           ORDER BY random()
+           LIMIT $1 OFFSET $2`,
+          limit, offset, ...filterParams
+        );
+      });
 
       samples = rawSamples.map((s) => ({
         id: s.id,
