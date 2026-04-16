@@ -222,6 +222,12 @@ export async function PATCH(req: NextRequest) {
     if (metadata[field] !== undefined) {
       if (field === "bpm" || field === "creditPrice") {
         updateData[field] = parseInt(metadata[field] as string);
+      } else if (field === "sampleType") {
+        const val = (metadata[field] as string).toUpperCase();
+        if (val !== "LOOP" && val !== "ONE_SHOT") {
+          return NextResponse.json({ error: "Invalid sample type" }, { status: 400 });
+        }
+        updateData[field] = val;
       } else if (field === "tags" && typeof metadata[field] === "string") {
         updateData[field] = (metadata[field] as string)
           .split(",")

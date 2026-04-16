@@ -19,18 +19,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
-const GENRES = [
-  "Electronic",
-  "Hip-Hop",
-  "Pop",
-  "Rock",
-  "Jazz",
-  "Classical",
-  "R&B",
-  "Country",
-  "Latin",
-  "Other",
-];
 const KEYS = [
   "C",
   "C#",
@@ -141,23 +129,13 @@ export function EditSampleModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-white">Genre</Label>
-              <Select
+              <Input
                 value={formData.genre}
-                onValueChange={(v) =>
-                  setFormData({ ...formData, genre: v })
+                onChange={(e) =>
+                  setFormData({ ...formData, genre: e.target.value })
                 }
-              >
-                <SelectTrigger className="bg-[#0a0a0a] border-[#2a2a2a] text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GENRES.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                className="bg-[#0a0a0a] border-[#2a2a2a] text-white"
+              />
             </div>
 
             <div>
@@ -188,8 +166,8 @@ export function EditSampleModal({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="loop">Loop</SelectItem>
-                  <SelectItem value="one_shot">One-Shot</SelectItem>
+                  <SelectItem value="LOOP">Loop</SelectItem>
+                  <SelectItem value="ONE_SHOT">One-Shot</SelectItem>
                 </SelectContent>
               </Select>
             </div>

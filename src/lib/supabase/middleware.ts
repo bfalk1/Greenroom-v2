@@ -50,6 +50,7 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/samples") ||
     pathname.startsWith("/api/genres") ||
+    pathname.startsWith("/api/search") ||
     pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify" ||
     pathname === "/api/beta-invites/verify";

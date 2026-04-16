@@ -10,6 +10,7 @@ import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRow } from "@/components/marketplace/SampleRow";
 import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
 import { PresetFilters, PresetFilterState } from "@/components/marketplace/PresetFilters";
+import { SearchSuggestions } from "@/components/marketplace/SearchSuggestions";
 import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
@@ -48,7 +49,9 @@ export default function MarketplacePage() {
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const artistSliderRef = useRef<HTMLDivElement>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const randomSeedRef = useRef(Math.random());
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
@@ -185,6 +188,9 @@ export default function MarketplacePage() {
         }
         params.set("sortBy", filters.sortBy);
         params.set("sortDir", sortDirection);
+        if (filters.sortBy === "random") {
+          params.set("seed", String(randomSeedRef.current));
+        }
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
@@ -357,6 +363,9 @@ export default function MarketplacePage() {
         if (presetFilters.category !== "all") params.set("category", presetFilters.category);
         if (presetFilters.genre !== "all") params.set("genre", presetFilters.genre);
         params.set("sortBy", presetFilters.sortBy);
+        if (presetFilters.sortBy === "random") {
+          params.set("seed", String(randomSeedRef.current));
+        }
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
@@ -728,13 +737,24 @@ export default function MarketplacePage() {
         {/* Search Bar */}
         <div className="mb-6">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a1a1a1]" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a1a1a1] z-10" />
             <Input
               type="text"
               placeholder={activeTab === "samples" ? "Search samples, creators, genres..." : "Search presets, synths, creators..."}
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
               className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
+            />
+            <SearchSuggestions
+              query={searchQuery}
+              visible={searchFocused}
+              onSelect={(value) => {
+                setSearchQuery(value);
+                setSearchFocused(false);
+              }}
+              onClose={() => setSearchFocused(false)}
             />
           </div>
         </div>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Sample, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { ExploreRow } from "@/components/marketplace/ExploreRow";
+import { SearchSuggestions } from "@/components/marketplace/SearchSuggestions";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 
@@ -25,6 +26,7 @@ interface InstrumentOption {
 export default function ExplorePage() {
   const { user } = useUser();
   const [searchInput, setSearchInput] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [activeSearch, setActiveSearch] = useState("");
   const [samples, setSamples] = useState<Sample[]>([]);
   const [total, setTotal] = useState(0);
@@ -262,23 +264,38 @@ export default function ExplorePage() {
 
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="mb-16">
-            <div className="mx-auto flex max-w-3xl items-center rounded-2xl border border-[#2a2a2a] bg-[#111111]/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.32)] backdrop-blur">
-              <div className="flex items-center flex-1 px-4 py-3">
-                <Search className="mr-3 h-5 w-5 text-[#666]" />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder='Search sounds, creators, or moods like "dark trap 808"'
-                  className="flex-1 bg-transparent text-base text-white placeholder-[#6f6f6f] outline-none md:text-lg"
-                />
+            <div className="relative mx-auto max-w-3xl">
+              <div className="flex items-center rounded-2xl border border-[#2a2a2a] bg-[#111111]/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.32)] backdrop-blur">
+                <div className="flex items-center flex-1 px-4 py-3">
+                  <Search className="mr-3 h-5 w-5 text-[#666]" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onFocus={() => setSearchFocused(true)}
+                    onBlur={() => setSearchFocused(false)}
+                    placeholder='Search sounds, creators, or moods like "dark trap 808"'
+                    className="flex-1 bg-transparent text-base text-white placeholder-[#6f6f6f] outline-none md:text-lg"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-[#39b54a] px-6 py-3 text-sm font-semibold text-black transition hover:bg-[#4bc75d] md:px-8"
+                >
+                  Search
+                </button>
               </div>
-              <button
-                type="submit"
-                className="rounded-xl bg-[#39b54a] px-6 py-3 text-sm font-semibold text-black transition hover:bg-[#4bc75d] md:px-8"
-              >
-                Search
-              </button>
+              <SearchSuggestions
+                query={searchInput}
+                visible={searchFocused}
+                onSelect={(value) => {
+                  setSearchInput(value);
+                  setSearchFocused(false);
+                  setActiveSearch(value);
+                  setShowResults(true);
+                }}
+                onClose={() => setSearchFocused(false)}
+              />
             </div>
           </form>
 

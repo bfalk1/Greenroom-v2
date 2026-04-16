@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     const useRandomSort = sortBy === "random" || !sortBy;
+    const randomSeed = parseFloat(searchParams.get("seed") || "0") || Math.random();
 
     let orderBy: Prisma.PresetOrderByWithRelationInput | undefined;
     if (!useRandomSort) {
@@ -116,42 +117,109 @@ export async function GET(request: NextRequest) {
 
     if (useRandomSort) {
       total = await prisma.preset.count({ where });
-      const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
 
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      };
+      const pgSeed = Math.max(-1, Math.min(1, randomSeed * 2 - 1));
 
-      // Fetch a larger batch and shuffle
-      const batchSize = Math.min(Math.max(limit * 3, 60), total);
-      const maxSkip = Math.max(total - batchSize, 0);
-      const skip = maxSkip === 0 ? 0 : Math.floor(seededRandom(hourSeed) * (maxSkip + 1));
+      // Build WHERE conditions for raw SQL
+      const conditions: string[] = ["p.status = 'PUBLISHED'", "p.is_active = true"];
+      const params: unknown[] = [pgSeed, limit, offset];
+      let paramIndex = 4;
 
-      const rawPresets = await prisma.preset.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: batchSize,
-        include: {
-          creator: {
-            select: {
-              id: true,
-              artistName: true,
-              username: true,
-              avatarUrl: true,
-            },
-          },
+      if (search) {
+        conditions.push(`(
+          p.name ILIKE $${paramIndex} OR
+          $${paramIndex + 1} = ANY(p.tags) OR
+          p.description ILIKE $${paramIndex} OR
+          u.artist_name ILIKE $${paramIndex} OR
+          u.username ILIKE $${paramIndex}
+        )`);
+        params.push(`%${search}%`, search.toLowerCase());
+        paramIndex += 2;
+      }
+      if (synthName && synthName !== "all") {
+        conditions.push(`p.synth_name = $${paramIndex}`);
+        params.push(synthName);
+        paramIndex++;
+      }
+      if (category && category !== "all") {
+        conditions.push(`p.preset_category = $${paramIndex}`);
+        params.push(category);
+        paramIndex++;
+      }
+      if (genre && genre !== "all") {
+        conditions.push(`p.genre = $${paramIndex}`);
+        params.push(genre);
+        paramIndex++;
+      }
+
+      const whereClause = conditions.join(" AND ");
+
+      const rawPresets = await prisma.$queryRawUnsafe<Array<{
+        id: string;
+        name: string;
+        slug: string;
+        description: string | null;
+        creator_id: string;
+        synth_name: string;
+        preset_category: string;
+        genre: string;
+        tags: string[];
+        credit_price: number;
+        file_url: string;
+        preview_url: string | null;
+        cover_image_url: string | null;
+        compatible_versions: string[];
+        is_init_preset: boolean;
+        rating_avg: number;
+        rating_count: number;
+        download_count: number;
+        created_at: Date;
+        artist_name: string | null;
+        username: string | null;
+        avatar_url: string | null;
+      }>>(
+        `SELECT setseed($1);
+         SELECT p.id, p.name, p.slug, p.description, p.creator_id, p.synth_name,
+                p.preset_category, p.genre, p.tags, p.credit_price, p.file_url,
+                p.preview_url, p.cover_image_url, p.compatible_versions,
+                p.is_init_preset, p.rating_avg, p.rating_count, p.download_count,
+                p.created_at,
+                u.artist_name, u.username, u.avatar_url
+         FROM presets p
+         JOIN users u ON u.id = p.creator_id
+         WHERE ${whereClause}
+         ORDER BY random()
+         LIMIT $2 OFFSET $3`,
+        ...params
+      );
+
+      presets = rawPresets.map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        description: p.description,
+        creatorId: p.creator_id,
+        synthName: p.synth_name,
+        presetCategory: p.preset_category,
+        genre: p.genre,
+        tags: p.tags,
+        creditPrice: p.credit_price,
+        fileUrl: p.file_url,
+        previewUrl: p.preview_url,
+        coverImageUrl: p.cover_image_url,
+        compatibleVersions: p.compatible_versions,
+        isInitPreset: p.is_init_preset,
+        ratingAvg: p.rating_avg,
+        ratingCount: p.rating_count,
+        downloadCount: p.download_count,
+        createdAt: p.created_at,
+        creator: {
+          id: p.creator_id,
+          artistName: p.artist_name,
+          username: p.username,
+          avatarUrl: p.avatar_url,
         },
-      });
-
-      const shuffled = [...rawPresets].sort((a, b) => {
-        const seedA = hourSeed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
-        const seedB = hourSeed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
-        return seededRandom(seedA) - seededRandom(seedB);
-      });
-
-      presets = shuffled.slice(offset, offset + limit);
+      }));
     } else {
       const [rawPresets, count] = await Promise.all([
         prisma.preset.findMany({

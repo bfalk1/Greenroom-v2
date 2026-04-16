@@ -73,10 +73,12 @@ export async function GET(request: NextRequest) {
 
     // Parse sort direction from sortBy (e.g., "name_asc" or just "name")
     const sortDirection = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
-    
+
     // Random sorting flag
     const useRandomSort = sortBy === "random" || !sortBy;
-    
+    // Client-provided seed for consistent random pagination (0-1 float)
+    const randomSeed = parseFloat(searchParams.get("seed") || "0") || Math.random();
+
     let orderBy: Prisma.SampleOrderByWithRelationInput | undefined;
     if (!useRandomSort) {
       switch (sortBy) {
@@ -111,133 +113,146 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Helper: shuffle array with seeded randomness for consistency
-    const seededShuffle = <T extends { id: string }>(arr: T[], seed: number): T[] => {
-      const seededRandom = (s: number) => {
-        const x = Math.sin(s) * 10000;
-        return x - Math.floor(x);
-      };
-      return [...arr].sort((a, b) => {
-        const seedA = seed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
-        const seedB = seed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
-        return seededRandom(seedA) - seededRandom(seedB);
-      });
-    };
-
-    // Helper: shuffle items with tied values (for rating/popular sorts)
-    const shuffleTiedGroups = <T extends { id: string }>(
-      arr: T[],
-      getValue: (item: T) => number | null,
-      seed: number
-    ): T[] => {
-      if (arr.length <= 1) return arr;
-      
-      // Group items by their sort value
-      const groups: Map<number | null, T[]> = new Map();
-      for (const item of arr) {
-        const val = getValue(item);
-        if (!groups.has(val)) groups.set(val, []);
-        groups.get(val)!.push(item);
-      }
-      
-      // Shuffle within each group, then flatten in original value order
-      const result: T[] = [];
-      const sortedKeys = [...groups.keys()].sort((a, b) => {
-        if (a === null) return 1;
-        if (b === null) return -1;
-        return b - a; // desc order
-      });
-      
-      for (const key of sortedKeys) {
-        const group = groups.get(key)!;
-        if (group.length > 1) {
-          result.push(...seededShuffle(group, seed));
-        } else {
-          result.push(...group);
-        }
-      }
-      
-      return result;
-    };
-
-    // For random sorting, we use a different approach
     let samples;
     let total: number;
-    
+
     if (useRandomSort) {
-      // Get total count
+      // True random using PostgreSQL setseed() + ORDER BY random().
+      // The seed (0-1 float from the client) keeps the random order stable
+      // for pagination within the same session/page load.
       total = await prisma.sample.count({ where });
-      
-      // Build each random page from several seeded windows across the catalog.
-      // This is still "good enough" random, but feels less locally clustered
-      // than shuffling one contiguous slice.
-      const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
-      const randomBatchSize = Math.max(limit * 5, 100);
-      const batchIndex = Math.floor(offset / randomBatchSize);
-      const offsetInBatch = offset - batchIndex * randomBatchSize;
-      const windowCount = Math.min(5, Math.max(2, Math.ceil(randomBatchSize / Math.max(limit, 1))));
-      const windowSize = Math.max(limit * 2, Math.ceil(randomBatchSize / windowCount));
-      const maxWindowStart = Math.max(total - windowSize, 0);
 
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      };
+      // Clamp seed to valid PostgreSQL range (-1 to 1)
+      const pgSeed = Math.max(-1, Math.min(1, randomSeed * 2 - 1));
 
-      const windowQueries = Array.from({ length: windowCount }, (_, windowIndex) => {
-        const seed = hourSeed + batchIndex * 997 + windowIndex * 131;
-        const skip = maxWindowStart === 0
-          ? 0
-          : Math.floor(seededRandom(seed) * (maxWindowStart + 1));
+      // Build WHERE clause conditions for raw SQL
+      const conditions: string[] = ["s.status = 'PUBLISHED'", "s.is_active = true"];
+      const params: unknown[] = [pgSeed, limit, offset];
+      let paramIndex = 4; // $1=seed, $2=limit, $3=offset
 
-        return prisma.sample.findMany({
-          where,
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: windowSize,
-          include: {
-            creator: {
-              select: {
-                id: true,
-                artistName: true,
-                username: true,
-                avatarUrl: true,
-              },
-            },
-          },
-        });
-      });
-
-      const windowResults = await Promise.all(windowQueries);
-      const dedupedSamples = new Map<string, (typeof windowResults)[number][number]>();
-      for (const windowSamples of windowResults) {
-        for (const sample of windowSamples) {
-          dedupedSamples.set(sample.id, sample);
-        }
+      if (search) {
+        conditions.push(`(
+          s.name ILIKE $${paramIndex} OR
+          $${paramIndex + 1} = ANY(s.tags) OR
+          u.artist_name ILIKE $${paramIndex} OR
+          u.username ILIKE $${paramIndex}
+        )`);
+        params.push(`%${search}%`, search.toLowerCase());
+        paramIndex += 2;
+      }
+      if (genre && genre !== "all") {
+        conditions.push(`s.genre = $${paramIndex}`);
+        params.push(genre);
+        paramIndex++;
+      }
+      if (instrumentType && instrumentType !== "all") {
+        conditions.push(`s.instrument_type = $${paramIndex}`);
+        params.push(instrumentType);
+        paramIndex++;
+      }
+      if (sampleType && sampleType !== "all") {
+        conditions.push(`s.sample_type = $${paramIndex}`);
+        params.push(sampleType.toUpperCase());
+        paramIndex++;
+      }
+      if (key && key !== "all" && scale && scale !== "all") {
+        conditions.push(`s.key = $${paramIndex}`);
+        params.push(`${key} ${scale}`);
+        paramIndex++;
+      } else if (key && key !== "all") {
+        conditions.push(`s.key LIKE $${paramIndex}`);
+        params.push(`${key}%`);
+        paramIndex++;
+      } else if (scale && scale !== "all") {
+        conditions.push(`s.key LIKE $${paramIndex}`);
+        params.push(`%${scale}`);
+        paramIndex++;
+      }
+      if (bpmMin) {
+        conditions.push(`s.bpm >= $${paramIndex}`);
+        params.push(parseInt(bpmMin));
+        paramIndex++;
+      }
+      if (bpmMax) {
+        conditions.push(`s.bpm <= $${paramIndex}`);
+        params.push(parseInt(bpmMax));
+        paramIndex++;
       }
 
-      const rawSamples = [...dedupedSamples.values()];
-      
-      // Seeded shuffle for consistent pagination within the hour
-      const shuffled = [...rawSamples].sort((a, b) => {
-        const seedA = hourSeed + a.id.charCodeAt(0) + a.id.charCodeAt(a.id.length - 1);
-        const seedB = hourSeed + b.id.charCodeAt(0) + b.id.charCodeAt(b.id.length - 1);
-        return seededRandom(seedA) - seededRandom(seedB);
-      });
-      
-      samples = shuffled.slice(offsetInBatch, offsetInBatch + limit);
+      const whereClause = conditions.join(" AND ");
+
+      const rawSamples = await prisma.$queryRawUnsafe<Array<{
+        id: string;
+        name: string;
+        slug: string;
+        creator_id: string;
+        genre: string;
+        instrument_type: string;
+        sample_type: string;
+        key: string | null;
+        bpm: number | null;
+        credit_price: number;
+        tags: string[];
+        file_url: string;
+        preview_url: string | null;
+        cover_image_url: string | null;
+        waveform_data: unknown;
+        rating_avg: number;
+        rating_count: number;
+        download_count: number;
+        created_at: Date;
+        artist_name: string | null;
+        username: string | null;
+        avatar_url: string | null;
+      }>>(
+        `SELECT setseed($1);
+         SELECT s.id, s.name, s.slug, s.creator_id, s.genre, s.instrument_type,
+                s.sample_type, s.key, s.bpm, s.credit_price, s.tags, s.file_url,
+                s.preview_url, s.cover_image_url, s.waveform_data, s.rating_avg,
+                s.rating_count, s.download_count, s.created_at,
+                u.artist_name, u.username, u.avatar_url
+         FROM samples s
+         JOIN users u ON u.id = s.creator_id
+         WHERE ${whereClause}
+         ORDER BY random()
+         LIMIT $2 OFFSET $3`,
+        ...params
+      );
+
+      samples = rawSamples.map((s) => ({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        creatorId: s.creator_id,
+        genre: s.genre,
+        instrumentType: s.instrument_type,
+        sampleType: s.sample_type,
+        key: s.key,
+        bpm: s.bpm,
+        creditPrice: s.credit_price,
+        tags: s.tags,
+        fileUrl: s.file_url,
+        previewUrl: s.preview_url,
+        coverImageUrl: s.cover_image_url,
+        waveformData: s.waveform_data,
+        ratingAvg: s.rating_avg,
+        ratingCount: s.rating_count,
+        downloadCount: s.download_count,
+        createdAt: s.created_at,
+        creator: {
+          id: s.creator_id,
+          artistName: s.artist_name,
+          username: s.username,
+          avatarUrl: s.avatar_url,
+        },
+      }));
     } else {
-      // For rating/popular sorts, we need to fetch extra to shuffle tied items properly
-      const needsTiebreaker = sortBy === "rating" || sortBy === "popular";
-      const fetchLimit = needsTiebreaker ? Math.min(limit * 3, 150) : limit;
-      const fetchOffset = needsTiebreaker ? 0 : offset;
-      
       const [rawSamples, count] = await Promise.all([
         prisma.sample.findMany({
           where,
           orderBy,
-          skip: fetchOffset,
-          take: needsTiebreaker ? fetchLimit : limit,
+          skip: offset,
+          take: limit,
           include: {
             creator: {
               select: {
@@ -251,20 +266,9 @@ export async function GET(request: NextRequest) {
         }),
         prisma.sample.count({ where }),
       ]);
-      
+
       total = count;
-      
-      if (needsTiebreaker && rawSamples.length > 0) {
-        // Shuffle tied values, then slice for pagination
-        const hourSeed = Math.floor(Date.now() / (1000 * 60 * 60));
-        const getValue = sortBy === "rating" 
-          ? (s: typeof rawSamples[0]) => s.ratingAvg 
-          : (s: typeof rawSamples[0]) => s.downloadCount;
-        const shuffled = shuffleTiedGroups(rawSamples, getValue, hourSeed);
-        samples = shuffled.slice(offset, offset + limit);
-      } else {
-        samples = rawSamples;
-      }
+      samples = rawSamples;
     }
 
     // Batch generate signed preview URLs (single request to Supabase)
