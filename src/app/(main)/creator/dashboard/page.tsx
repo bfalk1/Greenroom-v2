@@ -155,14 +155,27 @@ function CreatorSampleRow({
     >
       {/* Cover Art + Play Button */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
-        <img
-          src={
-            sample.coverImageUrl ||
-            "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=80&h=80&fit=crop"
-          }
-          alt={sample.name}
-          className="w-full h-full object-cover"
-        />
+        {sample.coverImageUrl ? (
+          <img
+            src={sample.coverImageUrl}
+            alt={sample.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center p-1">
+            <Waveform
+              audioUrl={sample.previewUrl || undefined}
+              data={sample.waveformData || undefined}
+              isPlaying={false}
+              progress={0}
+              height={32}
+              barWidth={1}
+              barGap={1}
+              barColor="#4a4a4a"
+              progressColor="#39b54a"
+            />
+          </div>
+        )}
         <button
           onClick={handlePlay}
           className={`absolute inset-0 flex items-center justify-center transition ${
