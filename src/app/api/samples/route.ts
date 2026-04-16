@@ -122,9 +122,6 @@ export async function GET(request: NextRequest) {
       // for pagination within the same session/page load.
       total = await prisma.sample.count({ where });
 
-      // Clamp seed to valid PostgreSQL range (-1 to 1)
-      const pgSeed = Math.max(-1, Math.min(1, randomSeed * 2 - 1));
-
       // Build WHERE clause conditions for raw SQL
       // $1=limit, $2=offset, then filter params start at $3
       const conditions: string[] = ["s.status = 'PUBLISHED'", "s.is_active = true"];
@@ -182,46 +179,47 @@ export async function GET(request: NextRequest) {
 
       const whereClause = conditions.join(" AND ");
 
-      // Use a transaction so setseed + query share the same connection
-      const rawSamples = await prisma.$transaction(async (tx) => {
-        await tx.$queryRawUnsafe<unknown[]>(`SELECT setseed($1)::text`, pgSeed);
-        return tx.$queryRawUnsafe<Array<{
-          id: string;
-          name: string;
-          slug: string;
-          creator_id: string;
-          genre: string;
-          instrument_type: string;
-          sample_type: string;
-          key: string | null;
-          bpm: number | null;
-          credit_price: number;
-          tags: string[];
-          file_url: string;
-          preview_url: string | null;
-          cover_image_url: string | null;
-          waveform_data: unknown;
-          rating_avg: number;
-          rating_count: number;
-          download_count: number;
-          created_at: Date;
-          artist_name: string | null;
-          username: string | null;
-          avatar_url: string | null;
-        }>>(
-          `SELECT s.id, s.name, s.slug, s.creator_id, s.genre, s.instrument_type,
-                  s.sample_type, s.key, s.bpm, s.credit_price, s.tags, s.file_url,
-                  s.preview_url, s.cover_image_url, s.waveform_data, s.rating_avg,
-                  s.rating_count, s.download_count, s.created_at,
-                  u.artist_name, u.username, u.avatar_url
-           FROM samples s
-           JOIN users u ON u.id = s.creator_id
-           WHERE ${whereClause}
-           ORDER BY random()
-           LIMIT $1 OFFSET $2`,
-          limit, offset, ...filterParams
-        );
-      });
+      // Use md5(id || seed) for deterministic random order — works with connection poolers
+      const seedStr = String(randomSeed);
+      const seedParamIndex = paramIndex;
+      filterParams.push(seedStr);
+
+      const rawSamples = await prisma.$queryRawUnsafe<Array<{
+        id: string;
+        name: string;
+        slug: string;
+        creator_id: string;
+        genre: string;
+        instrument_type: string;
+        sample_type: string;
+        key: string | null;
+        bpm: number | null;
+        credit_price: number;
+        tags: string[];
+        file_url: string;
+        preview_url: string | null;
+        cover_image_url: string | null;
+        waveform_data: unknown;
+        rating_avg: number;
+        rating_count: number;
+        download_count: number;
+        created_at: Date;
+        artist_name: string | null;
+        username: string | null;
+        avatar_url: string | null;
+      }>>(
+        `SELECT s.id, s.name, s.slug, s.creator_id, s.genre, s.instrument_type,
+                s.sample_type, s.key, s.bpm, s.credit_price, s.tags, s.file_url,
+                s.preview_url, s.cover_image_url, s.waveform_data, s.rating_avg,
+                s.rating_count, s.download_count, s.created_at,
+                u.artist_name, u.username, u.avatar_url
+         FROM samples s
+         JOIN users u ON u.id = s.creator_id
+         WHERE ${whereClause}
+         ORDER BY md5(s.id::text || $${seedParamIndex})
+         LIMIT $1 OFFSET $2`,
+        limit, offset, ...filterParams
+      );
 
       samples = rawSamples.map((s) => ({
         id: s.id,
