@@ -17,6 +17,7 @@ function detectPlatform(): Platform {
 
 const GITHUB_REPO = "bfalk1/Greenroom-v2";
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
+const CURRENT_VERSION = "1.5.0";
 
 interface ReleaseAsset {
   name: string;
@@ -28,7 +29,7 @@ export default function DownloadPage() {
   const [platform, setPlatform] = useState<Platform>("unknown");
   const [assets, setAssets] = useState<ReleaseAsset[]>([]);
   const [loading, setLoading] = useState(true);
-  const [version, setVersion] = useState<string>("");
+  const [version, setVersion] = useState<string>(CURRENT_VERSION);
 
   useEffect(() => {
     setPlatform(detectPlatform());

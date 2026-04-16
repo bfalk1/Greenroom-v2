@@ -63,6 +63,7 @@ export async function GET(request: Request) {
             profileCompleted: false,
             role: hasCreatorInvite ? "CREATOR" : "USER",
             isActive: true,
+            termsAcceptedAt: new Date(),
           },
         });
 
@@ -134,6 +135,7 @@ export async function GET(request: Request) {
               status: "APPROVED",
               reviewNote: "Auto-approved via admin invite",
               reviewedAt: new Date(),
+              termsAcceptedAt: new Date(),
             },
           });
         }
