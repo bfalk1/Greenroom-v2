@@ -280,7 +280,36 @@ export default function BatchUploadPage() {
       if (uploadError) throw uploadError;
       
       const fileUrl = `samples/${audioPath}`;
-      
+
+      // Generate waveform data from the audio file
+      let waveformData: number[] | null = null;
+      try {
+        const arrayBuffer = await sample.file.arrayBuffer();
+        const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const rawData = audioBuffer.getChannelData(0);
+
+        const waveformSamples = 80;
+        const blockSize = Math.floor(rawData.length / waveformSamples);
+        const peaks: number[] = [];
+
+        for (let i = 0; i < waveformSamples; i++) {
+          const blockStart = blockSize * i;
+          let peak = 0;
+          for (let j = 0; j < blockSize; j++) {
+            const abs = Math.abs(rawData[blockStart + j] || 0);
+            if (abs > peak) peak = abs;
+          }
+          peaks.push(peak);
+        }
+
+        const maxValue = Math.max(...peaks);
+        waveformData = maxValue > 0 ? peaks.map(n => n / maxValue) : null;
+        audioContext.close();
+      } catch (e) {
+        console.error("Failed to generate waveform for batch sample:", e);
+      }
+
       // Create sample via API
       const res = await fetch("/api/samples", {
         method: "POST",
@@ -295,6 +324,7 @@ export default function BatchUploadPage() {
           creditPrice: sample.creditPrice,
           tags: "",
           fileUrl,
+          waveformData,
         }),
       });
       
