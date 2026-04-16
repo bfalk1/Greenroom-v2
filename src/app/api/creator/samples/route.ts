@@ -16,7 +16,7 @@ export async function GET(_request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
-      select: { role: true, customPayoutRate: true },
+      select: { role: true, customPayoutRate: true, avatarUrl: true },
     });
 
     if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
@@ -130,6 +130,7 @@ export async function GET(_request: NextRequest) {
         creditPrice: s.creditPrice,
         tags: s.tags,
         coverImageUrl: signedCoverUrl,
+        creatorAvatarUrl: dbUser.avatarUrl,
         previewUrl: signedPreviewUrl,
         waveformData: s.waveformData,
         status: s.status,
