@@ -33,22 +33,23 @@ export function Waveform({
   backgroundColor = "transparent",
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [waveformData, setWaveformData] = useState<number[]>([]);
+  const [waveformData, setWaveformData] = useState<number[]>(
+    data && data.length > 0 ? data : []
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
 
-  // Use pre-computed data if available
+  // Sync pre-computed data when prop changes
   useEffect(() => {
     if (data && data.length > 0) {
       setWaveformData(data);
       setIsLoading(false);
-      return;
     }
   }, [data]);
 
-  // Fetch and analyze audio to generate waveform data (fallback if no pre-computed data)
+  // Fetch and analyze audio to generate waveform data (only if no pre-computed data)
   useEffect(() => {
-    if (data && data.length > 0) return; // Skip if we have pre-computed data
+    if (data && data.length > 0) return;
     if (!audioUrl) return;
     let isCancelled = false;
 
@@ -104,11 +105,13 @@ export function Waveform({
         console.error("Failed to generate waveform:", err);
         if (isCancelled) return;
         setError(true);
-        // Generate placeholder waveform as fallback
-        const fakeData = Array(80)
-          .fill(0)
-          .map((_, i) => 0.3 + 0.4 * Math.sin(i * 0.2) * Math.random());
-        setWaveformData(fakeData);
+        // Only set placeholder if we don't already have data
+        setWaveformData((prev) => {
+          if (prev.length > 0) return prev;
+          return Array(80)
+            .fill(0)
+            .map((_, i) => 0.3 + 0.4 * Math.sin(i * 0.2) * Math.random());
+        });
       } finally {
         if (!isCancelled) {
           setIsLoading(false);
