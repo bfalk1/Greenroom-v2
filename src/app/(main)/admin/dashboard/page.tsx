@@ -28,6 +28,7 @@ import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
 import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
+import { InviteInfiniteUserPanel } from "@/components/admin/InviteInfiniteUserPanel";
 import { toast } from "sonner";
 
 interface Stats {
@@ -1111,6 +1112,7 @@ export default function AdminDashboardPage() {
                 </Button>
               </div>
 
+              <InviteInfiniteUserPanel />
               <BetaInvitePanel />
               <CreatorInvitePanel />
               <UserSearchPanel />

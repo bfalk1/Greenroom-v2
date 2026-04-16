@@ -62,10 +62,19 @@ export async function POST(request: NextRequest) {
     const admin = await requireAdmin();
     if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { email, message } = await request.json();
+    const { email, message, credits } = await request.json();
 
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
+    // Optional custom credit grant (e.g. infinite/premium invites). Postgres int max is ~2.1B.
+    let creditsOverride: number | undefined;
+    if (credits !== undefined) {
+      if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || credits > 2_000_000_000) {
+        return NextResponse.json({ error: "Credits must be a non-negative integer under 2,000,000,000" }, { status: 400 });
+      }
+      creditsOverride = credits;
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -86,7 +95,14 @@ export async function POST(request: NextRequest) {
     expiresAt.setDate(expiresAt.getDate() + 30);
 
     const invite = await prisma.betaInvite.create({
-      data: { email, message, invitedBy: admin.id, expiresAt, emailStatus: "pending" },
+      data: {
+        email,
+        message,
+        invitedBy: admin.id,
+        expiresAt,
+        emailStatus: "pending",
+        ...(creditsOverride !== undefined ? { credits: creditsOverride } : {}),
+      },
     });
 
     try {
@@ -103,7 +119,7 @@ export async function POST(request: NextRequest) {
           action: "BETA_USER_INVITED",
           targetType: "BetaInvite",
           targetId: invite.id,
-          metadata: { email, emailStatus: "sent" },
+          metadata: { email, emailStatus: "sent", credits: invite.credits },
         },
       });
 
