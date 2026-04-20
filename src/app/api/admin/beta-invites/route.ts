@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL } from "@/lib/email";
 
 // Credit threshold at or above which an invite is treated as "premium / unlimited"
 // and receives the higher-end email template.
@@ -14,7 +14,7 @@ async function sendBetaInviteEmail(invite: {
   token: string;
   credits: number;
 }) {
-  const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?beta=${invite.token}`;
+  const signupUrl = `${EMAIL_SITE_URL}/signup?beta=${invite.token}`;
 
   if (invite.credits >= PREMIUM_CREDIT_THRESHOLD) {
     await sendPremiumInviteEmail({ ...invite, signupUrl });

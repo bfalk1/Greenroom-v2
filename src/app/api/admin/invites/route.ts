@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL } from "@/lib/email";
 
 // Helper to send invite email
 async function sendInviteEmail(invite: {
@@ -11,7 +11,7 @@ async function sendInviteEmail(invite: {
   message: string | null;
   token: string;
 }) {
-  const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/signup?invite=${invite.token}`;
+  const signupUrl = `${EMAIL_SITE_URL}/signup?invite=${invite.token}`;
 
   await sendEmail({
     to: invite.email,

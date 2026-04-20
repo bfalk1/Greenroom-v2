@@ -17,6 +17,10 @@ function getResend() {
 export const ADMIN_EMAIL = "admin@greenroom.fm";
 const FROM_EMAIL = "GREENROOM <admin@greenroom.fm>";
 
+// Canonical site URL used in outbound emails. Hardcoded so preview/staging
+// deployments don't leak non-brand URLs (e.g. *.vercel.app) into user inboxes.
+export const EMAIL_SITE_URL = "https://greenroom.fm";
+
 interface SendEmailOptions {
   to: string;
   subject: string;
@@ -34,7 +38,7 @@ interface SendTemplateEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
-  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
   
   // Add unsubscribe link to HTML emails if not already present
   let html = options.html;
@@ -81,7 +85,7 @@ export async function sendEmail(options: SendEmailOptions) {
 
 // Send email using a Resend template
 export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
-  const unsubscribeUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm"}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
 
   const { data, error } = await getResend().emails.send({
     from: FROM_EMAIL,
