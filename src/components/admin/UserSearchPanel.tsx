@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Search, User, Mail, Shield, Zap, Percent, Loader2 } from "lucide-react";
+import { Search, User, Mail, Shield, Zap, Percent, Loader2, Music, AtSign } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -39,10 +39,14 @@ export function UserSearchPanel() {
   const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null);
   const [creditAdjustment, setCreditAdjustment] = useState("");
   const [payoutRateInput, setPayoutRateInput] = useState("");
+  const [artistNameInput, setArtistNameInput] = useState("");
+  const [usernameInput, setUsernameInput] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState(false);
   const [updatingPayout, setUpdatingPayout] = useState(false);
   const [updatingWhitelist, setUpdatingWhitelist] = useState(false);
+  const [updatingArtistName, setUpdatingArtistName] = useState(false);
+  const [updatingUsername, setUpdatingUsername] = useState(false);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -69,6 +73,8 @@ export function UserSearchPanel() {
   const handleSelectUser = (user: SearchUser) => {
     setSelectedUser(user);
     setPayoutRateInput(user.payoutRate?.toString() || "");
+    setArtistNameInput(user.artistName || "");
+    setUsernameInput(user.username || "");
     setCreditAdjustment("");
   };
 
@@ -177,6 +183,103 @@ export function UserSearchPanel() {
       toast.error(error instanceof Error ? error.message : "Failed to update payout rate");
     } finally {
       setUpdatingPayout(false);
+    }
+  };
+
+  const handleArtistNameSave = async () => {
+    if (!selectedUser) return;
+
+    const next = artistNameInput.trim();
+    const current = selectedUser.artistName || "";
+    if (next === current) {
+      toast.info("No changes to save");
+      return;
+    }
+
+    try {
+      setUpdatingArtistName(true);
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          artistName: next === "" ? null : next,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update artist name");
+      }
+
+      const data = await res.json();
+      const updatedUser = data.user;
+
+      setSelectedUser(updatedUser);
+      setSearchResults(results =>
+        results.map(u => u.id === updatedUser.id ? updatedUser : u)
+      );
+      setArtistNameInput(updatedUser.artistName || "");
+      toast.success(
+        updatedUser.artistName
+          ? `Artist name set to "${updatedUser.artistName}"`
+          : "Artist name cleared"
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update artist name");
+    } finally {
+      setUpdatingArtistName(false);
+    }
+  };
+
+  const handleUsernameSave = async () => {
+    if (!selectedUser) return;
+
+    const next = usernameInput.trim().toLowerCase();
+    const current = selectedUser.username || "";
+    if (next === current) {
+      toast.info("No changes to save");
+      return;
+    }
+
+    if (next !== "" && !/^[a-z0-9_]{3,30}$/.test(next)) {
+      toast.error("Username must be 3–30 chars, lowercase letters, numbers, or underscores");
+      return;
+    }
+
+    try {
+      setUpdatingUsername(true);
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          username: next === "" ? null : next,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update username");
+      }
+
+      const data = await res.json();
+      const updatedUser = data.user;
+
+      setSelectedUser(updatedUser);
+      setSearchResults(results =>
+        results.map(u => u.id === updatedUser.id ? updatedUser : u)
+      );
+      setUsernameInput(updatedUser.username || "");
+      toast.success(
+        updatedUser.username
+          ? `Username set to "${updatedUser.username}"`
+          : "Username cleared"
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update username");
+    } finally {
+      setUpdatingUsername(false);
     }
   };
 
@@ -349,6 +452,83 @@ export function UserSearchPanel() {
                   </Select>
                   <p className="text-xs text-[#a1a1a1]">
                     Admin: Full access | Moderator: Content moderation | Creator: Can upload samples | User: Standard access
+                  </p>
+                </div>
+
+                {/* Username (login handle) */}
+                <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
+                  <div className="flex items-center gap-2 text-[#a1a1a1]">
+                    <AtSign className="w-5 h-5 text-[#39b54a]" />
+                    <span>
+                      Username
+                      {selectedUser.username ? (
+                        <span className="ml-2 text-xs text-[#39b54a]">
+                          (current: @{selectedUser.username})
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-xs text-[#666]">(not set)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g. nightshade_beats"
+                      maxLength={30}
+                      value={usernameInput}
+                      onChange={(e) => setUsernameInput(e.target.value)}
+                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                    />
+                    <Button
+                      onClick={handleUsernameSave}
+                      disabled={updatingUsername}
+                      className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                    >
+                      {updatingUsername ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-[#a1a1a1]">
+                    Login handle. 3–30 chars, lowercase letters, numbers, or underscores. Must be unique. Leave empty to clear.
+                  </p>
+                </div>
+
+                {/* Artist Name (displayed name for creators) */}
+                <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
+                  <div className="flex items-center gap-2 text-[#a1a1a1]">
+                    <Music className="w-5 h-5 text-[#39b54a]" />
+                    <span>
+                      Artist Name
+                      {selectedUser.artistName ? (
+                        <span className="ml-2 text-xs text-[#39b54a]">
+                          (current: {selectedUser.artistName})
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-xs text-[#666]">(not set)</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g. DJ Nightshade"
+                      maxLength={60}
+                      value={artistNameInput}
+                      onChange={(e) => setArtistNameInput(e.target.value)}
+                      className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                    />
+                    <Button
+                      onClick={handleArtistNameSave}
+                      disabled={updatingArtistName}
+                      className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                    >
+                      {updatingArtistName ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-[#a1a1a1]">
+                    Public display name for creators. Must be unique. Leave empty to clear. 1–60 characters.
+                    {selectedUser.role !== "CREATOR" && (
+                      <span className="text-yellow-400"> This user is a {selectedUser.role.toLowerCase()}; set role to Creator for the name to appear on samples.</span>
+                    )}
                   </p>
                 </div>
 

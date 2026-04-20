@@ -84,7 +84,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, role, creditAdjustment, payoutRate } = body;
+    const { userId, role, creditAdjustment, payoutRate, artistName, username } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "userId required" }, { status: 400 });
@@ -103,6 +103,8 @@ export async function PATCH(request: NextRequest) {
       role?: "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
       credits?: number;
       payoutRate?: number | null;
+      artistName?: string | null;
+      username?: string | null;
     } = {};
 
     // Role change
@@ -141,22 +143,78 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        fullName: true,
-        artistName: true,
-        avatarUrl: true,
-        credits: true,
-        role: true,
-        payoutRate: true,
-        isWhitelisted: true,
-      },
-    });
+    // Username (login handle; unique in the DB, lowercase alphanumeric + underscore)
+    if (username !== undefined) {
+      if (username === null || username === "") {
+        updateData.username = null;
+      } else if (typeof username !== "string") {
+        return NextResponse.json({ error: "Invalid username" }, { status: 400 });
+      } else {
+        const trimmed = username.trim().toLowerCase();
+        if (!/^[a-z0-9_]{3,30}$/.test(trimmed)) {
+          return NextResponse.json(
+            { error: "Username must be 3–30 characters, lowercase letters, numbers, or underscores" },
+            { status: 400 }
+          );
+        }
+        updateData.username = trimmed;
+      }
+    }
+
+    // Artist name (used by creators; unique in the DB)
+    if (artistName !== undefined) {
+      if (artistName === null || artistName === "") {
+        updateData.artistName = null;
+      } else if (typeof artistName !== "string") {
+        return NextResponse.json({ error: "Invalid artist name" }, { status: 400 });
+      } else {
+        const trimmed = artistName.trim();
+        if (trimmed.length < 1 || trimmed.length > 60) {
+          return NextResponse.json(
+            { error: "Artist name must be 1–60 characters" },
+            { status: 400 }
+          );
+        }
+        updateData.artistName = trimmed;
+      }
+    }
+
+    let updatedUser;
+    try {
+      updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          fullName: true,
+          artistName: true,
+          avatarUrl: true,
+          credits: true,
+          role: true,
+          payoutRate: true,
+          isWhitelisted: true,
+        },
+      });
+    } catch (err: unknown) {
+      // Prisma unique-constraint violation (artistName and username are unique)
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        (err as { code?: string }).code === "P2002"
+      ) {
+        const target = (err as { meta?: { target?: string[] | string } }).meta?.target;
+        const field = Array.isArray(target) ? target[0] : target;
+        const label = field === "username" ? "username" : "artist name";
+        return NextResponse.json(
+          { error: `That ${label} is already taken` },
+          { status: 409 }
+        );
+      }
+      throw err;
+    }
 
     return NextResponse.json({ user: updatedUser });
   } catch (error) {
