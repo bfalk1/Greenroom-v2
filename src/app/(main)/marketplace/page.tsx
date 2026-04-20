@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders } from "lucide-react";
+import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders, Shuffle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId } from "@/components/marketplace/SampleCard";
@@ -49,7 +49,7 @@ export default function MarketplacePage() {
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const artistSliderRef = useRef<HTMLDivElement>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const randomSeedRef = useRef(Math.random());
+  const [randomSeed, setRandomSeed] = useState(() => Math.random());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
@@ -189,7 +189,7 @@ export default function MarketplacePage() {
         params.set("sortBy", filters.sortBy);
         params.set("sortDir", sortDirection);
         if (filters.sortBy === "random") {
-          params.set("seed", String(randomSeedRef.current));
+          params.set("seed", String(randomSeed));
         }
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
@@ -236,7 +236,7 @@ export default function MarketplacePage() {
         setLoadingMore(false);
       }
     },
-    [searchQuery, filters, sortDirection]
+    [searchQuery, filters, sortDirection, randomSeed]
   );
 
   // Infinite scroll with debounce
@@ -246,7 +246,7 @@ export default function MarketplacePage() {
   useEffect(() => {
     // Reset hasMore when filters change
     setHasMore(true);
-  }, [filters, searchQuery]);
+  }, [filters, searchQuery, randomSeed]);
   
   useEffect(() => {
     const sentinel = loadMoreRef.current;
@@ -364,7 +364,7 @@ export default function MarketplacePage() {
         if (presetFilters.genre !== "all") params.set("genre", presetFilters.genre);
         params.set("sortBy", presetFilters.sortBy);
         if (presetFilters.sortBy === "random") {
-          params.set("seed", String(randomSeedRef.current));
+          params.set("seed", String(randomSeed));
         }
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
@@ -398,7 +398,7 @@ export default function MarketplacePage() {
         setPresetLoadingMore(false);
       }
     },
-    [searchQuery, presetFilters]
+    [searchQuery, presetFilters, randomSeed]
   );
 
   useEffect(() => {
@@ -608,6 +608,10 @@ export default function MarketplacePage() {
     setPresetFilters(newFilters);
   };
 
+  const handleReroll = () => {
+    setRandomSeed(Math.random());
+  };
+
   const userForCard = user
     ? {
         id: user.id,
@@ -785,6 +789,17 @@ export default function MarketplacePage() {
               <h2 className="text-sm font-semibold text-[#a1a1a1]">
                 {isFiltered ? `${total} result${total !== 1 ? "s" : ""}` : `${total} sample${total !== 1 ? "s" : ""}`}
               </h2>
+              {filters.sortBy === "random" && (
+                <button
+                  onClick={handleReroll}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#a1a1a1] hover:text-white bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-[#39b54a]/50 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Reroll random order"
+                >
+                  <Shuffle className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+                  Reroll
+                </button>
+              )}
             </div>
 
             {loading ? (
@@ -874,6 +889,17 @@ export default function MarketplacePage() {
               <h2 className="text-sm font-semibold text-[#a1a1a1]">
                 {presetTotal} preset{presetTotal !== 1 ? "s" : ""}
               </h2>
+              {presetFilters.sortBy === "random" && (
+                <button
+                  onClick={handleReroll}
+                  disabled={presetLoading}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#a1a1a1] hover:text-white bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-[#39b54a]/50 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Reroll random order"
+                >
+                  <Shuffle className={`w-3.5 h-3.5 ${presetLoading ? "animate-spin" : ""}`} />
+                  Reroll
+                </button>
+              )}
             </div>
 
             {presetLoading ? (
