@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Download, Apple, Monitor, Terminal } from "lucide-react";
+import { Download, Apple, Monitor, Terminal, Check, Zap, FolderSync, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Platform = "mac" | "windows" | "linux" | "unknown";
@@ -33,8 +33,7 @@ export default function DownloadPage() {
 
   useEffect(() => {
     setPlatform(detectPlatform());
-    
-    // Fetch latest release from our API (handles private repo auth)
+
     fetch("/api/releases")
       .then(res => res.ok ? res.json() : null)
       .then(data => {
@@ -63,133 +62,222 @@ export default function DownloadPage() {
   };
 
   const platformConfig = {
-    mac: { icon: Apple, label: "macOS", extension: ".dmg" },
-    windows: { icon: Monitor, label: "Windows", extension: ".exe" },
-    linux: { icon: Terminal, label: "Linux", extension: ".AppImage" },
+    mac: { icon: Apple, label: "macOS", sub: "Intel & Apple Silicon" },
+    windows: { icon: Monitor, label: "Windows", sub: "10 and later" },
+    linux: { icon: Terminal, label: "Linux", sub: "AppImage" },
   };
 
   const primaryAsset = platform !== "unknown" ? getAssetForPlatform(platform) : undefined;
   const primaryConfig = platform !== "unknown" ? platformConfig[platform] : undefined;
 
+  const otherPlatforms = (["mac", "windows", "linux"] as const).filter(p => p !== platform);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#39b54a] to-[#2e9140] flex items-center justify-center mx-auto mb-6">
-            <Download className="w-8 h-8 text-black" />
+    <div className="relative min-h-screen overflow-hidden bg-[#0a0a0a]">
+      {/* Ambient background glow */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[800px] rounded-full bg-[#39b54a]/10 blur-[140px]" />
+        <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full bg-[#39b54a]/5 blur-[120px]" />
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.8) 1px, transparent 0)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+      </div>
+
+      <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
+        {/* Hero */}
+        <div className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 mb-6 rounded-full border border-[#39b54a]/20 bg-[#39b54a]/5 text-xs font-medium text-[#39b54a]">
+            <Sparkles className="w-3 h-3" />
+            Desktop app {version && `• v${version.replace(/^v/, "")}`}
           </div>
-          <h1 className="text-4xl font-bold text-white mb-4">
-            Download GREENROOM
+
+          <h1 className="text-5xl sm:text-6xl font-bold text-white mb-5 tracking-tight">
+            Bring GREENROOM
+            <br />
+            <span className="bg-gradient-to-r from-[#39b54a] to-[#6ae076] bg-clip-text text-transparent">
+              to your desktop
+            </span>
           </h1>
-          <p className="text-xl text-[#a1a1a1]">
-            Get the desktop app for the best experience
+          <p className="text-lg text-[#a1a1a1] max-w-xl mx-auto">
+            Native performance, offline playback, and direct sync with your DAW — free for all members.
           </p>
-          {version && (
-            <p className="text-sm text-[#666] mt-2">Version {version}</p>
-          )}
         </div>
 
         {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin w-8 h-8 border-2 border-[#39b54a] border-t-transparent rounded-full mx-auto" />
+          <div className="flex justify-center py-20">
+            <div className="animate-spin w-8 h-8 border-2 border-[#39b54a] border-t-transparent rounded-full" />
           </div>
         ) : assets.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-[#a1a1a1] mb-4">No releases available yet.</p>
+          <div className="text-center py-16 rounded-2xl border border-[#2a2a2a] bg-[#141414]">
+            <div className="w-14 h-14 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center mx-auto mb-4">
+              <Download className="w-6 h-6 text-[#666]" />
+            </div>
+            <p className="text-white font-medium mb-2">Coming soon</p>
             <p className="text-sm text-[#666]">
-              The desktop app is coming soon. Check back later!
+              The desktop app is on its way. Check back later.
             </p>
           </div>
         ) : (
           <>
-            {/* Primary Download */}
-            {primaryAsset && primaryConfig && (
-              <div className="bg-[#1a1a1a] rounded-2xl border border-[#2a2a2a] p-8 mb-8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-[#2a2a2a] flex items-center justify-center">
-                      <primaryConfig.icon className="w-6 h-6 text-[#39b54a]" />
+            {/* Primary Download Card */}
+            {primaryAsset && primaryConfig ? (
+              <div className="relative mb-10">
+                {/* Glow */}
+                <div className="absolute -inset-0.5 rounded-3xl bg-gradient-to-r from-[#39b54a]/40 via-[#39b54a]/10 to-[#39b54a]/40 blur-2xl opacity-40" />
+                <div className="relative rounded-3xl bg-gradient-to-b from-[#1a1a1a] to-[#141414] border border-[#2a2a2a] overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#39b54a]/50 to-transparent" />
+
+                  <div className="p-8 sm:p-10 flex flex-col md:flex-row md:items-center gap-8">
+                    <div className="flex items-center gap-5 flex-1 min-w-0">
+                      <div className="relative flex-shrink-0">
+                        <div className="absolute inset-0 rounded-2xl bg-[#39b54a]/20 blur-xl" />
+                        <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#39b54a] to-[#2e9140] flex items-center justify-center shadow-lg shadow-[#39b54a]/20">
+                          <primaryConfig.icon className="w-8 h-8 text-black" strokeWidth={2.5} />
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#39b54a]">
+                            <Check className="w-3 h-3" />
+                            Detected
+                          </span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white truncate">
+                          GREENROOM for {primaryConfig.label}
+                        </h2>
+                        <p className="text-sm text-[#888] mt-1">
+                          {primaryConfig.sub} • {formatSize(primaryAsset.size)}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h2 className="text-xl font-semibold text-white">
-                        GREENROOM for {primaryConfig.label}
-                      </h2>
-                      <p className="text-sm text-[#666]">
-                        {primaryAsset.name} • {formatSize(primaryAsset.size)}
-                      </p>
-                    </div>
+
+                    <a href={primaryAsset.browser_download_url} className="flex-shrink-0">
+                      <Button
+                        size="lg"
+                        className="group bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold px-8 h-14 rounded-xl shadow-lg shadow-[#39b54a]/20 transition-all hover:shadow-[#39b54a]/40 hover:scale-[1.02]"
+                      >
+                        <Download className="w-5 h-5 mr-2 transition-transform group-hover:translate-y-0.5" />
+                        Download
+                      </Button>
+                    </a>
                   </div>
-                  <a href={primaryAsset.browser_download_url}>
-                    <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold px-6">
-                      <Download className="w-4 h-4 mr-2" />
-                      Download
-                    </Button>
-                  </a>
+                </div>
+              </div>
+            ) : (
+              // Unknown platform: show all three as primary choices
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
+                {(["mac", "windows", "linux"] as const).map((p) => {
+                  const asset = getAssetForPlatform(p);
+                  const config = platformConfig[p];
+                  if (!asset) return null;
+                  return (
+                    <a
+                      key={p}
+                      href={asset.browser_download_url}
+                      className="group relative rounded-2xl bg-[#141414] border border-[#2a2a2a] p-6 hover:border-[#39b54a]/40 transition overflow-hidden"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#39b54a]/0 to-[#39b54a]/0 group-hover:from-[#39b54a]/5 group-hover:to-transparent transition" />
+                      <div className="relative">
+                        <config.icon className="w-8 h-8 text-[#39b54a] mb-4" />
+                        <h3 className="text-lg font-semibold text-white mb-1">{config.label}</h3>
+                        <p className="text-xs text-[#666] mb-4">{config.sub}</p>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-[#888]">{formatSize(asset.size)}</span>
+                          <span className="text-[#39b54a] font-medium group-hover:translate-x-0.5 transition-transform">
+                            Download →
+                          </span>
+                        </div>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Other Platforms (compact) */}
+            {primaryAsset && otherPlatforms.some(p => getAssetForPlatform(p)) && (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
+                <span className="text-sm text-[#666]">Also available for</span>
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  {otherPlatforms.map((p) => {
+                    const asset = getAssetForPlatform(p);
+                    const config = platformConfig[p];
+                    if (!asset) return null;
+                    return (
+                      <a
+                        key={p}
+                        href={asset.browser_download_url}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#141414] border border-[#2a2a2a] hover:border-[#39b54a]/40 hover:bg-[#1a1a1a] text-sm text-white transition"
+                      >
+                        <config.icon className="w-4 h-4 text-[#a1a1a1]" />
+                        {config.label}
+                        <span className="text-xs text-[#666]">{formatSize(asset.size)}</span>
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Other Platforms */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(["mac", "windows", "linux"] as const).map((p) => {
-                if (p === platform) return null;
-                const asset = getAssetForPlatform(p);
-                const config = platformConfig[p];
-                if (!asset) return null;
-                
-                return (
-                  <a
-                    key={p}
-                    href={asset.browser_download_url}
-                    className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-6 hover:border-[#39b54a]/30 transition group"
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <config.icon className="w-5 h-5 text-[#666] group-hover:text-[#39b54a] transition" />
-                      <span className="font-medium text-white">{config.label}</span>
-                    </div>
-                    <p className="text-xs text-[#666]">{formatSize(asset.size)}</p>
-                  </a>
-                );
-              })}
-            </div>
-
-            {/* All Downloads Link */}
-            <div className="text-center mt-8">
+            {/* GitHub Releases Link */}
+            <div className="text-center mb-20">
               <a
                 href={RELEASES_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-[#39b54a] hover:text-white transition"
+                className="inline-flex items-center gap-1.5 text-sm text-[#666] hover:text-[#39b54a] transition"
               >
-                View all releases on GitHub →
+                View release notes and older versions
+                <span aria-hidden>→</span>
               </a>
             </div>
           </>
         )}
 
         {/* Features */}
-        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
-              <Download className="w-5 h-5 text-[#39b54a]" />
-            </div>
-            <h3 className="font-medium text-white mb-1">Faster Downloads</h3>
-            <p className="text-sm text-[#666]">Download samples directly to your DAW folder</p>
+        <div className="relative rounded-3xl bg-gradient-to-b from-[#141414] to-[#0f0f0f] border border-[#2a2a2a] p-8 sm:p-10">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-semibold text-white mb-2">
+              Built for producers
+            </h2>
+            <p className="text-sm text-[#a1a1a1]">
+              Why the desktop app beats the browser
+            </p>
           </div>
-          <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
-              <Monitor className="w-5 h-5 text-[#39b54a]" />
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="group">
+              <div className="w-11 h-11 rounded-xl bg-[#39b54a]/10 border border-[#39b54a]/20 flex items-center justify-center mb-4 group-hover:bg-[#39b54a]/20 transition">
+                <Zap className="w-5 h-5 text-[#39b54a]" />
+              </div>
+              <h3 className="font-semibold text-white mb-1.5">Instant Playback</h3>
+              <p className="text-sm text-[#888] leading-relaxed">
+                Native audio engine with zero-latency previews, even offline.
+              </p>
             </div>
-            <h3 className="font-medium text-white mb-1">Native Experience</h3>
-            <p className="text-sm text-[#666]">Full desktop app with system integration</p>
-          </div>
-          <div className="text-center">
-            <div className="w-10 h-10 rounded-lg bg-[#39b54a]/10 flex items-center justify-center mx-auto mb-3">
-              <Apple className="w-5 h-5 text-[#39b54a]" />
+            <div className="group">
+              <div className="w-11 h-11 rounded-xl bg-[#39b54a]/10 border border-[#39b54a]/20 flex items-center justify-center mb-4 group-hover:bg-[#39b54a]/20 transition">
+                <FolderSync className="w-5 h-5 text-[#39b54a]" />
+              </div>
+              <h3 className="font-semibold text-white mb-1.5">DAW Sync</h3>
+              <p className="text-sm text-[#888] leading-relaxed">
+                Purchases drop straight into your sample folder — ready in your DAW.
+              </p>
             </div>
-            <h3 className="font-medium text-white mb-1">Cross Platform</h3>
-            <p className="text-sm text-[#666]">Available for macOS, Windows, and Linux</p>
+            <div className="group">
+              <div className="w-11 h-11 rounded-xl bg-[#39b54a]/10 border border-[#39b54a]/20 flex items-center justify-center mb-4 group-hover:bg-[#39b54a]/20 transition">
+                <Monitor className="w-5 h-5 text-[#39b54a]" />
+              </div>
+              <h3 className="font-semibold text-white mb-1.5">Always Available</h3>
+              <p className="text-sm text-[#888] leading-relaxed">
+                Global shortcuts, menu-bar controls, and a home in your dock.
+              </p>
+            </div>
           </div>
         </div>
       </div>
