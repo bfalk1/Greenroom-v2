@@ -18,6 +18,7 @@ function detectPlatform(): Platform {
 const GITHUB_REPO = "bfalk1/Greenroom-v2";
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 const CURRENT_VERSION = "1.5.0";
+const RELEASE_BASE = `https://github.com/${GITHUB_REPO}/releases/download/v${CURRENT_VERSION}`;
 
 interface ReleaseAsset {
   name: string;
@@ -25,25 +26,55 @@ interface ReleaseAsset {
   size: number;
 }
 
+// Fallback asset list so the page always shows working download links,
+// even if the GitHub API call fails (rate-limit, outage, etc.).
+const FALLBACK_ASSETS: ReleaseAsset[] = [
+  {
+    name: `GREENROOM-${CURRENT_VERSION}-mac-arm64.dmg`,
+    browser_download_url: `${RELEASE_BASE}/GREENROOM-${CURRENT_VERSION}-mac-arm64.dmg`,
+    size: 106017457,
+  },
+  {
+    name: `GREENROOM-${CURRENT_VERSION}-mac-x64.dmg`,
+    browser_download_url: `${RELEASE_BASE}/GREENROOM-${CURRENT_VERSION}-mac-x64.dmg`,
+    size: 110431801,
+  },
+  {
+    name: `GREENROOM-${CURRENT_VERSION}-win-x64.exe`,
+    browser_download_url: `${RELEASE_BASE}/GREENROOM-${CURRENT_VERSION}-win-x64.exe`,
+    size: 85698752,
+  },
+  {
+    name: `GREENROOM-${CURRENT_VERSION}-linux-x86_64.AppImage`,
+    browser_download_url: `${RELEASE_BASE}/GREENROOM-${CURRENT_VERSION}-linux-x86_64.AppImage`,
+    size: 112894393,
+  },
+  {
+    name: `GREENROOM-${CURRENT_VERSION}-linux-amd64.deb`,
+    browser_download_url: `${RELEASE_BASE}/GREENROOM-${CURRENT_VERSION}-linux-amd64.deb`,
+    size: 88430340,
+  },
+];
+
 export default function DownloadPage() {
   const [platform, setPlatform] = useState<Platform>("unknown");
-  const [assets, setAssets] = useState<ReleaseAsset[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState<ReleaseAsset[]>(FALLBACK_ASSETS);
   const [version, setVersion] = useState<string>(CURRENT_VERSION);
 
   useEffect(() => {
     setPlatform(detectPlatform());
 
+    // Try to fetch the latest release from GitHub. If it succeeds we upgrade
+    // the fallback list; if not, the user still has working links.
     fetch("/api/releases")
-      .then(res => res.ok ? res.json() : null)
+      .then(res => (res.ok ? res.json() : null))
       .then(data => {
-        if (data?.assets) {
+        if (data?.assets?.length) {
           setAssets(data.assets);
-          setVersion(data.tag_name || "");
+          if (data.tag_name) setVersion(data.tag_name);
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(() => {});
   }, []);
 
   const getAssetForPlatform = (p: Platform): ReleaseAsset | undefined => {
@@ -108,23 +139,7 @@ export default function DownloadPage() {
           </p>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="animate-spin w-8 h-8 border-2 border-[#39b54a] border-t-transparent rounded-full" />
-          </div>
-        ) : assets.length === 0 ? (
-          <div className="text-center py-16 rounded-2xl border border-[#2a2a2a] bg-[#141414]">
-            <div className="w-14 h-14 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center mx-auto mb-4">
-              <Download className="w-6 h-6 text-[#666]" />
-            </div>
-            <p className="text-white font-medium mb-2">Coming soon</p>
-            <p className="text-sm text-[#666]">
-              The desktop app is on its way. Check back later.
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Primary Download Card */}
+        {/* Primary Download Card */}
             {primaryAsset && primaryConfig ? (
               <div className="relative mb-10">
                 {/* Glow */}
@@ -236,8 +251,6 @@ export default function DownloadPage() {
                 <span aria-hidden>→</span>
               </a>
             </div>
-          </>
-        )}
 
         {/* Features */}
         <div className="relative rounded-3xl bg-gradient-to-b from-[#141414] to-[#0f0f0f] border border-[#2a2a2a] p-8 sm:p-10">
