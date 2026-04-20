@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Download, Apple, Monitor, Terminal, Check, Zap, FolderSync, Sparkles } from "lucide-react";
+import { Download, Command, Monitor, Terminal, Check, Zap, FolderSync, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Platform = "mac" | "windows" | "linux" | "unknown";
@@ -93,7 +93,7 @@ export default function DownloadPage() {
   };
 
   const platformConfig = {
-    mac: { icon: Apple, label: "macOS", sub: "Intel & Apple Silicon" },
+    mac: { icon: Command, label: "macOS", sub: "Intel & Apple Silicon" },
     windows: { icon: Monitor, label: "Windows", sub: "10 and later" },
     linux: { icon: Terminal, label: "Linux", sub: "AppImage" },
   };
@@ -149,12 +149,6 @@ export default function DownloadPage() {
 
                   <div className="p-8 sm:p-10 flex flex-col md:flex-row md:items-center gap-8">
                     <div className="flex items-center gap-5 flex-1 min-w-0">
-                      <div className="relative flex-shrink-0">
-                        <div className="absolute inset-0 rounded-2xl bg-[#39b54a]/20 blur-xl" />
-                        <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-[#39b54a] to-[#2e9140] flex items-center justify-center shadow-lg shadow-[#39b54a]/20">
-                          <primaryConfig.icon className="w-8 h-8 text-black" strokeWidth={2.5} />
-                        </div>
-                      </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#39b54a]">
