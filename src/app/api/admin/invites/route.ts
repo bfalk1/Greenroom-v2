@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail, EMAIL_SITE_URL } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
 
 // Helper to send invite email
 async function sendInviteEmail(invite: {
@@ -15,6 +15,7 @@ async function sendInviteEmail(invite: {
 
   await sendEmail({
     to: invite.email,
+    from: INVITE_FROM_EMAIL,
     subject: `Your Exclusive Creator Invite - GREENROOM`,
     text: `GREENROOM - A New Era of Greenroom
 

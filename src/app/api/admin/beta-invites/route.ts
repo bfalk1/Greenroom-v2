@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail, EMAIL_SITE_URL } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
 
 // Credit threshold at or above which an invite is treated as "premium / unlimited"
 // and receives the higher-end email template.
@@ -23,6 +23,7 @@ async function sendBetaInviteEmail(invite: {
 
   await sendEmail({
     to: invite.email,
+    from: INVITE_FROM_EMAIL,
     subject: "You're Invited to GREENROOM Beta",
     text: `You've been invited to beta test GREENROOM — the world's first open sample marketplace.
 
@@ -42,6 +43,7 @@ async function sendPremiumInviteEmail(invite: {
 }) {
   await sendEmail({
     to: invite.email,
+    from: INVITE_FROM_EMAIL,
     subject: "Your GREENROOM Premium Access is Ready",
     text: `You've been granted GREENROOM Premium — unlimited access to the world's first open sample marketplace.
 

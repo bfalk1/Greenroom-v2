@@ -16,6 +16,10 @@ function getResend() {
 // Admin email for contact form and notifications
 export const ADMIN_EMAIL = "admin@greenroom.fm";
 const FROM_EMAIL = "GREENROOM <admin@greenroom.fm>";
+// Sender for invite emails (creator invites, beta invites, premium invites).
+// Uses the invite.greenroom.fm subdomain so invite traffic is isolated from
+// transactional/admin mail reputation-wise.
+export const INVITE_FROM_EMAIL = "GREENROOM <greenroom@invite.greenroom.fm>";
 
 // Canonical site URL used in outbound emails. Hardcoded so preview/staging
 // deployments don't leak non-brand URLs (e.g. *.vercel.app) into user inboxes.
@@ -27,6 +31,7 @@ interface SendEmailOptions {
   text: string;
   html?: string;
   replyTo?: string;
+  from?: string;
 }
 
 interface SendTemplateEmailOptions {
@@ -63,7 +68,7 @@ export async function sendEmail(options: SendEmailOptions) {
   }
 
   const { data, error } = await getResend().emails.send({
-    from: FROM_EMAIL,
+    from: options.from || FROM_EMAIL,
     to: options.to,
     replyTo: options.replyTo,
     subject: options.subject,
