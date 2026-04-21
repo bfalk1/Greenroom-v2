@@ -15,11 +15,11 @@ function getResend() {
 
 // Admin email for contact form and notifications
 export const ADMIN_EMAIL = "admin@greenroom.fm";
-const FROM_EMAIL = "GREENROOM <admin@greenroom.fm>";
+const FROM_EMAIL = "Greenroom <admin@greenroom.fm>";
 // Sender for invite emails (creator invites, beta invites, premium invites).
 // Uses the invite.greenroom.fm subdomain so invite traffic is isolated from
 // transactional/admin mail reputation-wise.
-export const INVITE_FROM_EMAIL = "GREENROOM <greenroom@invite.greenroom.fm>";
+export const INVITE_FROM_EMAIL = "Greenroom <greenroom@invite.greenroom.fm>";
 
 // Canonical site URL used in outbound emails. Hardcoded so preview/staging
 // deployments don't leak non-brand URLs (e.g. *.vercel.app) into user inboxes.
@@ -123,12 +123,12 @@ export async function sendContactEmail(name: string, email: string, message: str
   return sendEmail({
     to: ADMIN_EMAIL,
     replyTo: email,
-    subject: `[GREENROOM] Contact from ${name}`,
+    subject: `[Greenroom] Contact from ${name}`,
     text: `Name: ${name}\nEmail: ${email}\n\n${message}`,
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">GREENROOM</h1>
+          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
         </div>
         <h2 style="color: #ffffff; margin-bottom: 16px;">New Contact Message</h2>
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
@@ -156,15 +156,15 @@ export async function sendPayoutNotification(
   
   return sendEmail({
     to: creatorEmail,
-    subject: `💰 GREENROOM Payout Sent - $${amountUsd.toFixed(2)}`,
-    text: `Hi ${creatorName},\n\nGreat news! Your GREENROOM payout of $${amountUsd.toFixed(2)} for ${periodStr} has been sent to your connected Stripe account.\n\nThe funds should arrive in your bank account within 2-3 business days.\n\nKeep creating amazing samples!\n\n- The GREENROOM Team`,
+    subject: `Your Greenroom payout of $${amountUsd.toFixed(2)} has been sent`,
+    text: `Hi ${creatorName},\n\nYour Greenroom payout of $${amountUsd.toFixed(2)} for ${periodStr} has been sent to your connected Stripe account.\n\nThe funds should arrive in your bank account within 2-3 business days.\n\n- The Greenroom Team`,
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">GREENROOM</h1>
+          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
         </div>
         
-        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout Sent! 💰</h2>
+        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout sent</h2>
         <p style="color: #a1a1a1; margin-bottom: 24px;">Hi ${creatorName},</p>
         
         <div style="background: linear-gradient(135deg, #00FF88 0%, #00cc6a 100%); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
@@ -174,18 +174,18 @@ export async function sendPayoutNotification(
         </div>
         
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-          <p style="color: #ffffff; margin: 0 0 12px;">Great news! Your payout has been sent to your connected Stripe account.</p>
-          <p style="color: #a1a1a1; margin: 0; font-size: 14px;">💳 Funds typically arrive within 2-3 business days.</p>
+          <p style="color: #ffffff; margin: 0 0 12px;">Your payout has been sent to your connected Stripe account.</p>
+          <p style="color: #a1a1a1; margin: 0; font-size: 14px;">Funds typically arrive within 2-3 business days.</p>
         </div>
-        
-        <p style="color: #a1a1a1; margin-bottom: 24px;">Keep creating amazing samples!</p>
+
+        <p style="color: #a1a1a1; margin-bottom: 24px;">Thanks for being part of Greenroom.</p>
         
         <div style="text-align: center; padding-top: 24px; border-top: 1px solid #2a2a2a;">
           <a href="https://greenroom.fm/creator/earnings" style="display: inline-block; background: #00FF88; color: #000000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">View Earnings</a>
         </div>
         
         <p style="color: #666666; font-size: 12px; text-align: center; margin-top: 24px;">
-          © GREENROOM • <a href="https://greenroom.fm" style="color: #666666;">greenroom.fm</a>
+          © Greenroom • <a href="https://greenroom.fm" style="color: #666666;">greenroom.fm</a>
         </p>
       </div>
     `,
@@ -201,19 +201,19 @@ export async function sendPayoutFailedNotification(
 ) {
   return sendEmail({
     to: creatorEmail,
-    subject: `⚠️ GREENROOM Payout Issue - Action Required`,
-    text: `Hi ${creatorName},\n\nWe attempted to send your GREENROOM payout of $${amountUsd.toFixed(2)}, but encountered an issue.\n\n${reason ? `Reason: ${reason}\n\n` : ""}Please check your Stripe Connect settings to make sure your account is properly configured.\n\nIf you need help, contact us at ${ADMIN_EMAIL}.\n\n- The GREENROOM Team`,
+    subject: `We couldn't send your Greenroom payout`,
+    text: `Hi ${creatorName},\n\nWe tried to send your Greenroom payout of $${amountUsd.toFixed(2)} but ran into an issue.\n\n${reason ? `Reason: ${reason}\n\n` : ""}Please check your Stripe Connect settings to make sure your account is properly configured.\n\nIf you need help, contact us at ${ADMIN_EMAIL}.\n\n- The Greenroom Team`,
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">GREENROOM</h1>
+          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
         </div>
         
-        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout Issue ⚠️</h2>
+        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout issue</h2>
         <p style="color: #a1a1a1; margin-bottom: 24px;">Hi ${creatorName},</p>
         
         <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px; border-left: 4px solid #ff6b6b;">
-          <p style="color: #ffffff; margin: 0 0 12px;">We attempted to send your payout of <strong>$${amountUsd.toFixed(2)}</strong>, but encountered an issue.</p>
+          <p style="color: #ffffff; margin: 0 0 12px;">We tried to send your payout of <strong>$${amountUsd.toFixed(2)}</strong> but ran into an issue.</p>
           ${reason ? `<p style="color: #ff6b6b; margin: 0; font-size: 14px;">Reason: ${reason}</p>` : ""}
         </div>
         
@@ -244,12 +244,12 @@ export async function sendPayoutSummaryToAdmin(summary: {
   
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `${hasErrors ? "⚠️" : "✅"} GREENROOM Monthly Payouts - ${summary.payoutsSent} sent`,
+    subject: `Greenroom monthly payouts — ${summary.payoutsSent} sent${hasErrors ? " (with errors)" : ""}`,
     text: `Monthly Payout Summary\n\nProcessed: ${summary.processed} creators\nPayouts Sent: ${summary.payoutsSent}\nTotal Amount: $${summary.totalAmountUsd.toFixed(2)}\nSkipped (below $50): ${summary.skippedBelowThreshold}\nSkipped (no Stripe): ${summary.skippedNoStripe}\n${hasErrors ? `\nErrors:\n${summary.errors.join("\n")}` : ""}`,
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">GREENROOM</h1>
+          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
         </div>
         
         <h2 style="color: #ffffff; margin-bottom: 24px;">Monthly Payout Summary</h2>
@@ -279,7 +279,7 @@ export async function sendPayoutSummaryToAdmin(summary: {
         ` : ""}
         
         <p style="color: #666666; font-size: 12px; text-align: center; margin-top: 24px;">
-          Automated payout from GREENROOM
+          Automated payout from Greenroom
         </p>
       </div>
     `,
