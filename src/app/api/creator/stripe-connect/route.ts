@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       request.headers.get("origin") ||
       request.headers.get("referer")?.replace(/\/[^/]*$/, "") ||
       process.env.NEXT_PUBLIC_APP_URL ||
-      "https://greenroom-v2.vercel.app";
+      "https://greenroom.fm";
 
     // Create an Account Link for onboarding
     const accountLink = await stripe.accountLinks.create({

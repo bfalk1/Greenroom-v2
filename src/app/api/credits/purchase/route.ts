@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     }
 
     const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || "https://greenroom-v2.vercel.app";
+      process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm";
 
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,

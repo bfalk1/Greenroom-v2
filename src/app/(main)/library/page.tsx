@@ -44,10 +44,18 @@ interface LibrarySample {
   purchased_at: string;
 }
 
+type SampleFolderResult = {
+  ok: boolean;
+  sampleFolderPath?: string;
+  cancelled?: boolean;
+  unreachable?: boolean;
+  error?: string;
+};
+
 type GreenroomDesktopApi = {
   isDesktop?: boolean;
-  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
-  ensureLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  chooseLocalSampleFolder?: () => Promise<SampleFolderResult>;
+  ensureLocalSampleFolder?: () => Promise<SampleFolderResult>;
   getLocalSampleStatus?: (
     sampleId: string,
     sampleName: string,
@@ -117,6 +125,13 @@ function LibraryRow({
     enabled: true,
     refreshKey: statusRefreshKey,
   });
+
+  const handleRowMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDesktop) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-drag]')) return;
+    handlePointerDown(e);
+  }, [isDesktop, handlePointerDown]);
 
   // Register setter
   useEffect(() => {
@@ -224,11 +239,13 @@ function LibraryRow({
   return (
     <div
       ref={rowRef}
-      className={getSampleTableRowClass("library", {
+      className={`${getSampleTableRowClass("library", {
         isActive: isSelected || isPlayingState,
         isDragging,
-      })}
+      })}${canDrag ? " cursor-grab active:cursor-grabbing" : ""}`}
       style={{ WebkitUserSelect: "none" } as React.CSSProperties}
+      onMouseDown={handleRowMouseDown}
+      onMouseUp={isDesktop ? handlePointerUp : undefined}
     >
       {/* Checkbox */}
       <button
@@ -245,27 +262,25 @@ function LibraryRow({
         )}
       </button>
 
-      {/* Drag Handle */}
+      {/* Drag Handle (visual indicator) */}
       <div
         key={dragHandleKey}
         className={`w-6 h-10 flex items-center justify-center transition ${
           !isDesktop
             ? "invisible"
             : isSyncing
-            ? "cursor-progress text-[#39b54a]"
+            ? "text-[#39b54a]"
             : canDrag
-            ? "cursor-grab active:cursor-grabbing text-[#39b54a] hover:text-white"
-            : "cursor-pointer text-[#3a3a3a] hover:text-[#39b54a]"
+            ? "text-[#39b54a] hover:text-white"
+            : "text-[#3a3a3a] hover:text-[#39b54a]"
         }`}
-        onMouseDown={handlePointerDown}
-        onMouseUp={handlePointerUp}
         title={
           !isDesktop
             ? ""
             : isSyncing
             ? "Syncing sample locally..."
             : isLocal
-            ? "Drag local sample to DAW"
+            ? "Drag to DAW"
             : "Sync sample locally"
         }
       >
@@ -616,7 +631,16 @@ export default function LibraryPage() {
     const runAutoSync = async () => {
       try {
         const folderResult = await ensureFolder();
+        if (folderResult?.cancelled) {
+          // First-run: user dismissed the picker. Stay quiet — they can
+          // retry from Account → Greenroom App.
+          return;
+        }
         if (!folderResult?.ok) {
+          if (folderResult?.unreachable) {
+            toast.error(folderResult.error || "Greenroom can't reach your sample folder. Pick a new one in Account → Greenroom App.");
+            return;
+          }
           throw new Error(folderResult?.error || "No sample folder selected");
         }
 

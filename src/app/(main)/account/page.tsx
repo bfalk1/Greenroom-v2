@@ -52,7 +52,7 @@ interface SubscriptionInfo {
 
 type GreenroomDesktopApi = {
   isDesktop?: boolean;
-  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; cancelled?: boolean; error?: string }>;
   getDesktopSettings?: () => Promise<{ ok: boolean; sampleFolderPath?: string | null }>;
 };
 
@@ -214,6 +214,9 @@ export default function AccountPage() {
     setFolderLoading(true);
     try {
       const result = await greenroom.chooseLocalSampleFolder();
+      if (result?.cancelled) {
+        return;
+      }
       if (!result?.ok || !result.sampleFolderPath) {
         throw new Error(result?.error || "No sample folder selected");
       }

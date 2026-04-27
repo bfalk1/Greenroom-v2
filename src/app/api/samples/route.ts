@@ -25,19 +25,37 @@ export async function GET(request: NextRequest) {
       isActive: true,
     };
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { tags: { hasSome: [search.toLowerCase()] } },
-        {
-          creator: {
-            OR: [
-              { artistName: { contains: search, mode: "insensitive" } },
-              { username: { contains: search, mode: "insensitive" } },
-            ],
+    // Tokenized search: split on whitespace and require every token to match
+    // somewhere across name/genre/instrument/key/bpm/tags/creator. This lets
+    // queries like "kick f" return kick samples in the key of F.
+    const searchTokens = search
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (searchTokens.length > 0) {
+      where.AND = searchTokens.map((token) => {
+        const numericValue = /^\d+$/.test(token) ? parseInt(token, 10) : null;
+        const orConditions: Prisma.SampleWhereInput[] = [
+          { name: { contains: token, mode: "insensitive" } },
+          { genre: { contains: token, mode: "insensitive" } },
+          { instrumentType: { contains: token, mode: "insensitive" } },
+          { key: { contains: token, mode: "insensitive" } },
+          { tags: { has: token.toLowerCase() } },
+          {
+            creator: {
+              OR: [
+                { artistName: { contains: token, mode: "insensitive" } },
+                { username: { contains: token, mode: "insensitive" } },
+              ],
+            },
           },
-        },
-      ];
+        ];
+        if (numericValue !== null) {
+          orConditions.push({ bpm: numericValue });
+        }
+        return { OR: orConditions };
+      });
     }
 
     if (genre && genre !== "all") {
@@ -128,15 +146,37 @@ export async function GET(request: NextRequest) {
       const filterParams: unknown[] = [];
       let paramIndex = 3;
 
-      if (search) {
-        conditions.push(`(
-          s.name ILIKE $${paramIndex} OR
-          $${paramIndex + 1} = ANY(s.tags) OR
-          u.artist_name ILIKE $${paramIndex} OR
-          u.username ILIKE $${paramIndex}
-        )`);
-        filterParams.push(`%${search}%`, search.toLowerCase());
-        paramIndex += 2;
+      // Match each token across name/genre/instrument/key/bpm/tags/creator;
+      // AND across tokens. Mirrors the tokenized search above so totals match.
+      for (const token of searchTokens) {
+        const likePattern = `%${token}%`;
+        const isNumeric = /^\d+$/.test(token);
+        const tokenLower = token.toLowerCase();
+
+        const tokenConditions: string[] = [
+          `s.name ILIKE $${paramIndex}`,
+          `s.genre ILIKE $${paramIndex}`,
+          `s.instrument_type ILIKE $${paramIndex}`,
+          `s.key ILIKE $${paramIndex}`,
+          `u.artist_name ILIKE $${paramIndex}`,
+          `u.username ILIKE $${paramIndex}`,
+          `EXISTS (SELECT 1 FROM unnest(s.tags) tag WHERE tag ILIKE $${paramIndex})`,
+        ];
+        filterParams.push(likePattern);
+        paramIndex += 1;
+
+        if (isNumeric) {
+          tokenConditions.push(`s.bpm = $${paramIndex}`);
+          filterParams.push(parseInt(token, 10));
+          paramIndex += 1;
+        }
+
+        // Also match exact lowercase tag for parity with Prisma { has } semantics
+        tokenConditions.push(`$${paramIndex} = ANY(s.tags)`);
+        filterParams.push(tokenLower);
+        paramIndex += 1;
+
+        conditions.push(`(${tokenConditions.join(" OR ")})`);
       }
       if (genre && genre !== "all") {
         conditions.push(`s.genre = $${paramIndex}`);

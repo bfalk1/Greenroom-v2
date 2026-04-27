@@ -29,7 +29,7 @@ interface FollowedArtist {
 
 type GreenroomDesktopApi = {
   isDesktop?: boolean;
-  chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  ensureLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; cancelled?: boolean; unreachable?: boolean; error?: string }>;
   syncLocalSample?: (
     sampleId: string,
     sampleName: string,
@@ -556,9 +556,9 @@ export default function MarketplacePage() {
       refreshUser();
 
       const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
-      if (greenroom?.isDesktop && greenroom.chooseLocalSampleFolder && greenroom.syncLocalSample) {
+      if (greenroom?.isDesktop && greenroom.ensureLocalSampleFolder && greenroom.syncLocalSample) {
         try {
-          const folderResult = await greenroom.chooseLocalSampleFolder();
+          const folderResult = await greenroom.ensureLocalSampleFolder();
           if (folderResult?.ok) {
             await greenroom.syncLocalSample(sample.id, sample.name, sample.artist_name);
           }

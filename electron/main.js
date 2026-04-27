@@ -13,7 +13,7 @@ let localSampleIndex = {};
 let localSettings = {};
 
 const DEV_SERVER_URL = process.env.GREENROOM_DEV_URL || 'http://localhost:3000';
-const PROD_SERVER_URL = 'https://greenroom-v2.vercel.app';
+const PROD_SERVER_URL = 'https://greenroom.fm';
 const GREENROOM_URL =
   process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
     ? DEV_SERVER_URL
@@ -381,38 +381,54 @@ async function ensureLocalSampleDirectory(promptIfMissing = false, forcePrompt =
   ensureLocalStoreReady();
 
   if (localSettings.sampleFolderPath && !forcePrompt) {
-    LOCAL_SAMPLE_DIR = localSettings.sampleFolderPath;
-    if (!fs.existsSync(LOCAL_SAMPLE_DIR)) {
-      fs.mkdirSync(LOCAL_SAMPLE_DIR, { recursive: true });
+    const savedPath = localSettings.sampleFolderPath;
+    try {
+      if (!fs.existsSync(savedPath)) {
+        fs.mkdirSync(savedPath, { recursive: true });
+      }
+      LOCAL_SAMPLE_DIR = savedPath;
+      return LOCAL_SAMPLE_DIR;
+    } catch (error) {
+      // Saved folder is unreachable (drive unmounted, deleted parent, perms).
+      // Don't silently fall through — surface a clear error so the user can
+      // re-pick from the account page.
+      console.warn('[local-store] saved sample folder unreachable:', savedPath, error?.message);
+      const reachableError = new Error(
+        `Greenroom can't reach your saved sample folder (${savedPath}). Open Account → Greenroom App to pick a new one.`
+      );
+      reachableError.code = 'SAMPLE_FOLDER_UNREACHABLE';
+      reachableError.savedPath = savedPath;
+      throw reachableError;
     }
-    return LOCAL_SAMPLE_DIR;
   }
 
   if (!promptIfMissing && !forcePrompt) {
     return null;
   }
 
+  const downloadsDefault = path.join(app.getPath('downloads'), 'Greenroom');
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose Sample Library Folder',
-    buttonLabel: 'Use This Folder',
-    defaultPath: localSettings.sampleFolderPath || path.join(app.getPath('downloads'), 'Greenroom'),
+    title: 'Set up your Greenroom sample library',
+    buttonLabel: 'Save samples here',
+    defaultPath: localSettings.sampleFolderPath || downloadsDefault,
     properties: ['openDirectory', 'createDirectory'],
-    message: 'Pick a folder where Greenroom will save your Library samples so you can drag and drop them straight into your DAW.',
+    message:
+      'Pick a folder where Greenroom should save your Library samples. Once chosen, you can drag samples straight from the app into your DAW. You can change this later in Account → Greenroom App.',
   });
 
   if (result.canceled || !result.filePaths?.[0]) {
-    if (forcePrompt && localSettings.sampleFolderPath) {
-      return localSettings.sampleFolderPath;
-    }
-    throw new Error('No sample folder selected');
+    const cancelError = new Error('Sample folder selection was cancelled.');
+    cancelError.code = 'SAMPLE_FOLDER_CANCELLED';
+    throw cancelError;
   }
 
-  LOCAL_SAMPLE_DIR = result.filePaths[0];
-  fs.mkdirSync(LOCAL_SAMPLE_DIR, { recursive: true });
-  localSettings.sampleFolderPath = LOCAL_SAMPLE_DIR;
+  const chosen = result.filePaths[0];
+  fs.mkdirSync(chosen, { recursive: true });
+  LOCAL_SAMPLE_DIR = chosen;
+  localSettings.sampleFolderPath = chosen;
   saveLocalSettings();
-  logLocalStoreDebug('sample folder selected', { sampleFolderPath: LOCAL_SAMPLE_DIR });
-  return LOCAL_SAMPLE_DIR;
+  logLocalStoreDebug('sample folder selected', { sampleFolderPath: chosen });
+  return chosen;
 }
 
 function loadLocalSampleIndex() {
@@ -684,6 +700,7 @@ ipcMain.handle('choose-local-sample-folder', async () => {
   } catch (err) {
     return {
       ok: false,
+      cancelled: err?.code === 'SAMPLE_FOLDER_CANCELLED',
       error: err instanceof Error ? err.message : 'Failed to choose sample folder',
     };
   }
@@ -696,6 +713,8 @@ ipcMain.handle('ensure-local-sample-folder', async () => {
   } catch (err) {
     return {
       ok: false,
+      cancelled: err?.code === 'SAMPLE_FOLDER_CANCELLED',
+      unreachable: err?.code === 'SAMPLE_FOLDER_UNREACHABLE',
       error: err instanceof Error ? err.message : 'Failed to set up sample folder',
     };
   }
