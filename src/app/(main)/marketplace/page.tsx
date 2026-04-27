@@ -85,6 +85,8 @@ export default function MarketplacePage() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const hasFetchedInitiallyRef = useRef(false);
   const playedSampleIdsRef = useRef<Set<string>>(new Set());
+  const samplesAbortRef = useRef<AbortController | null>(null);
+  const presetsAbortRef = useRef<AbortController | null>(null);
 
   const handleSort = (column: string) => {
     const newDirection = sortColumn === column
@@ -169,6 +171,17 @@ export default function MarketplacePage() {
 
   const fetchSamples = useCallback(
     async (offset = 0, append = false) => {
+      // Cancel any in-flight samples request so rapid filter/search
+      // changes don't pile up requests that race to set state.
+      samplesAbortRef.current?.abort();
+      const controller = new AbortController();
+      samplesAbortRef.current = controller;
+      let timedOut = false;
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, 15000);
+
       try {
         if (offset === 0) setLoading(true);
         else setLoadingMore(true);
@@ -194,14 +207,10 @@ export default function MarketplacePage() {
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-        
         const res = await fetch(`/api/samples?${params.toString()}`, {
           signal: controller.signal,
         });
-        clearTimeout(timeoutId);
-        
+
         if (!res.ok) throw new Error("Failed to fetch samples");
 
         const data = await res.json();
@@ -229,9 +238,16 @@ export default function MarketplacePage() {
         }
         setTotal(data.total);
       } catch (error) {
+        // Silent abort when a newer request supersedes this one; toast only
+        // on real failures (network, 500s, or the 15s timeout).
+        if ((error as Error)?.name === "AbortError" && !timedOut) return;
         console.error("Error fetching samples:", error);
         toast.error("Failed to load samples");
       } finally {
+        clearTimeout(timeoutId);
+        if (samplesAbortRef.current === controller) {
+          samplesAbortRef.current = null;
+        }
         setLoading(false);
         setLoadingMore(false);
       }
@@ -353,6 +369,10 @@ export default function MarketplacePage() {
   // Preset fetching
   const fetchPresets = useCallback(
     async (offset = 0, append = false) => {
+      presetsAbortRef.current?.abort();
+      const controller = new AbortController();
+      presetsAbortRef.current = controller;
+
       try {
         if (offset === 0) setPresetLoading(true);
         else setPresetLoadingMore(true);
@@ -369,7 +389,9 @@ export default function MarketplacePage() {
         params.set("limit", String(PAGE_SIZE));
         params.set("offset", String(offset));
 
-        const res = await fetch(`/api/presets?${params.toString()}`);
+        const res = await fetch(`/api/presets?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error("Failed to fetch presets");
 
         const data = await res.json();
@@ -391,20 +413,19 @@ export default function MarketplacePage() {
         }
         setPresetTotal(data.total);
       } catch (error) {
+        if ((error as Error)?.name === "AbortError") return;
         console.error("Error fetching presets:", error);
         toast.error("Failed to load presets");
       } finally {
+        if (presetsAbortRef.current === controller) {
+          presetsAbortRef.current = null;
+        }
         setPresetLoading(false);
         setPresetLoadingMore(false);
       }
     },
     [searchQuery, presetFilters, randomSeed]
   );
-
-  useEffect(() => {
-    fetchSamples(0, false);
-    hasFetchedInitiallyRef.current = true;
-  }, [fetchSamples]);
 
   useEffect(() => {
     fetchFollowingData();
@@ -474,17 +495,18 @@ export default function MarketplacePage() {
     setSearchQuery(query);
   };
 
-  // Debounce search and sort changes
+  // Fetch samples on mount and debounce search/filter changes afterward.
+  // Keeping this as the single fetch driver avoids the double-fire that
+  // happened when a second useEffect also ran on fetchSamples identity.
   useEffect(() => {
-    if (!hasFetchedInitiallyRef.current) {
-      return;
-    }
-
+    const delay = hasFetchedInitiallyRef.current ? 300 : 0;
     const timer = setTimeout(() => {
+      hasFetchedInitiallyRef.current = true;
       fetchSamples(0, false);
-    }, 300);
+    }, delay);
     return () => clearTimeout(timer);
-  }, [searchQuery, filters, sortDirection]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, filters, sortDirection, randomSeed]);
 
   const handleFilterChange = (newFilters: typeof filters) => {
     trackFilterChange({

@@ -2,6 +2,16 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
+import {
+  wrapEmailHtml,
+  emailHeading,
+  emailLede,
+  emailParagraph,
+  emailButton,
+  emailStatCard,
+  emailQuote,
+  EMAIL_COLORS,
+} from "@/lib/email-layout";
 
 // Credit threshold at or above which an invite is treated as "premium / unlimited"
 // and receives the higher-end email template.
@@ -21,6 +31,14 @@ async function sendBetaInviteEmail(invite: {
     return;
   }
 
+  const content = `
+${emailHeading("You're invited to the beta")}
+${emailLede("You've been invited to beta test Greenroom — the world's first open sample marketplace.")}
+${emailStatCard(String(invite.credits), "Credits to explore and download samples")}
+${invite.message ? emailQuote(invite.message) : ""}
+${emailButton(signupUrl, "Join the Beta")}
+`;
+
   await sendEmail({
     to: invite.email,
     from: INVITE_FROM_EMAIL,
@@ -35,7 +53,11 @@ ${invite.message ? `Note from the team: ${invite.message}\n\n` : ""}Sign up here
 You're receiving this because someone invited you to beta test Greenroom.
 
 © Greenroom`,
-    html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#000;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#000"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%"><tr><td align="center" style="padding:40px 0 20px"><a href="https://greenroom.fm"><img src="https://greenroom.fm/email/logo-white.png" width="200" alt="Greenroom" style="display:block;border:0;max-width:100%;height:auto"></a></td></tr><tr><td style="padding:20px 40px;text-align:center"><h1 style="margin:0 0 16px;color:#fff;font-size:28px;font-weight:bold">You're invited to the beta</h1><p style="margin:0 0 24px;color:#a1a1a1;font-size:16px;line-height:1.6">You've been selected to beta test Greenroom — the world's first open sample marketplace.</p><div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:24px;margin:0 0 24px"><p style="margin:0 0 8px;color:#39b54a;font-size:36px;font-weight:bold">${invite.credits} Credits</p><p style="margin:0;color:#a1a1a1;font-size:14px">Credits to explore and download samples</p></div>${invite.message ? `<div style="background:#1a1a1a;border-left:3px solid #39b54a;padding:16px 20px;margin:0 0 24px;text-align:left;border-radius:0 8px 8px 0"><p style="margin:0;color:#a1a1a1;font-size:14px;font-style:italic">"${invite.message}"</p></div>` : ""}<p style="margin:0 0 32px"><a href="${signupUrl}" style="display:inline-block;background:#39b54a;color:#000;padding:16px 40px;font-size:16px;font-weight:700;text-decoration:none;border-radius:8px">Join the Beta</a></p></td></tr><tr><td style="padding:20px 30px;text-align:center;border-top:1px solid #222"><p style="margin:0 0 10px;color:#888;font-size:12px;line-height:1.5">You're receiving this because someone invited you to beta test Greenroom.</p><p style="margin:0;color:#666;font-size:12px">© Greenroom · <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color:#888;text-decoration:underline">Unsubscribe</a></p></td></tr></table></td></tr></table></body></html>`,
+    html: wrapEmailHtml({
+      preheader: `You've been invited to beta test Greenroom — ${invite.credits} credits inside.`,
+      content,
+      whyReceiving: "You're receiving this because someone invited you to beta test Greenroom.",
+    }),
   });
 }
 
@@ -44,6 +66,15 @@ async function sendPremiumInviteEmail(invite: {
   message: string | null;
   signupUrl: string;
 }) {
+  const content = `
+${emailHeading("You've been granted unlimited access")}
+${emailLede("A personal invitation to Greenroom — the world's first open sample marketplace. Your account has been pre-loaded with unrestricted access to the full creator catalog.")}
+${emailStatCard("Unlimited", "No caps. No throttling. No expiration.", EMAIL_COLORS.gold)}
+${invite.message ? emailQuote(invite.message) : ""}
+${emailButton(invite.signupUrl, "Activate Access", "premium")}
+${emailParagraph("This invitation is personal and non-transferable.", EMAIL_COLORS.textMuted)}
+`;
+
   await sendEmail({
     to: invite.email,
     from: INVITE_FROM_EMAIL,
@@ -60,7 +91,12 @@ This invitation is personal and non-transferable.
 You're receiving this because you were granted personal access to Greenroom.
 
 © Greenroom`,
-    html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#000;font-family:Georgia,'Times New Roman',serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#000"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:linear-gradient(180deg,#0a0a0a 0%,#000 100%)"><tr><td align="center" style="padding:48px 0 24px"><a href="https://greenroom.fm"><img src="https://greenroom.fm/email/logo-white.png" width="200" alt="Greenroom" style="display:block;border:0;max-width:100%;height:auto"></a></td></tr><tr><td align="center" style="padding:0 40px 12px"><p style="margin:0;color:#d4af37;font-size:12px;letter-spacing:4px;text-transform:uppercase;font-family:Arial,Helvetica,sans-serif;font-weight:700">— Premium Access —</p></td></tr><tr><td style="padding:16px 40px 0;text-align:center"><h1 style="margin:0 0 20px;color:#fff;font-size:34px;font-weight:400;letter-spacing:-0.5px;line-height:1.2">You've been granted<br><span style="color:#d4af37;font-style:italic">unlimited access.</span></h1><p style="margin:0 0 32px;color:#a1a1a1;font-size:15px;line-height:1.7;font-family:Arial,Helvetica,sans-serif">A personal invitation to Greenroom — the world's first open sample marketplace. Your account has been pre-loaded with unrestricted access to the full creator catalog.</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 32px"><tr><td style="background:#0f0f0f;border:1px solid #d4af37;border-radius:2px;padding:32px 24px;text-align:center"><p style="margin:0 0 6px;color:#d4af37;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-family:Arial,Helvetica,sans-serif;font-weight:700">Credits</p><p style="margin:0 0 10px;color:#fff;font-size:48px;font-weight:300;font-family:Georgia,serif;letter-spacing:-1px">Unlimited</p><p style="margin:0;color:#777;font-size:13px;font-family:Arial,Helvetica,sans-serif;font-style:italic">No caps. No throttling. No expiration.</p></td></tr></table>${invite.message ? `<div style="background:#0a0a0a;border-left:2px solid #d4af37;padding:20px 24px;margin:0 0 32px;text-align:left"><p style="margin:0;color:#c4c4c4;font-size:14px;font-style:italic;font-family:Georgia,serif;line-height:1.6">"${invite.message}"</p><p style="margin:12px 0 0;color:#777;font-size:11px;letter-spacing:2px;text-transform:uppercase;font-family:Arial,Helvetica,sans-serif">— The Greenroom team</p></div>` : ""}<p style="margin:0 0 16px"><a href="${invite.signupUrl}" style="display:inline-block;background:#d4af37;color:#000;padding:18px 56px;font-size:13px;font-weight:700;text-decoration:none;border-radius:2px;letter-spacing:3px;text-transform:uppercase;font-family:Arial,Helvetica,sans-serif">Activate Access</a></p><p style="margin:0 0 40px;color:#555;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:1px">This invitation is personal and non-transferable.</p></td></tr><tr><td style="padding:24px 40px;text-align:center;border-top:1px solid #1a1a1a"><p style="margin:0 0 10px;color:#777;font-size:11px;font-family:Arial,Helvetica,sans-serif;line-height:1.5">You're receiving this because you were granted personal access to Greenroom.</p><p style="margin:0;color:#555;font-size:11px;font-family:Arial,Helvetica,sans-serif;letter-spacing:2px">© Greenroom · Premium · <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color:#888;text-decoration:underline;letter-spacing:0">Unsubscribe</a></p></td></tr></table></td></tr></table></body></html>`,
+    html: wrapEmailHtml({
+      preheader: "Your Greenroom access is ready.",
+      content,
+      whyReceiving: "You're receiving this because you were granted personal access to Greenroom.",
+      variant: "premium",
+    }),
   });
 }
 

@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('greenroom', {
     return ipcRenderer.invoke('get-local-sample-status', { sampleId, sampleName, artistName });
   },
   chooseLocalSampleFolder: () => ipcRenderer.invoke('choose-local-sample-folder'),
+  ensureLocalSampleFolder: () => ipcRenderer.invoke('ensure-local-sample-folder'),
+  getDesktopSettings: () => ipcRenderer.invoke('get-desktop-settings'),
   syncLocalSample: async (sampleId, sampleName, artistName) => {
     return ipcRenderer.invoke('sync-local-sample', { sampleId, sampleName, artistName });
   },

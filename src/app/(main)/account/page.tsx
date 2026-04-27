@@ -53,6 +53,7 @@ interface SubscriptionInfo {
 type GreenroomDesktopApi = {
   isDesktop?: boolean;
   chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  getDesktopSettings?: () => Promise<{ ok: boolean; sampleFolderPath?: string | null }>;
 };
 
 export default function AccountPage() {
@@ -83,7 +84,15 @@ export default function AccountPage() {
   // Set form data when user loads
   useEffect(() => {
     const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
-    setIsDesktop(Boolean(greenroom?.isDesktop));
+    const desktop = Boolean(greenroom?.isDesktop);
+    setIsDesktop(desktop);
+    if (desktop && greenroom?.getDesktopSettings) {
+      greenroom.getDesktopSettings().then((settings) => {
+        if (settings?.ok && settings.sampleFolderPath) {
+          setSampleFolderPath(settings.sampleFolderPath);
+        }
+      }).catch(console.error);
+    }
   }, []);
 
   useEffect(() => {

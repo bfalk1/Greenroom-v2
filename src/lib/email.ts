@@ -1,4 +1,14 @@
 import { Resend } from "resend";
+import {
+  wrapEmailHtml,
+  emailHeading,
+  emailLede,
+  emailParagraph,
+  emailButton,
+  emailStatCard,
+  EMAIL_COLORS,
+  EMAIL_FONTS,
+} from "./email-layout";
 
 // Lazy-initialize Resend to avoid build errors when API key is missing
 let resend: Resend | null = null;
@@ -118,29 +128,44 @@ export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
   return data;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Contact form email
 export async function sendContactEmail(name: string, email: string, message: string) {
+  const safeName = escapeHtml(name);
+  const safeEmail = escapeHtml(email);
+  const safeMessage = escapeHtml(message);
+
+  const content = `
+${emailHeading("New contact message")}
+${emailLede(`${safeName} sent a message through the Greenroom contact form.`)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;"><tr><td style="background:${EMAIL_COLORS.surfaceElevated};border:1px solid ${EMAIL_COLORS.border};border-radius:12px;padding:20px;">
+<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">From:</strong> ${safeName}</p>
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Email:</strong> <a href="mailto:${safeEmail}" style="color:${EMAIL_COLORS.accent};">${safeEmail}</a></p>
+</td></tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${EMAIL_COLORS.surface};border:1px solid ${EMAIL_COLORS.border};border-radius:12px;padding:20px;">
+<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:13px;text-transform:uppercase;letter-spacing:1px;">Message</p>
+<p style="margin:0;color:${EMAIL_COLORS.textPrimary};font-family:${EMAIL_FONTS.body};font-size:15px;line-height:1.6;white-space:pre-wrap;">${safeMessage}</p>
+</td></tr></table>
+`;
+
   return sendEmail({
     to: ADMIN_EMAIL,
     replyTo: email,
-    subject: `[Greenroom] Contact from ${name}`,
+    subject: `Contact from ${name}`,
     text: `Name: ${name}\nEmail: ${email}\n\n${message}`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
-        </div>
-        <h2 style="color: #ffffff; margin-bottom: 16px;">New Contact Message</h2>
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-          <p style="color: #a1a1a1; margin: 0 0 8px;"><strong style="color: #ffffff;">From:</strong> ${name}</p>
-          <p style="color: #a1a1a1; margin: 0;"><strong style="color: #ffffff;">Email:</strong> <a href="mailto:${email}" style="color: #00FF88;">${email}</a></p>
-        </div>
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px;">
-          <p style="color: #a1a1a1; margin: 0 0 8px;"><strong style="color: #ffffff;">Message:</strong></p>
-          <p style="color: #ffffff; margin: 0; white-space: pre-wrap;">${message}</p>
-        </div>
-      </div>
-    `,
+    html: wrapEmailHtml({
+      preheader: `${name} sent a message through the Greenroom contact form.`,
+      content,
+      whyReceiving: "You're receiving this because a visitor submitted the Greenroom contact form.",
+    }),
   });
 }
 
@@ -150,45 +175,41 @@ export async function sendPayoutNotification(
   creatorName: string,
   amountUsd: number,
   periodStart: Date,
-  periodEnd: Date
+  _periodEnd: Date
 ) {
   const periodStr = `${periodStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
-  
+  const safeName = escapeHtml(creatorName);
+  const amountStr = `$${amountUsd.toFixed(2)}`;
+
+  const content = `
+${emailHeading("Payout sent")}
+${emailLede(`Hi ${safeName}, your ${periodStr} payout is on its way.`)}
+${emailStatCard(amountStr, `Sent for ${periodStr}`)}
+${emailParagraph("Your payout has been sent to your connected Stripe account. Funds typically arrive within 2–3 business days.")}
+${emailButton(`${EMAIL_SITE_URL}/creator/earnings`, "View earnings")}
+${emailParagraph("Thanks for being part of Greenroom.", EMAIL_COLORS.textSecondary)}
+`;
+
   return sendEmail({
     to: creatorEmail,
-    subject: `Your Greenroom payout of $${amountUsd.toFixed(2)} has been sent`,
-    text: `Hi ${creatorName},\n\nYour Greenroom payout of $${amountUsd.toFixed(2)} for ${periodStr} has been sent to your connected Stripe account.\n\nThe funds should arrive in your bank account within 2-3 business days.\n\n- The Greenroom Team`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
-        </div>
-        
-        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout sent</h2>
-        <p style="color: #a1a1a1; margin-bottom: 24px;">Hi ${creatorName},</p>
-        
-        <div style="background: linear-gradient(135deg, #00FF88 0%, #00cc6a 100%); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
-          <p style="color: #000000; margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Amount</p>
-          <p style="color: #000000; margin: 0; font-size: 36px; font-weight: bold;">$${amountUsd.toFixed(2)}</p>
-          <p style="color: #000000; margin: 8px 0 0; font-size: 14px;">${periodStr}</p>
-        </div>
-        
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-          <p style="color: #ffffff; margin: 0 0 12px;">Your payout has been sent to your connected Stripe account.</p>
-          <p style="color: #a1a1a1; margin: 0; font-size: 14px;">Funds typically arrive within 2-3 business days.</p>
-        </div>
+    subject: `Your Greenroom payout of ${amountStr} has been sent`,
+    text: `Hi ${creatorName},
 
-        <p style="color: #a1a1a1; margin-bottom: 24px;">Thanks for being part of Greenroom.</p>
-        
-        <div style="text-align: center; padding-top: 24px; border-top: 1px solid #2a2a2a;">
-          <a href="https://greenroom.fm/creator/earnings" style="display: inline-block; background: #00FF88; color: #000000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">View Earnings</a>
-        </div>
-        
-        <p style="color: #666666; font-size: 12px; text-align: center; margin-top: 24px;">
-          © Greenroom • <a href="https://greenroom.fm" style="color: #666666;">greenroom.fm</a>
-        </p>
-      </div>
-    `,
+Your Greenroom payout of ${amountStr} for ${periodStr} has been sent to your connected Stripe account.
+
+The funds should arrive in your bank account within 2-3 business days.
+
+View your earnings: ${EMAIL_SITE_URL}/creator/earnings
+
+---
+You're receiving this because you have an active Greenroom creator account.
+
+© Greenroom`,
+    html: wrapEmailHtml({
+      preheader: `Your ${periodStr} payout of ${amountStr} is on its way.`,
+      content,
+      whyReceiving: "You're receiving this because you have an active Greenroom creator account.",
+    }),
   });
 }
 
@@ -199,35 +220,48 @@ export async function sendPayoutFailedNotification(
   amountUsd: number,
   reason?: string
 ) {
+  const safeName = escapeHtml(creatorName);
+  const safeReason = reason ? escapeHtml(reason) : "";
+  const amountStr = `$${amountUsd.toFixed(2)}`;
+
+  const reasonBlock = safeReason
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr><td style="background:${EMAIL_COLORS.surface};border-left:3px solid ${EMAIL_COLORS.accent};padding:16px 20px;border-radius:0 6px 6px 0;">
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;line-height:1.6;"><strong style="color:${EMAIL_COLORS.textPrimary};">Reason:</strong> ${safeReason}</p>
+</td></tr></table>`
+    : "";
+
+  const content = `
+${emailHeading("Payout issue")}
+${emailLede(`Hi ${safeName}, we ran into a problem sending your payout of ${amountStr}.`)}
+${reasonBlock}
+${emailParagraph("Please check your Stripe Connect settings to make sure your account is properly configured. We'll retry the payout automatically once resolved.")}
+${emailButton(`${EMAIL_SITE_URL}/creator/earnings`, "Check settings")}
+${emailParagraph(`Need help? Reply to this email or write to <a href="mailto:${ADMIN_EMAIL}" style="color:${EMAIL_COLORS.accent};">${ADMIN_EMAIL}</a>.`, EMAIL_COLORS.textSecondary)}
+`;
+
   return sendEmail({
     to: creatorEmail,
-    subject: `We couldn't send your Greenroom payout`,
-    text: `Hi ${creatorName},\n\nWe tried to send your Greenroom payout of $${amountUsd.toFixed(2)} but ran into an issue.\n\n${reason ? `Reason: ${reason}\n\n` : ""}Please check your Stripe Connect settings to make sure your account is properly configured.\n\nIf you need help, contact us at ${ADMIN_EMAIL}.\n\n- The Greenroom Team`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
-        </div>
-        
-        <h2 style="color: #ffffff; margin-bottom: 8px;">Payout issue</h2>
-        <p style="color: #a1a1a1; margin-bottom: 24px;">Hi ${creatorName},</p>
-        
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px; border-left: 4px solid #ff6b6b;">
-          <p style="color: #ffffff; margin: 0 0 12px;">We tried to send your payout of <strong>$${amountUsd.toFixed(2)}</strong> but ran into an issue.</p>
-          ${reason ? `<p style="color: #ff6b6b; margin: 0; font-size: 14px;">Reason: ${reason}</p>` : ""}
-        </div>
-        
-        <p style="color: #a1a1a1; margin-bottom: 24px;">Please check your Stripe Connect settings to make sure your account is properly configured. We'll retry the payout automatically once resolved.</p>
-        
-        <div style="text-align: center; padding-top: 24px; border-top: 1px solid #2a2a2a;">
-          <a href="https://greenroom.fm/creator/earnings" style="display: inline-block; background: #00FF88; color: #000000; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Check Settings</a>
-        </div>
-        
-        <p style="color: #666666; font-size: 12px; text-align: center; margin-top: 24px;">
-          Need help? Contact us at <a href="mailto:${ADMIN_EMAIL}" style="color: #00FF88;">${ADMIN_EMAIL}</a>
-        </p>
-      </div>
-    `,
+    replyTo: ADMIN_EMAIL,
+    subject: `Your Greenroom payout needs attention`,
+    text: `Hi ${creatorName},
+
+We tried to send your Greenroom payout of ${amountStr} but ran into an issue.
+
+${reason ? `Reason: ${reason}\n\n` : ""}Please check your Stripe Connect settings to make sure your account is properly configured. We'll retry automatically once resolved.
+
+Check settings: ${EMAIL_SITE_URL}/creator/earnings
+
+If you need help, reply to this email or write to ${ADMIN_EMAIL}.
+
+---
+You're receiving this because you have an active Greenroom creator account.
+
+© Greenroom`,
+    html: wrapEmailHtml({
+      preheader: `Your payout of ${amountStr} needs attention.`,
+      content,
+      whyReceiving: "You're receiving this because you have an active Greenroom creator account.",
+    }),
   });
 }
 
@@ -241,47 +275,48 @@ export async function sendPayoutSummaryToAdmin(summary: {
   errors: string[];
 }) {
   const hasErrors = summary.errors.length > 0;
-  
+  const totalStr = `$${summary.totalAmountUsd.toFixed(2)}`;
+
+  const errorsBlock = hasErrors
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr><td style="background:${EMAIL_COLORS.surface};border-left:3px solid ${EMAIL_COLORS.accent};padding:16px 20px;border-radius:0 6px 6px 0;">
+<p style="margin:0 0 10px;color:${EMAIL_COLORS.textPrimary};font-family:${EMAIL_FONTS.body};font-size:14px;font-weight:700;">Errors (${summary.errors.length})</p>
+${summary.errors.map(e => `<p style="margin:0 0 4px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:13px;line-height:1.5;">• ${escapeHtml(e)}</p>`).join("")}
+</td></tr></table>`
+    : "";
+
+  const content = `
+${emailHeading("Monthly payout summary")}
+${emailLede(`Processed ${summary.processed} creators · sent ${summary.payoutsSent} payouts · total ${totalStr}.`)}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;"><tr>
+<td width="50%" valign="top" style="padding-right:6px;">${emailStatCard(String(summary.payoutsSent), "Payouts sent")}</td>
+<td width="50%" valign="top" style="padding-left:6px;">${emailStatCard(totalStr, "Total amount")}</td>
+</tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr><td style="background:${EMAIL_COLORS.surfaceElevated};border:1px solid ${EMAIL_COLORS.border};border-radius:12px;padding:20px;">
+<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Creators processed:</strong> ${summary.processed}</p>
+<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Below $50 threshold:</strong> ${summary.skippedBelowThreshold}</p>
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">No Stripe connected:</strong> ${summary.skippedNoStripe}</p>
+</td></tr></table>
+${errorsBlock}
+`;
+
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `Greenroom monthly payouts — ${summary.payoutsSent} sent${hasErrors ? " (with errors)" : ""}`,
-    text: `Monthly Payout Summary\n\nProcessed: ${summary.processed} creators\nPayouts Sent: ${summary.payoutsSent}\nTotal Amount: $${summary.totalAmountUsd.toFixed(2)}\nSkipped (below $50): ${summary.skippedBelowThreshold}\nSkipped (no Stripe): ${summary.skippedNoStripe}\n${hasErrors ? `\nErrors:\n${summary.errors.join("\n")}` : ""}`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; background: #0a0a0a; padding: 32px; border-radius: 12px;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="color: #00FF88; margin: 0; font-size: 24px;">Greenroom</h1>
-        </div>
-        
-        <h2 style="color: #ffffff; margin-bottom: 24px;">Monthly Payout Summary</h2>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px;">
-          <div style="background: #1a1a1a; border-radius: 8px; padding: 16px; text-align: center;">
-            <p style="color: #a1a1a1; margin: 0 0 4px; font-size: 12px;">Payouts Sent</p>
-            <p style="color: #00FF88; margin: 0; font-size: 24px; font-weight: bold;">${summary.payoutsSent}</p>
-          </div>
-          <div style="background: #1a1a1a; border-radius: 8px; padding: 16px; text-align: center;">
-            <p style="color: #a1a1a1; margin: 0 0 4px; font-size: 12px;">Total Amount</p>
-            <p style="color: #00FF88; margin: 0; font-size: 24px; font-weight: bold;">$${summary.totalAmountUsd.toFixed(2)}</p>
-          </div>
-        </div>
-        
-        <div style="background: #1a1a1a; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-          <p style="color: #a1a1a1; margin: 0 0 8px;"><strong style="color: #ffffff;">Creators Processed:</strong> ${summary.processed}</p>
-          <p style="color: #a1a1a1; margin: 0 0 8px;"><strong style="color: #ffffff;">Below $50 Threshold:</strong> ${summary.skippedBelowThreshold}</p>
-          <p style="color: #a1a1a1; margin: 0;"><strong style="color: #ffffff;">No Stripe Connected:</strong> ${summary.skippedNoStripe}</p>
-        </div>
-        
-        ${hasErrors ? `
-        <div style="background: #2a1a1a; border-radius: 8px; padding: 20px; border-left: 4px solid #ff6b6b;">
-          <p style="color: #ff6b6b; margin: 0 0 12px; font-weight: bold;">Errors (${summary.errors.length})</p>
-          ${summary.errors.map(e => `<p style="color: #a1a1a1; margin: 0 0 4px; font-size: 13px;">• ${e}</p>`).join("")}
-        </div>
-        ` : ""}
-        
-        <p style="color: #666666; font-size: 12px; text-align: center; margin-top: 24px;">
-          Automated payout from Greenroom
-        </p>
-      </div>
-    `,
+    subject: `Monthly payouts — ${summary.payoutsSent} sent${hasErrors ? " (with errors)" : ""}`,
+    text: `Monthly Payout Summary
+
+Processed: ${summary.processed} creators
+Payouts Sent: ${summary.payoutsSent}
+Total Amount: ${totalStr}
+Skipped (below $50): ${summary.skippedBelowThreshold}
+Skipped (no Stripe): ${summary.skippedNoStripe}
+${hasErrors ? `\nErrors:\n${summary.errors.join("\n")}` : ""}
+
+---
+Automated admin summary from Greenroom.`,
+    html: wrapEmailHtml({
+      preheader: `${summary.payoutsSent} payouts sent · total ${totalStr}.`,
+      content,
+      whyReceiving: "You're receiving this because you're listed as the Greenroom platform admin.",
+    }),
   });
 }

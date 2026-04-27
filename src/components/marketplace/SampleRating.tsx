@@ -40,16 +40,11 @@ export function SampleRating({
     setRatingCount(sample.total_ratings || 0);
   }, [sample.average_rating, sample.total_ratings]);
 
-  const canRate = user && isOwned;
+  const canRate = !!user;
 
   const handleRate = async (rating: number) => {
     if (!user) {
       toast.error("Please log in to rate samples");
-      return;
-    }
-
-    if (!isOwned) {
-      toast.error("Purchase this sample to rate it");
       return;
     }
 
@@ -141,7 +136,7 @@ export function SampleRating({
             className={`transition-transform ${
               canRate ? "hover:scale-110 cursor-pointer" : "cursor-default"
             } disabled:cursor-not-allowed`}
-            title={canRate ? `Rate ${star} star${star !== 1 ? "s" : ""}` : (isOwned ? "" : "Purchase to rate")}
+            title={canRate ? `Rate ${star} star${star !== 1 ? "s" : ""}` : "Log in to rate"}
           >
             <Star
               className={`w-4 h-4 transition-colors ${

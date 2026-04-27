@@ -377,10 +377,10 @@ function saveLocalSettings() {
   fs.writeFileSync(LOCAL_SETTINGS_PATH, JSON.stringify(localSettings, null, 2));
 }
 
-async function ensureLocalSampleDirectory(promptIfMissing = false) {
+async function ensureLocalSampleDirectory(promptIfMissing = false, forcePrompt = false) {
   ensureLocalStoreReady();
 
-  if (localSettings.sampleFolderPath) {
+  if (localSettings.sampleFolderPath && !forcePrompt) {
     LOCAL_SAMPLE_DIR = localSettings.sampleFolderPath;
     if (!fs.existsSync(LOCAL_SAMPLE_DIR)) {
       fs.mkdirSync(LOCAL_SAMPLE_DIR, { recursive: true });
@@ -388,19 +388,22 @@ async function ensureLocalSampleDirectory(promptIfMissing = false) {
     return LOCAL_SAMPLE_DIR;
   }
 
-  if (!promptIfMissing) {
+  if (!promptIfMissing && !forcePrompt) {
     return null;
   }
 
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose Greenroom Sample Folder',
-    buttonLabel: 'Use Folder',
-    defaultPath: path.join(app.getPath('downloads'), 'Greenroom'),
+    title: 'Choose Sample Library Folder',
+    buttonLabel: 'Use This Folder',
+    defaultPath: localSettings.sampleFolderPath || path.join(app.getPath('downloads'), 'Greenroom'),
     properties: ['openDirectory', 'createDirectory'],
-    message: 'Choose where Greenroom should store synced samples for instant drag and drop.',
+    message: 'Pick a folder where Greenroom will save your Library samples so you can drag and drop them straight into your DAW.',
   });
 
   if (result.canceled || !result.filePaths?.[0]) {
+    if (forcePrompt && localSettings.sampleFolderPath) {
+      return localSettings.sampleFolderPath;
+    }
     throw new Error('No sample folder selected');
   }
 
@@ -676,7 +679,7 @@ ipcMain.handle('sync-local-sample', async (_event, { sampleId, sampleName, artis
 
 ipcMain.handle('choose-local-sample-folder', async () => {
   try {
-    const sampleFolderPath = await ensureLocalSampleDirectory(true);
+    const sampleFolderPath = await ensureLocalSampleDirectory(true, true);
     return { ok: true, sampleFolderPath };
   } catch (err) {
     return {
@@ -684,6 +687,26 @@ ipcMain.handle('choose-local-sample-folder', async () => {
       error: err instanceof Error ? err.message : 'Failed to choose sample folder',
     };
   }
+});
+
+ipcMain.handle('ensure-local-sample-folder', async () => {
+  try {
+    const sampleFolderPath = await ensureLocalSampleDirectory(true, false);
+    return { ok: true, sampleFolderPath };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to set up sample folder',
+    };
+  }
+});
+
+ipcMain.handle('get-desktop-settings', () => {
+  ensureLocalStoreReady();
+  return {
+    ok: true,
+    sampleFolderPath: localSettings.sampleFolderPath || null,
+  };
 });
 
 ipcMain.handle('sync-local-samples-batch', async (_event, { samples = [] }) => {

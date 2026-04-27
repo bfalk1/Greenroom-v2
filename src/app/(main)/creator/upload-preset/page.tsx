@@ -54,7 +54,6 @@ export default function CreatorUploadPresetPage() {
 
   const [formData, setFormData] = useState({
     name: "",
-    description: "",
     synthName: "",
     presetCategory: "",
     genre: "",
@@ -75,7 +74,6 @@ export default function CreatorUploadPresetPage() {
 
   // Advanced metadata
   const [parameterSnapshot, setParameterSnapshot] = useState<File | null>(null);
-  const [modulationInfo, setModulationInfo] = useState("");
   const [macroDescriptions, setMacroDescriptions] = useState([
     { name: "", description: "" },
     { name: "", description: "" },
@@ -204,17 +202,6 @@ export default function CreatorUploadPresetPage() {
         }
       }
 
-      // Parse modulation info
-      let parsedModulationInfo = null;
-      if (modulationInfo.trim()) {
-        try {
-          parsedModulationInfo = JSON.parse(modulationInfo);
-        } catch {
-          // Treat as plain text description
-          parsedModulationInfo = { description: modulationInfo };
-        }
-      }
-
       // Filter empty macros
       const filteredMacros = macroDescriptions.filter(
         (m) => m.name.trim() || m.description.trim()
@@ -226,7 +213,6 @@ export default function CreatorUploadPresetPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.name,
-          description: formData.description || null,
           synthName: formData.synthName,
           presetCategory: formData.presetCategory,
           genre: formData.genre,
@@ -239,7 +225,6 @@ export default function CreatorUploadPresetPage() {
             ? formData.compatibleVersions.split(",").map((v: string) => v.trim()).filter(Boolean)
             : [],
           parameterSnapshot: parsedParameterSnapshot,
-          modulationInfo: parsedModulationInfo,
           macroDescriptions: filteredMacros.length > 0 ? filteredMacros : null,
           isInitPreset: formData.isInitPreset,
           fileSizeBytes: fileSizeBytes || presetFile.size,
@@ -329,20 +314,6 @@ export default function CreatorUploadPresetPage() {
               onChange={(e) => handleChange("name", e.target.value)}
               className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
               required
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-white mb-2">
-              Description
-            </label>
-            <textarea
-              placeholder="Describe your preset - what it sounds like, how to use it..."
-              value={formData.description}
-              onChange={(e) => handleChange("description", e.target.value)}
-              rows={3}
-              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] resize-none"
             />
           </div>
 
@@ -650,20 +621,6 @@ export default function CreatorUploadPresetPage() {
                       </label>
                     )}
                   </div>
-                </div>
-
-                {/* Modulation Info */}
-                <div>
-                  <label className="block text-sm font-medium text-white mb-2">
-                    Modulation Info
-                  </label>
-                  <textarea
-                    placeholder="Describe modulation routing (JSON or plain text)"
-                    value={modulationInfo}
-                    onChange={(e) => setModulationInfo(e.target.value)}
-                    rows={3}
-                    className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] resize-none text-sm"
-                  />
                 </div>
 
                 {/* Macro Descriptions */}

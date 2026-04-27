@@ -79,17 +79,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Sample not found" }, { status: 404 });
       }
 
-      const purchase = await prisma.purchase.findUnique({
-        where: { userId_sampleId: { userId: authUser.id, sampleId } },
-      });
-
-      if (!purchase) {
-        return NextResponse.json(
-          { error: "You must purchase a sample before rating it" },
-          { status: 403 }
-        );
-      }
-
       const rating = await prisma.rating.upsert({
         where: { userId_sampleId: { userId: authUser.id, sampleId } },
         update: { score },
@@ -125,17 +114,6 @@ export async function POST(request: NextRequest) {
 
       if (!preset || preset.status !== "PUBLISHED" || !preset.isActive) {
         return NextResponse.json({ error: "Preset not found" }, { status: 404 });
-      }
-
-      const purchase = await prisma.purchase.findFirst({
-        where: { userId: authUser.id, presetId },
-      });
-
-      if (!purchase) {
-        return NextResponse.json(
-          { error: "You must purchase a preset before rating it" },
-          { status: 403 }
-        );
       }
 
       // Upsert rating for preset

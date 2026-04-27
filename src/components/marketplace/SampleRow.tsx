@@ -67,6 +67,13 @@ export function SampleRow({
     enabled: isOwned,
   });
 
+  const handleRowMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDesktop || !isOwned) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, [role="button"], [data-no-drag]')) return;
+    handlePointerDown(e);
+  }, [isDesktop, isOwned, handlePointerDown]);
+
   useEffect(() => {
     setIsFavorited(isFavoritedProp);
   }, [isFavoritedProp]);
@@ -258,13 +265,15 @@ export function SampleRow({
   return (
     <div
       ref={rowRef}
-      className={getSampleTableRowClass("browse", {
+      className={`${getSampleTableRowClass("browse", {
         isActive: isSelected || isPlayingState,
         isDragging,
-      })}
+      })}${canDrag ? " cursor-grab active:cursor-grabbing" : ""}`}
       style={{ WebkitUserSelect: "none" } as React.CSSProperties}
+      onMouseDown={handleRowMouseDown}
+      onMouseUp={isDesktop && isOwned ? handlePointerUp : undefined}
     >
-      {/* Drag Handle */}
+      {/* Drag Handle (visual indicator) */}
       <div
         key={dragHandleKey}
         className={`w-6 h-10 flex items-center justify-center transition -ml-1 ${
@@ -273,18 +282,16 @@ export function SampleRow({
             : isSyncing
             ? "cursor-progress text-[#39b54a]"
             : canDrag
-            ? "cursor-grab active:cursor-grabbing text-[#39b54a] hover:text-white"
+            ? "text-[#39b54a] hover:text-white"
             : "cursor-pointer text-[#3a3a3a] hover:text-[#39b54a]"
         }`}
-        onMouseDown={isDesktop && isOwned ? handlePointerDown : undefined}
-        onMouseUp={isDesktop && isOwned ? handlePointerUp : undefined}
         title={
           !isDesktop || !isOwned
             ? ""
             : isSyncing
             ? "Syncing sample locally..."
             : isLocal
-            ? "Drag local sample to DAW"
+            ? "Drag to DAW"
             : "Sync sample locally"
         }
       >
@@ -387,22 +394,12 @@ export function SampleRow({
 
       {/* Rating - hidden on mobile */}
       <div className="hidden md:flex items-center justify-center">
-        {isOwned ? (
-          <SampleRating
-            sample={sample}
-            user={user}
-            isOwned={isOwned}
-            initialRating={userRating}
-            compact
-          />
-        ) : sample.average_rating ? (
-          <span className="text-sm text-[#a1a1a1] flex items-center gap-1">
-            <span className="text-yellow-500">★</span>
-            {sample.average_rating.toFixed(1)}
-          </span>
-        ) : (
-          <span className="text-sm text-[#3a3a3a]">—</span>
-        )}
+        <SampleRating
+          sample={sample}
+          user={user}
+          initialRating={userRating}
+          compact
+        />
       </div>
 
       {/* Actions */}

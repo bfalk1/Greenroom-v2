@@ -47,6 +47,7 @@ interface LibrarySample {
 type GreenroomDesktopApi = {
   isDesktop?: boolean;
   chooseLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
+  ensureLocalSampleFolder?: () => Promise<{ ok: boolean; sampleFolderPath?: string; error?: string }>;
   getLocalSampleStatus?: (
     sampleId: string,
     sampleName: string,
@@ -600,10 +601,13 @@ export default function LibraryPage() {
 
   useEffect(() => {
     const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
-    if (!greenroom?.isDesktop || !greenroom.chooseLocalSampleFolder || !greenroom.syncLocalSamplesBatch) {
+    if (!greenroom?.isDesktop || !greenroom.syncLocalSamplesBatch) {
       return;
     }
-    const chooseLocalSampleFolder = greenroom.chooseLocalSampleFolder;
+    const ensureFolder = greenroom.ensureLocalSampleFolder || greenroom.chooseLocalSampleFolder;
+    if (!ensureFolder) {
+      return;
+    }
     const syncLocalSamplesBatch = greenroom.syncLocalSamplesBatch;
     if (!user) {
       return;
@@ -611,7 +615,7 @@ export default function LibraryPage() {
 
     const runAutoSync = async () => {
       try {
-        const folderResult = await chooseLocalSampleFolder();
+        const folderResult = await ensureFolder();
         if (!folderResult?.ok) {
           throw new Error(folderResult?.error || "No sample folder selected");
         }

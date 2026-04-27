@@ -2,6 +2,15 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
+import {
+  wrapEmailHtml,
+  emailHeading,
+  emailLede,
+  emailParagraph,
+  emailButton,
+  EMAIL_COLORS,
+  EMAIL_FONTS,
+} from "@/lib/email-layout";
 
 // Helper to send invite email
 async function sendInviteEmail(invite: {
@@ -12,6 +21,19 @@ async function sendInviteEmail(invite: {
   token: string;
 }) {
   const signupUrl = `${EMAIL_SITE_URL}/signup?invite=${invite.token}`;
+
+  const content = `
+${emailHeading("Welcome to Greenroom")}
+${emailLede("This is your invite to our early access creator program — the world's first open sample marketplace.")}
+${emailParagraph("As a Greenroom creator, you can:")}
+<ul style="margin:0 0 24px;padding:0 0 0 20px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:15px;line-height:1.8;">
+<li>Upload your samples on your own schedule</li>
+<li>Earn money from every download</li>
+<li>View detailed download and earnings analytics</li>
+<li>Curate your artist page, and use it to promote your own music</li>
+</ul>
+${emailButton(signupUrl, "Discover Greenroom")}
+`;
 
   await sendEmail({
     to: invite.email,
@@ -33,7 +55,11 @@ Discover Greenroom: ${signupUrl}
 You're receiving this because someone invited you to the Greenroom creator program.
 
 © Greenroom`,
-    html: `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><style>body{margin:0;padding:0}@media(max-width:670px){.hero h1{font-size:34px!important}.content{padding:0 20px!important}}</style></head><body style="margin:0;padding:0;background:#000;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif"><table width="100%" cellpadding="0" cellspacing="0" style="background:#000"><tr><td align="center"><table width="650" cellpadding="0" cellspacing="0" style="max-width:650px;width:100%"><tr><td align="center" style="padding:20px 0"><a href="https://greenroom.fm"><img src="https://greenroom.fm/email/logo-white.png" width="300" alt="Greenroom" style="display:block;border:0;max-width:100%;height:auto"></a></td></tr><tr><td class="hero" style="background:#1a1a1a url('https://greenroom.fm/email/hero-piano.jpg') center/cover no-repeat;padding:50px 15px;text-align:center"><p style="margin:0 0 16px;color:#fff;font-size:16px;letter-spacing:16px">04.01.2026</p><h1 style="margin:0 0 16px;color:#fff;font-size:56px;font-weight:bold;letter-spacing:-1px;line-height:1.2">A New Era of Greenroom</h1><p style="margin:0;color:#fff;font-size:16px;font-weight:700">The world's first open sample marketplace</p></td></tr><tr><td class="content" style="padding:20px 40px;text-align:center"><p style="margin:0 0 8px;color:#fff;font-size:19px;font-weight:bold">You're invited</p><p style="margin:0 0 12px;color:#60b358;font-size:31px;font-weight:bold">Welcome to the Greenroom</p><p style="margin:0 0 20px;color:#fff;font-size:14px">This is your invite to participate in our early access creator program.</p><p style="margin:0 0 16px;color:#fff;font-size:17px;font-weight:bold">As a Greenroom creator, you can:</p><p style="margin:0 0 30px;color:#fff;font-size:14px;text-align:left;padding:0 20px;line-height:1.6">- Upload your samples on your own schedule<br>- Earn money from every download<br>- View detailed download and earnings analytics<br>- Curate your artist page, and use it to promote your own music</p><p style="margin:0 0 40px"><a href="${signupUrl}" style="display:inline-block;background:#60b358;color:#fff;padding:15px 30px;font-size:16px;font-weight:700;text-decoration:none;border-radius:2px">Discover Greenroom</a></p></td></tr><tr><td style="padding:20px 30px;text-align:center;border-top:1px solid #222"><p style="margin:0 0 10px;color:#888;font-size:12px;line-height:1.5">You're receiving this because someone invited you to the Greenroom creator program.</p><p style="margin:0;color:#666;font-size:12px">© Greenroom · <a href="{{{RESEND_UNSUBSCRIBE_URL}}}" style="color:#888;text-decoration:underline">Unsubscribe</a></p></td></tr></table></td></tr></table></body></html>`,
+    html: wrapEmailHtml({
+      preheader: "Your invite to the Greenroom creator program.",
+      content,
+      whyReceiving: "You're receiving this because someone invited you to the Greenroom creator program.",
+    }),
   });
 }
 
