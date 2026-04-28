@@ -189,7 +189,9 @@ export async function GET(request: NextRequest) {
         paramIndex++;
       }
       if (sampleType && sampleType !== "all") {
-        conditions.push(`s.sample_type = $${paramIndex}`);
+        // SampleType is a Postgres enum; bind parameters arrive as text and
+        // need an explicit cast or the planner errors with operator-mismatch.
+        conditions.push(`s.sample_type = $${paramIndex}::"SampleType"`);
         filterParams.push(sampleType.toUpperCase());
         paramIndex++;
       }
