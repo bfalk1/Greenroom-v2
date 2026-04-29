@@ -127,7 +127,7 @@ function SignupForm() {
         if (invite) {
           router.push("/onboarding");
         } else if (betaInvite) {
-          router.push("/marketplace");
+          router.push("/onboarding");
         } else {
           router.push("/pricing?welcome=true");
         }

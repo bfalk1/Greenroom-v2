@@ -181,9 +181,6 @@ export async function GET(request: Request) {
         if (hasCreatorInvite || user.role === "CREATOR") {
           return NextResponse.redirect(`${origin}/onboarding?creator=true`);
         }
-        if (hasBetaInvite) {
-          return NextResponse.redirect(`${origin}/marketplace`);
-        }
         return NextResponse.redirect(`${origin}/onboarding`);
       }
 
