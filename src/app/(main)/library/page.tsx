@@ -44,28 +44,6 @@ interface LibrarySample {
   purchased_at: string;
 }
 
-type SampleFolderResult = {
-  ok: boolean;
-  sampleFolderPath?: string;
-  cancelled?: boolean;
-  unreachable?: boolean;
-  error?: string;
-};
-
-type GreenroomDesktopApi = {
-  isDesktop?: boolean;
-  chooseLocalSampleFolder?: () => Promise<SampleFolderResult>;
-  ensureLocalSampleFolder?: () => Promise<SampleFolderResult>;
-  getLocalSampleStatus?: (
-    sampleId: string,
-    sampleName: string,
-    artistName?: string
-  ) => Promise<{ ok: boolean; status?: { isLocal?: boolean }; error?: string }>;
-  syncLocalSamplesBatch?: (
-    samples: Array<{ sampleId: string; sampleName: string; artistName?: string }>
-  ) => Promise<{ ok: boolean; results?: Array<{ sampleId: string; sampleName: string; localPath: string }>; error?: string }>;
-};
-
 // Global audio state for library
 let libraryAudio: HTMLAudioElement | null = null;
 let libraryPlayingId: string | null = null;
@@ -412,7 +390,6 @@ function LibraryRow({
 }
 
 const PAGE_SIZE = 20;
-const SYNC_BATCH_SIZE = 20;
 export default function LibraryPage() {
   const { user, loading: userLoading } = useUser();
   const [samples, setSamples] = useState<LibrarySample[]>([]);
@@ -424,8 +401,6 @@ export default function LibraryPage() {
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [localStatusRefreshKey, setLocalStatusRefreshKey] = useState(0);
-  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({ completed: 0, total: 0 });
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const fetchAllLibrarySamples = useCallback(async () => {
@@ -462,33 +437,6 @@ export default function LibraryPage() {
 
     return allSamples;
   }, [searchQuery]);
-
-  const getMissingLocalSamples = useCallback(
-    async (greenroom: GreenroomDesktopApi, allSamples: LibrarySample[]) => {
-      if (!greenroom.getLocalSampleStatus) {
-        return allSamples;
-      }
-
-      const missingSamples: LibrarySample[] = [];
-
-      for (let index = 0; index < allSamples.length; index += SYNC_BATCH_SIZE) {
-        const batch = allSamples.slice(index, index + SYNC_BATCH_SIZE);
-        const statuses = await Promise.all(
-          batch.map((sample) => greenroom.getLocalSampleStatus!(sample.id, sample.name, sample.artist_name))
-        );
-
-        batch.forEach((sample, batchIndex) => {
-          const isLocal = Boolean(statuses[batchIndex]?.ok && statuses[batchIndex]?.status?.isLocal);
-          if (!isLocal) {
-            missingSamples.push(sample);
-          }
-        });
-      }
-
-      return missingSamples;
-    },
-    []
-  );
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -614,82 +562,13 @@ export default function LibraryPage() {
     });
   }, [user, fetchLibrary]);
 
+  // Refresh per-row local status when the layout-level sync (DesktopLibrarySync)
+  // pulls down newly purchased samples while the library page is open.
   useEffect(() => {
-    const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
-    if (!greenroom?.isDesktop || !greenroom.syncLocalSamplesBatch) {
-      return;
-    }
-    const ensureFolder = greenroom.ensureLocalSampleFolder || greenroom.chooseLocalSampleFolder;
-    if (!ensureFolder) {
-      return;
-    }
-    const syncLocalSamplesBatch = greenroom.syncLocalSamplesBatch;
-    if (!user) {
-      return;
-    }
-
-    const runAutoSync = async () => {
-      try {
-        const folderResult = await ensureFolder();
-        if (folderResult?.cancelled) {
-          // First-run: user dismissed the picker. Stay quiet — they can
-          // retry from Account → Greenroom App.
-          return;
-        }
-        if (!folderResult?.ok) {
-          if (folderResult?.unreachable) {
-            toast.error(folderResult.error || "Greenroom can't reach your sample folder. Pick a new one in Account → Greenroom App.");
-            return;
-          }
-          throw new Error(folderResult?.error || "No sample folder selected");
-        }
-
-        const allSamples = await fetchAllLibrarySamples();
-        if (allSamples.length === 0) {
-          return;
-        }
-
-        const missingSamples = await getMissingLocalSamples(greenroom, allSamples);
-
-        if (missingSamples.length === 0) {
-          setLocalStatusRefreshKey((prev) => prev + 1);
-          return;
-        }
-
-        setIsAutoSyncing(true);
-        setSyncProgress({ completed: 0, total: missingSamples.length });
-
-        for (let index = 0; index < missingSamples.length; index += SYNC_BATCH_SIZE) {
-          const batch = missingSamples.slice(index, index + SYNC_BATCH_SIZE);
-          const syncResult = await syncLocalSamplesBatch(
-            batch.map((sample) => ({
-              sampleId: sample.id,
-              sampleName: sample.name,
-              artistName: sample.artist_name,
-            }))
-          );
-
-          if (!syncResult?.ok) {
-            throw new Error(syncResult?.error || "Library sync failed");
-          }
-
-          setSyncProgress({
-            completed: Math.min(index + batch.length, missingSamples.length),
-            total: missingSamples.length,
-          });
-        }
-
-        setLocalStatusRefreshKey((prev) => prev + 1);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Library sync failed";
-        toast.error(message);
-      } finally {
-        setIsAutoSyncing(false);
-      }
-    };
-
-    void runAutoSync();
-  }, [user, fetchAllLibrarySamples, getMissingLocalSamples]);
+    const onSyncComplete = () => setLocalStatusRefreshKey((prev) => prev + 1);
+    window.addEventListener("greenroom:library-sync-complete", onSyncComplete);
+    return () => window.removeEventListener("greenroom:library-sync-complete", onSyncComplete);
+  }, []);
 
   // Infinite scroll
   useEffect(() => {
@@ -754,13 +633,6 @@ export default function LibraryPage() {
                   className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
                 />
               </div>
-
-              {isAutoSyncing && (
-                <div className="flex items-center gap-2 text-sm text-[#39b54a] whitespace-nowrap">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Syncing library {syncProgress.completed}/{syncProgress.total || total}...
-                </div>
-              )}
 
               {selectedIds.size > 0 && (
                 <Button

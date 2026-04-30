@@ -5,6 +5,7 @@ import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { DesktopTitleBar } from "./DesktopTitleBar";
+import { DesktopLibrarySync } from "@/components/desktop/DesktopLibrarySync";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -69,6 +70,7 @@ export function AppShell({ children }: AppShellProps) {
       >
         <DesktopSidebar />
         <DesktopTitleBar />
+        <DesktopLibrarySync />
         <main className="ml-52 pt-10 min-h-screen">{children}</main>
       </div>
     );
