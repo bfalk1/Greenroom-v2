@@ -33,6 +33,15 @@ export function Navbar() {
     );
   };
 
+  const downloadBubble = (
+    <Link
+      href="/download"
+      className="text-sm font-medium px-3 py-1 rounded-full border border-[#39b54a]/40 bg-[#39b54a]/10 text-[#39b54a] hover:bg-[#39b54a]/20 transition"
+    >
+      Download
+    </Link>
+  );
+
   return (
     <header className="border-b border-[#2a2a2a] bg-[#0a0a0a] sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -61,12 +70,14 @@ export function Navbar() {
                   {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                     navLink("/mod/samples", "Moderation")}
                   {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
+                  {downloadBubble}
                 </>
               ) : (
                 // Logged in without subscription
                 <>
                   {navLink("/explore", "Explore")}
                   {navLink("/pricing", "Subscribe")}
+                  {downloadBubble}
                 </>
               )
             ) : (
@@ -181,6 +192,12 @@ export function Navbar() {
                       Admin
                     </Link>
                   )}
+                  <Link
+                    href="/download"
+                    className="self-start text-sm font-medium px-3 py-1 rounded-full border border-[#39b54a]/40 bg-[#39b54a]/10 text-[#39b54a] hover:bg-[#39b54a]/20 transition"
+                  >
+                    Download
+                  </Link>
                 </>
               ) : (
                 <>
@@ -189,6 +206,12 @@ export function Navbar() {
                   </Link>
                   <Link href="/pricing" className="text-sm font-medium text-[#39b54a] hover:text-white">
                     Subscribe
+                  </Link>
+                  <Link
+                    href="/download"
+                    className="self-start text-sm font-medium px-3 py-1 rounded-full border border-[#39b54a]/40 bg-[#39b54a]/10 text-[#39b54a] hover:bg-[#39b54a]/20 transition"
+                  >
+                    Download
                   </Link>
                 </>
               )
