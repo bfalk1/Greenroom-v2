@@ -31,6 +31,7 @@ function SignupForm() {
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -47,12 +48,13 @@ function SignupForm() {
           if (data.valid && data.email) {
             setBetaInvite({ email: data.email, credits: data.credits });
             setEmail(data.email);
-          } else if (data.error) {
-            console.warn("Invalid beta invite:", data.error);
+          } else {
+            setInviteError(data.error || "This beta invite link is invalid or expired.");
           }
         })
         .catch((err) => {
           console.error("Failed to verify beta invite:", err);
+          setInviteError("Couldn't verify your beta invite. Please try again.");
         })
         .finally(() => {
           setInviteLoading(false);
@@ -72,12 +74,13 @@ function SignupForm() {
             artistName: data.artistName || "Creator",
           });
           setEmail(data.email);
-        } else if (data.error) {
-          console.warn("Invalid invite token:", data.error);
+        } else {
+          setInviteError(data.error || "This invite link is invalid or expired.");
         }
       })
       .catch((err) => {
         console.error("Failed to verify invite:", err);
+        setInviteError("Couldn't verify your invite. Please try again.");
       })
       .finally(() => {
         setInviteLoading(false);
@@ -166,6 +169,28 @@ function SignupForm() {
     );
   }
 
+  if (inviteError) {
+    return (
+      <div className="w-full max-w-md text-center">
+        <img
+          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+          alt="GREENROOM"
+          className="h-6 mx-auto mb-6"
+        />
+        <h1 className="text-3xl font-bold text-white mb-4">Invite Link Issue</h1>
+        <p className="text-[#a1a1a1] mb-6">{inviteError}</p>
+        <p className="text-[#a1a1a1] text-sm mb-6">
+          If you believe this is a mistake, please contact the person who invited you for a fresh link.
+        </p>
+        <Link href="/login">
+          <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
+            Back to Sign In
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-md">
       {/* Logo */}
@@ -212,8 +237,8 @@ function SignupForm() {
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Hide email field if invite (email is pre-set) */}
-        {!invite && (
+        {/* Hide email field if invite (email is pre-set for both creator and beta invites) */}
+        {!invite && !betaInvite && (
           <div>
             <label className="block text-sm font-medium text-white mb-2">
               Email
