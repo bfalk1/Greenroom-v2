@@ -10,6 +10,7 @@ import {
   SAMPLE_TABLE_WAVEFORM_CLASS,
 } from "@/components/marketplace/SampleTable";
 import { Waveform } from "@/components/audio/Waveform";
+import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
 import { SampleRating } from "@/components/marketplace/SampleRating";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
 import { trackSamplePlay, trackSamplePause, trackSampleFavorite, trackSampleDownload } from "@/lib/analytics";
@@ -132,6 +133,13 @@ export function SampleRow({
       await audio.play();
       setGlobalPlayingId(sample.id);
       setIsPlayingState(true);
+      setNowPlayingTrack({
+        id: sample.id,
+        name: sample.name,
+        artistName: sample.artist_name,
+        coverUrl: sample.cover_art_url || sample.creator_avatar,
+        artistSlug: sample.artist_name || sample.creator_id,
+      });
       playStartRef.current = Date.now();
       trackSamplePlay({
         sampleId: sample.id,
@@ -193,6 +201,36 @@ export function SampleRow({
     e.stopPropagation();
     await togglePlayFn();
   };
+
+  const handleSeek = useCallback(async (percent: number) => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    const seekToPercent = () => {
+      if (audio.duration && Number.isFinite(audio.duration)) {
+        audio.currentTime = (audio.duration * percent) / 100;
+        setProgress(percent);
+      }
+    };
+
+    if (getGlobalPlayingId() === sample.id) {
+      seekToPercent();
+      return;
+    }
+
+    await togglePlayFn();
+    if (getGlobalPlayingId() !== sample.id) return;
+
+    if (audio.readyState >= 1 && Number.isFinite(audio.duration)) {
+      seekToPercent();
+    } else {
+      const onMeta = () => {
+        seekToPercent();
+        audio.removeEventListener("loadedmetadata", onMeta);
+      };
+      audio.addEventListener("loadedmetadata", onMeta);
+    }
+  }, [sample.id, togglePlayFn]);
 
   const handlePurchase = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -367,7 +405,7 @@ export function SampleRow({
       </div>
 
       {/* Waveform */}
-      <div className={SAMPLE_TABLE_WAVEFORM_CLASS}>
+      <div className={SAMPLE_TABLE_WAVEFORM_CLASS} data-no-drag>
         <Waveform
           audioUrl={sample.preview_url}
           data={sample.waveform_data || undefined}
@@ -378,6 +416,7 @@ export function SampleRow({
           barGap={1}
           barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
           progressColor="#39b54a"
+          onSeek={handleSeek}
         />
       </div>
 

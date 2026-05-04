@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Music, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { Sample, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { ExploreRow } from "@/components/marketplace/ExploreRow";
@@ -31,7 +32,6 @@ export default function ExplorePage() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [filters, setFilters] = useState({
     genre: "all",
     instrumentType: "all",
@@ -41,12 +41,10 @@ export default function ExplorePage() {
   });
   const [sortColumn, setSortColumn] = useState<string>("popular");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [hasMore, setHasMore] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showResults, setShowResults] = useState(false);
   const [genres, setGenres] = useState<string[]>([]);
   const [instruments, setInstruments] = useState<string[]>([]);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const lastFetchRef = useRef<number>(0);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -119,10 +117,9 @@ export default function ExplorePage() {
   }, []);
 
   const fetchSamples = useCallback(
-    async (offset = 0, append = false) => {
+    async (page: number) => {
       try {
-        if (offset === 0) setLoading(true);
-        else setLoadingMore(true);
+        setLoading(true);
 
         const params = new URLSearchParams();
         if (activeSearch) params.set("search", activeSearch);
@@ -139,84 +136,53 @@ export default function ExplorePage() {
         params.set("sortBy", filters.sortBy);
         params.set("sortDir", sortDirection);
         params.set("limit", String(PAGE_SIZE));
-        params.set("offset", String(offset));
+        params.set("offset", String((page - 1) * PAGE_SIZE));
 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
+
         const res = await fetch(`/api/samples?${params.toString()}`, {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
-        
+
         if (!res.ok) throw new Error("Failed to fetch samples");
 
         const data = await res.json();
 
-        if (append) {
-          const newSamples = data.samples.filter((s: Sample) => 
-            !samples.some(existing => existing.id === s.id)
-          );
-          
-          if (newSamples.length === 0 || data.samples.length < PAGE_SIZE) {
-            setHasMore(false);
-          }
-          
-          if (newSamples.length > 0) {
-            setSamples((prev) => [...prev, ...newSamples]);
-          }
-        } else {
-          setSamples(data.samples);
-          setHasMore(data.samples.length >= PAGE_SIZE);
-        }
+        setSamples(data.samples);
         setTotal(data.total);
       } catch (error) {
         console.error("Error fetching samples:", error);
         toast.error("Failed to load samples");
       } finally {
         setLoading(false);
-        setLoadingMore(false);
       }
     },
-    [activeSearch, filters, sortDirection, samples]
+    [activeSearch, filters, sortDirection]
   );
 
+  // Reset to page 1 when filters/search change
   useEffect(() => {
-    setHasMore(true);
-  }, [filters, activeSearch]);
+    setCurrentPage(1);
+  }, [filters, activeSearch, sortDirection]);
 
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel || !showResults) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const now = Date.now();
-        if (
-          entries[0].isIntersecting && 
-          !loading && 
-          !loadingMore && 
-          hasMore &&
-          samples.length < total &&
-          now - lastFetchRef.current > 800
-        ) {
-          lastFetchRef.current = now;
-          fetchSamples(samples.length, true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "200px" }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loading, loadingMore, samples.length, total, hasMore, fetchSamples, showResults]);
-
-  // Fetch when showResults becomes true or filters change
+  // Fetch when showResults becomes true or page/filters change
   useEffect(() => {
     if (showResults) {
-      fetchSamples(0, false);
+      fetchSamples(currentPage);
     }
-  }, [showResults, activeSearch, filters, sortDirection]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showResults, activeSearch, filters, sortDirection, currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -436,32 +402,6 @@ export default function ExplorePage() {
                     ))}
                   </div>
 
-                  {/* Load more */}
-                  {hasMore && samples.length < total && (
-                    <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
-                      {loadingMore ? (
-                        <div className="flex items-center gap-2 text-[#a1a1a1]">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Loading more...
-                        </div>
-                      ) : (
-                        <>
-                          <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
-                          <button
-                            onClick={() => fetchSamples(samples.length, true)}
-                            className="text-sm text-[#39b54a] hover:text-white transition"
-                          >
-                            Load more
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  {!hasMore && samples.length > 0 && (
-                    <div className="text-center py-6 border-t border-[#2a2a2a]">
-                      <span className="text-[#3a3a3a] text-sm">All {samples.length} samples loaded</span>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="text-center py-16">
@@ -469,6 +409,20 @@ export default function ExplorePage() {
                   <p className="text-[#a1a1a1]">
                     No samples found matching your filters.
                   </p>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="mt-6 flex flex-col items-center gap-2">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    disabled={loading}
+                  />
+                  <span className="text-xs text-[#666]">
+                    Page {currentPage} of {totalPages} · {total} sample{total !== 1 ? "s" : ""}
+                  </span>
                 </div>
               )}
             </div>

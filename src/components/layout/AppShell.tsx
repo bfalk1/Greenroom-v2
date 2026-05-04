@@ -6,6 +6,7 @@ import { Footer } from "./Footer";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { DesktopTitleBar } from "./DesktopTitleBar";
 import { DesktopLibrarySync } from "@/components/desktop/DesktopLibrarySync";
+import { NowPlayingBar } from "@/components/audio/NowPlayingBar";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -55,8 +56,9 @@ export function AppShell({ children }: AppShellProps) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
         <Navbar />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1 pb-24">{children}</main>
         <Footer />
+        <NowPlayingBar />
       </div>
     );
   }
@@ -71,7 +73,8 @@ export function AppShell({ children }: AppShellProps) {
         <DesktopSidebar />
         <DesktopTitleBar />
         <DesktopLibrarySync />
-        <main className="ml-52 pt-10 min-h-screen">{children}</main>
+        <main className="ml-52 pt-10 pb-24 min-h-screen">{children}</main>
+        <NowPlayingBar />
       </div>
     );
   }
@@ -80,8 +83,9 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <Navbar />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 pb-24">{children}</main>
       <Footer />
+      <NowPlayingBar />
     </div>
   );
 }

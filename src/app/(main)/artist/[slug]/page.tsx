@@ -1,19 +1,20 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, use, useRef } from "react";
+import React, { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
-import { 
-  Music, 
-  Users, 
-  Download, 
-  Calendar, 
-  Loader2, 
-  UserPlus, 
+import {
+  Music,
+  Users,
+  Download,
+  Calendar,
+  Loader2,
+  UserPlus,
   UserMinus,
   ExternalLink,
   ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
@@ -45,30 +46,23 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   const [artist, setArtist] = useState<Artist | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [samplesLoading, setSamplesLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [followLoading, setFollowLoading] = useState(false);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  
+  const hasFetchedArtistRef = React.useRef(false);
+
   const PAGE_SIZE = 20;
 
-  const dedupeSamples = useCallback((items: Sample[]) => {
-    const seenIds = new Set<string>();
-    return items.filter((sample) => {
-      if (seenIds.has(sample.id)) {
-        return false;
-      }
-      seenIds.add(sample.id);
-      return true;
-    });
-  }, []);
-
-  const fetchArtist = useCallback(async () => {
+  const fetchArtistPage = useCallback(async (page: number) => {
+    const isInitial = !hasFetchedArtistRef.current;
     try {
-      setLoading(true);
-      const res = await fetch(`/api/artist/${slug}?offset=0&limit=${PAGE_SIZE}`);
-      
+      if (isInitial) setLoading(true);
+      else setSamplesLoading(true);
+
+      const offset = (page - 1) * PAGE_SIZE;
+      const res = await fetch(`/api/artist/${slug}?offset=${offset}&limit=${PAGE_SIZE}`);
+
       if (!res.ok) {
         if (res.status === 404) {
           setArtist(null);
@@ -80,38 +74,31 @@ export default function ArtistPage({ params }: ArtistPageProps) {
 
       const data = await res.json();
       setArtist(data.artist);
-      trackArtistProfileViewed(slug);
-      setSamples(dedupeSamples(data.samples || []));
-      setHasMore(data.hasMore ?? false);
+      if (isInitial) {
+        trackArtistProfileViewed(slug);
+        hasFetchedArtistRef.current = true;
+      }
+      setSamples(data.samples || []);
     } catch (error) {
       console.error("Error fetching artist:", error);
       toast.error("Failed to load artist profile");
     } finally {
       setLoading(false);
+      setSamplesLoading(false);
     }
-  }, [dedupeSamples, slug]);
+  }, [slug]);
 
-  const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore) return;
-    
-    try {
-      setLoadingMore(true);
-      const res = await fetch(`/api/artist/${slug}?offset=${samples.length}&limit=${PAGE_SIZE}`);
-      
-      if (!res.ok) throw new Error("Failed to load more samples");
-      
-      const data = await res.json();
-      const incomingSamples = data.samples || [];
-      setHasMore(
-        incomingSamples.length < PAGE_SIZE ? false : (data.hasMore ?? false)
-      );
-      setSamples((prev) => dedupeSamples([...prev, ...incomingSamples]));
-    } catch (error) {
-      console.error("Error loading more samples:", error);
-    } finally {
-      setLoadingMore(false);
+  const totalPages = Math.max(
+    1,
+    Math.ceil((artist?.sample_count ?? 0) / PAGE_SIZE)
+  );
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [dedupeSamples, slug, samples.length, loadingMore, hasMore]);
+  };
 
   const fetchPurchases = useCallback(async () => {
     if (!user) return;
@@ -127,30 +114,18 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   }, [user]);
 
   useEffect(() => {
-    fetchArtist();
-  }, [fetchArtist]);
+    fetchArtistPage(currentPage);
+  }, [fetchArtistPage, currentPage]);
+
+  // Reset to page 1 when slug changes (different artist)
+  useEffect(() => {
+    hasFetchedArtistRef.current = false;
+    setCurrentPage(1);
+  }, [slug]);
 
   useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
-
-  // Infinite scroll observer
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-          loadMore();
-        }
-      },
-      { rootMargin: "200px" }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, loading, loadMore]);
 
   const handleFollow = async () => {
     if (!user) {
@@ -457,43 +432,54 @@ export default function ArtistPage({ params }: ArtistPageProps) {
         {/* Samples */}
         <div className="pb-16">
           <h2 className="text-xl font-semibold text-white mb-6">
-            Samples ({samples.length})
+            Samples ({artist.sample_count})
           </h2>
 
           {samples.length > 0 ? (
-            <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
-              {/* Table Header */}
-              <SampleTableHeader />
+            <>
+              <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+                {/* Table Header */}
+                <SampleTableHeader />
 
-              {/* Table Body */}
-              <div className="divide-y divide-[#2a2a2a]">
-                {samples.map((sample) => (
-                  <SampleRow
-                    key={sample.id}
-                    sample={sample}
-                    user={userForCard}
-                    isOwned={purchasedIds.has(sample.id)}
-                    showArtist={false}
-                    onPurchase={handlePurchase}
-                    refreshUser={refreshUser}
-                  />
-                ))}
+                {/* Table Body */}
+                <div className="divide-y divide-[#2a2a2a]">
+                  {samplesLoading
+                    ? Array(8)
+                        .fill(0)
+                        .map((_, i) => (
+                          <div
+                            key={`skeleton-${i}`}
+                            className="h-12 bg-[#1a1a1a] animate-pulse"
+                          />
+                        ))
+                    : samples.map((sample) => (
+                        <SampleRow
+                          key={sample.id}
+                          sample={sample}
+                          user={userForCard}
+                          isOwned={purchasedIds.has(sample.id)}
+                          showArtist={false}
+                          onPurchase={handlePurchase}
+                          refreshUser={refreshUser}
+                        />
+                      ))}
+                </div>
               </div>
 
-              {/* Infinite scroll sentinel */}
-              {hasMore && (
-                <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
-                  {loadingMore ? (
-                    <div className="flex items-center gap-2 text-[#a1a1a1]">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading more...
-                    </div>
-                  ) : (
-                    <span className="text-[#3a3a3a] text-sm">{samples.length} samples</span>
-                  )}
+              {totalPages > 1 && (
+                <div className="mt-6 flex flex-col items-center gap-2">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
+                    disabled={samplesLoading}
+                  />
+                  <span className="text-xs text-[#666]">
+                    Page {currentPage} of {totalPages} · {artist.sample_count} sample{artist.sample_count !== 1 ? "s" : ""}
+                  </span>
                 </div>
               )}
-            </div>
+            </>
           ) : (
             <div className="text-center py-16 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
               <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />

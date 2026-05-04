@@ -13,6 +13,7 @@ interface WaveformProps {
   barColor?: string;
   progressColor?: string;
   backgroundColor?: string;
+  onSeek?: (percent: number) => void; // Called with 0-100 when user clicks the waveform
 }
 
 type OfflineAudioContextWindow = Window & {
@@ -31,6 +32,7 @@ export function Waveform({
   barColor = "#3a3a3a",
   progressColor = "#39b54a",
   backgroundColor = "transparent",
+  onSeek,
 }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [waveformData, setWaveformData] = useState<number[]>(
@@ -169,9 +171,20 @@ export function Waveform({
     });
   }, [waveformData, progress, height, barWidth, barGap, barColor, progressColor, backgroundColor]);
 
+  const handleSeekFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onSeek) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const x = e.clientX - rect.left;
+    const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    onSeek(percent);
+  };
+
   if (isLoading) {
     return (
-      <div 
+      <div
         className="flex items-center justify-center bg-[#1a1a1a] rounded"
         style={{ height }}
       >
@@ -180,7 +193,7 @@ export function Waveform({
             <div
               key={i}
               className="w-0.5 bg-[#2a2a2a] rounded animate-pulse"
-              style={{ 
+              style={{
                 height: `${10 + Math.random() * 20}px`,
                 animationDelay: `${i * 50}ms`
               }}
@@ -194,8 +207,16 @@ export function Waveform({
   return (
     <canvas
       ref={canvasRef}
-      className="w-full rounded"
+      className={`w-full rounded${onSeek ? " cursor-pointer" : ""}`}
       style={{ height }}
+      onClick={onSeek ? handleSeekFromEvent : undefined}
+      onMouseDown={onSeek ? (e) => e.stopPropagation() : undefined}
+      role={onSeek ? "slider" : undefined}
+      aria-label={onSeek ? "Seek position" : undefined}
+      aria-valuemin={onSeek ? 0 : undefined}
+      aria-valuemax={onSeek ? 100 : undefined}
+      aria-valuenow={onSeek ? Math.round(progress) : undefined}
+      data-no-drag={onSeek ? "" : undefined}
     />
   );
 }

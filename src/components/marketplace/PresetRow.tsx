@@ -6,6 +6,7 @@ import { Loader2, Play, Pause, Heart, Download, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { SampleRating } from "@/components/marketplace/SampleRating";
+import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
 import { trackSamplePlay, trackSamplePause, trackSampleFavorite, trackSampleDownload } from "@/lib/analytics";
 import { toast } from "sonner";
 
@@ -133,6 +134,13 @@ export function PresetRow({
       await audio.play();
       setGlobalPlayingId(preset.id);
       setIsPlayingState(true);
+      setNowPlayingTrack({
+        id: preset.id,
+        name: preset.name,
+        artistName: preset.artist_name,
+        coverUrl: preset.cover_image_url || preset.creator_avatar || undefined,
+        artistSlug: preset.artist_name || preset.creator_id,
+      });
       playStartRef.current = Date.now();
       trackSamplePlay({
         sampleId: preset.id,

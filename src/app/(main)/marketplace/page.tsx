@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Loader2, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders, Shuffle } from "lucide-react";
+import { Search, Music, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders, Shuffle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { Sample, toggleGlobalPlay, stopGlobalPlayback, getGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { SampleRow } from "@/components/marketplace/SampleRow";
@@ -48,7 +49,7 @@ export default function MarketplacePage() {
   const [loading, setLoading] = useState(true);
   const [loadingFollowing, setLoadingFollowing] = useState(false);
   const artistSliderRef = useRef<HTMLDivElement>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [randomSeed, setRandomSeed] = useState(() => Math.random());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -60,8 +61,7 @@ export default function MarketplacePage() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetTotal, setPresetTotal] = useState(0);
   const [presetLoading, setPresetLoading] = useState(false);
-  const [presetLoadingMore, setPresetLoadingMore] = useState(false);
-  const [presetHasMore, setPresetHasMore] = useState(true);
+  const [presetCurrentPage, setPresetCurrentPage] = useState(1);
   const [purchasedPresetIds, setPurchasedPresetIds] = useState<Set<string>>(new Set());
   const [favoritedPresetIds, setFavoritedPresetIds] = useState<Set<string>>(new Set());
   const [userPresetRatings, setUserPresetRatings] = useState<Record<string, number>>({});
@@ -71,7 +71,6 @@ export default function MarketplacePage() {
     genre: "all",
     sortBy: "random",
   });
-  const presetLoadMoreRef = useRef<HTMLDivElement>(null);
   const hasFetchedPresetsRef = useRef(false);
   const [filters, setFilters] = useState({
     genre: "all",
@@ -82,7 +81,6 @@ export default function MarketplacePage() {
   });
   const [sortColumn, setSortColumn] = useState<string>("popular");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const loadMoreRef = useRef<HTMLDivElement>(null);
   const hasFetchedInitiallyRef = useRef(false);
   const playedSampleIdsRef = useRef<Set<string>>(new Set());
   const samplesAbortRef = useRef<AbortController | null>(null);
@@ -151,11 +149,6 @@ export default function MarketplacePage() {
   const { selectedIndex, isSelected: isKeyboardSelected } = useKeyboardNavigation(samples, {
     enabled: samples.length > 0 && !loading,
     onPlay: handleKeyboardPlay,
-    onReachEnd: () => {
-      if (!loadingMore && samples.length < total) {
-        fetchSamples(samples.length, true);
-      }
-    },
   });
 
   // Handle Escape to stop playback
@@ -170,7 +163,7 @@ export default function MarketplacePage() {
   }, []);
 
   const fetchSamples = useCallback(
-    async (offset = 0, append = false) => {
+    async (page: number) => {
       // Cancel any in-flight samples request so rapid filter/search
       // changes don't pile up requests that race to set state.
       samplesAbortRef.current?.abort();
@@ -183,8 +176,7 @@ export default function MarketplacePage() {
       }, 15000);
 
       try {
-        if (offset === 0) setLoading(true);
-        else setLoadingMore(true);
+        setLoading(true);
 
         const params = new URLSearchParams();
         if (searchQuery) params.set("search", searchQuery);
@@ -205,7 +197,7 @@ export default function MarketplacePage() {
           params.set("seed", String(randomSeed));
         }
         params.set("limit", String(PAGE_SIZE));
-        params.set("offset", String(offset));
+        params.set("offset", String((page - 1) * PAGE_SIZE));
 
         const res = await fetch(`/api/samples?${params.toString()}`, {
           signal: controller.signal,
@@ -215,27 +207,11 @@ export default function MarketplacePage() {
 
         const data = await res.json();
 
-        if (!append && searchQuery) {
+        if (page === 1 && searchQuery) {
           trackSearch(searchQuery, data.total);
         }
 
-        if (append) {
-          setSamples((prev) => {
-            const seenIds = new Set(prev.map((sample) => sample.id));
-            const newSamples = data.samples.filter(
-              (sample: Sample) => !seenIds.has(sample.id)
-            );
-
-            if (newSamples.length === 0 || data.samples.length < PAGE_SIZE) {
-              setHasMore(false);
-            }
-
-            return newSamples.length > 0 ? [...prev, ...newSamples] : prev;
-          });
-        } else {
-          setSamples(data.samples);
-          setHasMore(data.samples.length >= PAGE_SIZE);
-        }
+        setSamples(data.samples);
         setTotal(data.total);
       } catch (error) {
         // Silent abort when a newer request supersedes this one; toast only
@@ -249,47 +225,13 @@ export default function MarketplacePage() {
           samplesAbortRef.current = null;
         }
         setLoading(false);
-        setLoadingMore(false);
       }
     },
     [searchQuery, filters, sortDirection, randomSeed]
   );
 
-  // Infinite scroll with debounce
-  const lastFetchRef = useRef<number>(0);
-  const [hasMore, setHasMore] = useState(true);
-  
-  useEffect(() => {
-    // Reset hasMore when filters change
-    setHasMore(true);
-  }, [filters, searchQuery, randomSeed]);
-  
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const now = Date.now();
-        // Debounce: minimum 800ms between fetches
-        if (
-          entries[0].isIntersecting && 
-          !loading && 
-          !loadingMore && 
-          hasMore &&
-          samples.length < total &&
-          now - lastFetchRef.current > 800
-        ) {
-          lastFetchRef.current = now;
-          fetchSamples(samples.length, true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "200px" }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loading, loadingMore, samples.length, total, hasMore, fetchSamples]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const presetTotalPages = Math.max(1, Math.ceil(presetTotal / PAGE_SIZE));
 
   const fetchFollowingData = useCallback(async () => {
     if (!user) {
@@ -368,14 +310,13 @@ export default function MarketplacePage() {
 
   // Preset fetching
   const fetchPresets = useCallback(
-    async (offset = 0, append = false) => {
+    async (page: number) => {
       presetsAbortRef.current?.abort();
       const controller = new AbortController();
       presetsAbortRef.current = controller;
 
       try {
-        if (offset === 0) setPresetLoading(true);
-        else setPresetLoadingMore(true);
+        setPresetLoading(true);
 
         const params = new URLSearchParams();
         if (searchQuery) params.set("search", searchQuery);
@@ -387,7 +328,7 @@ export default function MarketplacePage() {
           params.set("seed", String(randomSeed));
         }
         params.set("limit", String(PAGE_SIZE));
-        params.set("offset", String(offset));
+        params.set("offset", String((page - 1) * PAGE_SIZE));
 
         const res = await fetch(`/api/presets?${params.toString()}`, {
           signal: controller.signal,
@@ -396,21 +337,7 @@ export default function MarketplacePage() {
 
         const data = await res.json();
 
-        if (append) {
-          setPresets((prev) => {
-            const seenIds = new Set(prev.map((p) => p.id));
-            const newPresets = data.presets.filter(
-              (p: Preset) => !seenIds.has(p.id)
-            );
-            if (newPresets.length === 0 || data.presets.length < PAGE_SIZE) {
-              setPresetHasMore(false);
-            }
-            return newPresets.length > 0 ? [...prev, ...newPresets] : prev;
-          });
-        } else {
-          setPresets(data.presets);
-          setPresetHasMore(data.presets.length >= PAGE_SIZE);
-        }
+        setPresets(data.presets);
         setPresetTotal(data.total);
       } catch (error) {
         if ((error as Error)?.name === "AbortError") return;
@@ -421,7 +348,6 @@ export default function MarketplacePage() {
           presetsAbortRef.current = null;
         }
         setPresetLoading(false);
-        setPresetLoadingMore(false);
       }
     },
     [searchQuery, presetFilters, randomSeed]
@@ -437,54 +363,22 @@ export default function MarketplacePage() {
     fetchRatings();
   }, [fetchPurchases, fetchFavorites, fetchRatings]);
 
-  // Fetch presets when tab switches or filters change
+  // Reset preset page when filters/search change
   useEffect(() => {
-    if (activeTab === "presets") {
-      if (!hasFetchedPresetsRef.current) {
-        fetchPresets(0, false);
-        hasFetchedPresetsRef.current = true;
-      }
-    }
-  }, [activeTab, fetchPresets]);
+    setPresetCurrentPage(1);
+  }, [presetFilters, searchQuery, randomSeed]);
 
-  // Refetch presets on filter/search change
-  useEffect(() => {
-    if (activeTab !== "presets" || !hasFetchedPresetsRef.current) return;
-    const timer = setTimeout(() => {
-      fetchPresets(0, false);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, presetFilters]);
-
-  // Preset infinite scroll
+  // Fetch presets when tab is active or page/filters change
   useEffect(() => {
     if (activeTab !== "presets") return;
-    const sentinel = presetLoadMoreRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries[0].isIntersecting &&
-          !presetLoading &&
-          !presetLoadingMore &&
-          presetHasMore &&
-          presets.length < presetTotal
-        ) {
-          fetchPresets(presets.length, true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "200px" }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [activeTab, presetLoading, presetLoadingMore, presets.length, presetTotal, presetHasMore, fetchPresets]);
-
-  // Reset preset hasMore when filters change
-  useEffect(() => {
-    setPresetHasMore(true);
-  }, [presetFilters, searchQuery]);
+    const delay = hasFetchedPresetsRef.current ? 300 : 0;
+    const timer = setTimeout(() => {
+      hasFetchedPresetsRef.current = true;
+      fetchPresets(presetCurrentPage);
+    }, delay);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, presetCurrentPage, searchQuery, presetFilters, randomSeed]);
 
   const handleTabChange = (tab: MarketplaceTab) => {
     setActiveTab(tab);
@@ -495,6 +389,12 @@ export default function MarketplacePage() {
     setSearchQuery(query);
   };
 
+  // Reset to first page when filters/search change so the user
+  // doesn't land on an empty page beyond the new result set.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filters, sortDirection, randomSeed]);
+
   // Fetch samples on mount and debounce search/filter changes afterward.
   // Keeping this as the single fetch driver avoids the double-fire that
   // happened when a second useEffect also ran on fetchSamples identity.
@@ -502,11 +402,11 @@ export default function MarketplacePage() {
     const delay = hasFetchedInitiallyRef.current ? 300 : 0;
     const timer = setTimeout(() => {
       hasFetchedInitiallyRef.current = true;
-      fetchSamples(0, false);
+      fetchSamples(currentPage);
     }, delay);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, filters, sortDirection, randomSeed]);
+  }, [searchQuery, filters, sortDirection, randomSeed, currentPage]);
 
   const handleFilterChange = (newFilters: typeof filters) => {
     trackFilterChange({
@@ -518,8 +418,18 @@ export default function MarketplacePage() {
     setFilters(newFilters);
   };
 
-  const handleLoadMore = () => {
-    fetchSamples(samples.length, true);
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handlePresetPageChange = (page: number) => {
+    setPresetCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   const handlePurchase = async (sample: Sample) => {
@@ -866,32 +776,6 @@ export default function MarketplacePage() {
                   ))}
                 </div>
 
-                {/* Infinite scroll sentinel / Load more */}
-                {hasMore && samples.length < total && (
-                  <div ref={loadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
-                    {loadingMore ? (
-                      <div className="flex items-center gap-2 text-[#a1a1a1]">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading more...
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-[#3a3a3a] text-sm">{samples.length} of {total}</span>
-                        <button
-                          onClick={() => fetchSamples(samples.length, true)}
-                          className="text-sm text-[#39b54a] hover:text-white transition"
-                        >
-                          Load more
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {!hasMore && samples.length > 0 && (
-                  <div className="text-center py-6 border-t border-[#2a2a2a]">
-                    <span className="text-[#3a3a3a] text-sm">All {samples.length} samples loaded</span>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="text-center py-16">
@@ -899,6 +783,20 @@ export default function MarketplacePage() {
                 <p className="text-[#a1a1a1]">
                   No samples found matching your filters.
                 </p>
+              </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  disabled={loading}
+                />
+                <span className="text-xs text-[#666]">
+                  Page {currentPage} of {totalPages} · {total} sample{total !== 1 ? "s" : ""}
+                </span>
               </div>
             )}
           </div>
@@ -964,32 +862,6 @@ export default function MarketplacePage() {
                   ))}
                 </div>
 
-                {/* Infinite scroll sentinel */}
-                {presetHasMore && presets.length < presetTotal && (
-                  <div ref={presetLoadMoreRef} className="flex flex-col items-center gap-3 py-6 border-t border-[#2a2a2a]">
-                    {presetLoadingMore ? (
-                      <div className="flex items-center gap-2 text-[#a1a1a1]">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading more...
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-[#3a3a3a] text-sm">{presets.length} of {presetTotal}</span>
-                        <button
-                          onClick={() => fetchPresets(presets.length, true)}
-                          className="text-sm text-[#39b54a] hover:text-white transition"
-                        >
-                          Load more
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {!presetHasMore && presets.length > 0 && (
-                  <div className="text-center py-6 border-t border-[#2a2a2a]">
-                    <span className="text-[#3a3a3a] text-sm">All {presets.length} presets loaded</span>
-                  </div>
-                )}
               </div>
             ) : (
               <div className="text-center py-16">
@@ -997,6 +869,20 @@ export default function MarketplacePage() {
                 <p className="text-[#a1a1a1]">
                   No presets found matching your filters.
                 </p>
+              </div>
+            )}
+
+            {presetTotalPages > 1 && (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <Pagination
+                  currentPage={presetCurrentPage}
+                  totalPages={presetTotalPages}
+                  onPageChange={handlePresetPageChange}
+                  disabled={presetLoading}
+                />
+                <span className="text-xs text-[#666]">
+                  Page {presetCurrentPage} of {presetTotalPages} · {presetTotal} preset{presetTotal !== 1 ? "s" : ""}
+                </span>
               </div>
             )}
           </div>

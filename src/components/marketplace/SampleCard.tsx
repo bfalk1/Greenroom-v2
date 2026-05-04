@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Play, Pause, Download, Heart, Check, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SampleRating } from "./SampleRating";
+import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
 export interface Sample {
@@ -186,6 +187,13 @@ export function SampleCard({
       await audio.play();
       globalPlayingId = sample.id;
       setIsPlaying(true);
+      setNowPlayingTrack({
+        id: sample.id,
+        name: sample.name,
+        artistName: sample.artist_name,
+        coverUrl: sample.cover_art_url || sample.creator_avatar,
+        artistSlug: sample.artist_name || sample.creator_id,
+      });
     } catch (err) {
       console.error("Play error:", err);
     } finally {

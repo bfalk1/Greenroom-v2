@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
@@ -17,6 +18,14 @@ import {
   SAMPLE_TABLE_WAVEFORM_CLASS,
   SampleTableHeader,
 } from "@/components/marketplace/SampleTable";
+import {
+  getGlobalAudio,
+  getGlobalPlayingId,
+  globalSetters,
+  globalToggleFns,
+  setGlobalPlayingId,
+} from "@/components/marketplace/SampleCard";
+import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
 import JSZip from "jszip";
 
 interface LibrarySample {
@@ -42,25 +51,6 @@ interface LibrarySample {
   average_rating: number;
   total_ratings: number;
   purchased_at: string;
-}
-
-// Global audio state for library
-let libraryAudio: HTMLAudioElement | null = null;
-let libraryPlayingId: string | null = null;
-const librarySetters = new Map<string, (playing: boolean) => void>();
-
-function getLibraryAudio() {
-  if (typeof window === "undefined") return null;
-  if (!libraryAudio) {
-    libraryAudio = new Audio();
-    libraryAudio.addEventListener("ended", () => {
-      if (libraryPlayingId) {
-        librarySetters.get(libraryPlayingId)?.(false);
-      }
-      libraryPlayingId = null;
-    });
-  }
-  return libraryAudio;
 }
 
 // Library Row Component - matches Marketplace grid
@@ -111,26 +101,83 @@ function LibraryRow({
     handlePointerDown(e);
   }, [isDesktop, handlePointerDown]);
 
-  // Register setter
+  const startPlayback = useCallback(async () => {
+    const audio = getGlobalAudio();
+    if (!audio) return false;
+
+    if (getGlobalPlayingId() === sample.id) return true;
+
+    const previousPlayingId = getGlobalPlayingId();
+    if (previousPlayingId) {
+      globalSetters.get(previousPlayingId)?.(false);
+      audio.pause();
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/samples/${sample.id}/preview`);
+      const data = await res.json();
+      if (res.ok && data.url) {
+        audio.src = data.url;
+        audio.currentTime = 0;
+        setProgress(0);
+        await audio.play();
+        setGlobalPlayingId(sample.id);
+        setIsPlayingState(true);
+        setNowPlayingTrack({
+          id: sample.id,
+          name: sample.name,
+          artistName: sample.artist_name,
+          coverUrl: sample.cover_image_url || undefined,
+          artistSlug: sample.artist_name || sample.creator_id,
+        });
+        return true;
+      }
+    } catch (err) {
+      console.error("Play error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+    return false;
+  }, [sample.id, sample.name, sample.artist_name, sample.cover_image_url, sample.creator_id]);
+
+  const togglePlayFn = useCallback(async () => {
+    const audio = getGlobalAudio();
+    if (!audio) return;
+
+    if (getGlobalPlayingId() === sample.id) {
+      audio.pause();
+      setIsPlayingState(false);
+      setGlobalPlayingId(null);
+      setProgress(0);
+      return;
+    }
+
+    await startPlayback();
+  }, [sample.id, startPlayback]);
+
+  // Register setter / toggle for global audio control
   useEffect(() => {
-    librarySetters.set(sample.id, setIsPlayingState);
+    globalSetters.set(sample.id, setIsPlayingState);
+    globalToggleFns.set(sample.id, togglePlayFn);
     return () => {
-      librarySetters.delete(sample.id);
-      if (libraryPlayingId === sample.id) {
-        getLibraryAudio()?.pause();
-        libraryPlayingId = null;
+      globalSetters.delete(sample.id);
+      globalToggleFns.delete(sample.id);
+      if (getGlobalPlayingId() === sample.id) {
+        getGlobalAudio()?.pause();
+        setGlobalPlayingId(null);
       }
       if (progressRef.current) cancelAnimationFrame(progressRef.current);
     };
-  }, [sample.id]);
+  }, [sample.id, togglePlayFn]);
 
   // Track progress
   useEffect(() => {
-    const audio = getLibraryAudio();
+    const audio = getGlobalAudio();
     if (!audio) return;
 
     const updateProgress = () => {
-      if (libraryPlayingId === sample.id && audio.duration) {
+      if (getGlobalPlayingId() === sample.id && audio.duration) {
         setProgress((audio.currentTime / audio.duration) * 100);
       }
       if (isPlayingState) {
@@ -150,41 +197,38 @@ function LibraryRow({
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    const audio = getLibraryAudio();
+    await togglePlayFn();
+  };
+
+  const handleSeek = useCallback(async (percent: number) => {
+    const audio = getGlobalAudio();
     if (!audio) return;
 
-    if (libraryPlayingId === sample.id) {
-      audio.pause();
-      setIsPlayingState(false);
-      libraryPlayingId = null;
-      setProgress(0);
+    const seekToPercent = () => {
+      if (audio.duration && Number.isFinite(audio.duration)) {
+        audio.currentTime = (audio.duration * percent) / 100;
+        setProgress(percent);
+      }
+    };
+
+    if (getGlobalPlayingId() === sample.id) {
+      seekToPercent();
       return;
     }
 
-    if (libraryPlayingId) {
-      librarySetters.get(libraryPlayingId)?.(false);
-      audio.pause();
-    }
+    const ok = await startPlayback();
+    if (!ok || getGlobalPlayingId() !== sample.id) return;
 
-    setIsLoading(true);
-    try {
-      const res = await fetch(`/api/samples/${sample.id}/preview`);
-      const data = await res.json();
-      if (res.ok && data.url) {
-        audio.src = data.url;
-        audio.currentTime = 0;
-        setProgress(0);
-        await audio.play();
-        libraryPlayingId = sample.id;
-        setIsPlayingState(true);
-      }
-    } catch (err) {
-      console.error("Play error:", err);
-    } finally {
-      setIsLoading(false);
+    if (audio.readyState >= 1 && Number.isFinite(audio.duration)) {
+      seekToPercent();
+    } else {
+      const onMeta = () => {
+        seekToPercent();
+        audio.removeEventListener("loadedmetadata", onMeta);
+      };
+      audio.addEventListener("loadedmetadata", onMeta);
     }
-  };
+  }, [sample.id, startPlayback]);
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -326,7 +370,7 @@ function LibraryRow({
       </div>
 
       {/* Waveform */}
-      <div className={SAMPLE_TABLE_WAVEFORM_CLASS}>
+      <div className={SAMPLE_TABLE_WAVEFORM_CLASS} data-no-drag>
         <Waveform
           audioUrl={sample.preview_url || undefined}
           data={sample.waveform_data || undefined}
@@ -337,6 +381,7 @@ function LibraryRow({
           barGap={1}
           barColor={isPlayingState ? "#4a4a4a" : "#3a3a3a"}
           progressColor="#39b54a"
+          onSeek={handleSeek}
         />
       </div>
 
@@ -395,13 +440,13 @@ export default function LibraryPage() {
   const [samples, setSamples] = useState<LibrarySample[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [localStatusRefreshKey, setLocalStatusRefreshKey] = useState(0);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const hasFetchedInitiallyRef = useRef(false);
 
   const fetchAllLibrarySamples = useCallback(async () => {
     const allSamples: LibrarySample[] = [];
@@ -508,20 +553,16 @@ export default function LibraryPage() {
     }
   };
 
-  // Fetch library with pagination
-  const fetchLibrary = useCallback(async (offset = 0, append = false) => {
+  // Fetch a specific page of the user's library
+  const fetchLibrary = useCallback(async (page: number) => {
     if (!user) return;
-    
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
+
+    setLoading(true);
 
     try {
       const params = new URLSearchParams({
         limit: String(PAGE_SIZE),
-        offset: String(offset),
+        offset: String((page - 1) * PAGE_SIZE),
       });
       if (searchQuery) params.set("search", searchQuery);
 
@@ -529,38 +570,41 @@ export default function LibraryPage() {
       const data = await res.json();
 
       if (data.samples) {
-        if (!append) {
+        if (!hasFetchedInitiallyRef.current) {
           trackLibraryViewed(data.total);
+          hasFetchedInitiallyRef.current = true;
         }
-        if (append) {
-          setSamples((prev) => {
-            const seenIds = new Set(prev.map((sample) => sample.id));
-            const nextSamples = data.samples.filter(
-              (sample: LibrarySample) => !seenIds.has(sample.id)
-            );
-            return [...prev, ...nextSamples];
-          });
-        } else {
-          setSamples(data.samples);
-        }
+        setSamples(data.samples);
         setTotal(data.total);
       }
     } catch (error) {
       console.error("Error fetching library:", error);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   }, [user, searchQuery]);
 
-  // Initial load
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  // Initial ratings load
   useEffect(() => {
     if (!user) return;
-    fetchLibrary(0);
     fetch("/api/ratings").then(res => res.json()).then(data => {
       if (data.ratings) setUserRatings(data.ratings);
     });
-  }, [user, fetchLibrary]);
+  }, [user]);
+
+  // Reset to first page on search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   // Refresh per-row local status when the layout-level sync (DesktopLibrarySync)
   // pulls down newly purchased samples while the library page is open.
@@ -570,31 +614,15 @@ export default function LibraryPage() {
     return () => window.removeEventListener("greenroom:library-sync-complete", onSyncComplete);
   }, []);
 
-  // Infinite scroll
+  // Debounced fetch on search/page/user change
   useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading && !loadingMore && samples.length < total) {
-          fetchLibrary(samples.length, true);
-        }
-      },
-      { threshold: 0.1, rootMargin: "100px" }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loading, loadingMore, samples.length, total, fetchLibrary]);
-
-  // Debounced search
-  useEffect(() => {
+    if (!user) return;
+    const delay = hasFetchedInitiallyRef.current ? 300 : 0;
     const timer = setTimeout(() => {
-      if (user) fetchLibrary(0);
-    }, 300);
+      fetchLibrary(currentPage);
+    }, delay);
     return () => clearTimeout(timer);
-  }, [fetchLibrary, searchQuery, user]);
+  }, [fetchLibrary, searchQuery, user, currentPage]);
 
   // Keyboard navigation
   const { selectedIndex } = useKeyboardNavigation(samples, {
@@ -602,7 +630,7 @@ export default function LibraryPage() {
     onPlay: () => {},
   });
 
-  if (userLoading || loading) {
+  if (userLoading || (loading && !hasFetchedInitiallyRef.current)) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
@@ -677,14 +705,17 @@ export default function LibraryPage() {
               ))}
             </div>
 
-            {/* Load more sentinel */}
-            {samples.length < total && (
-              <div ref={loadMoreRef} className="flex justify-center py-6 border-t border-[#2a2a2a]">
-                {loadingMore ? (
-                  <Loader2 className="w-6 h-6 text-[#39b54a] animate-spin" />
-                ) : (
-                  <span className="text-sm text-[#666]">Scroll for more...</span>
-                )}
+            {totalPages > 1 && (
+              <div className="border-t border-[#2a2a2a] flex flex-col items-center gap-2 py-6">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
+                  disabled={loading}
+                />
+                <span className="text-xs text-[#666]">
+                  Page {currentPage} of {totalPages} · {total} sample{total !== 1 ? "s" : ""}
+                </span>
               </div>
             )}
           </div>
