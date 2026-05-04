@@ -2,16 +2,19 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Play, Pause, Music, X, Volume2, VolumeX } from "lucide-react";
+import { Play, Pause, Music, X, Volume2, VolumeX, SkipBack, SkipForward } from "lucide-react";
 import {
   clearNowPlayingTrack,
   useNowPlayingTrack,
+  useNowPlayingQueue,
 } from "@/lib/audio/nowPlaying";
 import {
   getGlobalAudio,
   getGlobalPlayingId,
   globalSetters,
+  globalToggleFns,
   setGlobalPlayingId,
+  toggleGlobalPlay,
 } from "@/components/marketplace/SampleCard";
 
 function formatTime(seconds: number): string {
@@ -23,6 +26,7 @@ function formatTime(seconds: number): string {
 
 export function NowPlayingBar() {
   const track = useNowPlayingTrack();
+  const queue = useNowPlayingQueue();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -30,6 +34,17 @@ export function NowPlayingBar() {
   const [muted, setMuted] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const scrubBarRef = useRef<HTMLDivElement>(null);
+
+  const currentIndex = useMemo(() => {
+    if (!track) return -1;
+    return queue.findIndex((t) => t.id === track.id);
+  }, [track, queue]);
+
+  const prevTrack = currentIndex > 0 ? queue[currentIndex - 1] : null;
+  const nextTrack =
+    currentIndex >= 0 && currentIndex < queue.length - 1
+      ? queue[currentIndex + 1]
+      : null;
 
   // Subscribe to audio element events for play/pause/time updates
   useEffect(() => {
@@ -72,6 +87,19 @@ export function NowPlayingBar() {
       audio.removeEventListener("volumechange", onVolume);
     };
   }, [track, isScrubbing]);
+
+  const handleSkip = useCallback(
+    async (target: typeof prevTrack | typeof nextTrack) => {
+      if (!target) return;
+      // If the target row is mounted, use its toggle (handles fetch + analytics).
+      if (globalToggleFns.has(target.id)) {
+        await toggleGlobalPlay(target.id);
+        return;
+      }
+      // Fallback: do nothing if the row isn't mounted (e.g., on a different page).
+    },
+    [prevTrack, nextTrack]
+  );
 
   const handleTogglePlay = useCallback(async () => {
     const audio = getGlobalAudio();
@@ -215,6 +243,16 @@ export function NowPlayingBar() {
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={() => handleSkip(prevTrack)}
+              disabled={!prevTrack}
+              aria-label="Previous track"
+              title={prevTrack ? `Previous: ${prevTrack.name}` : undefined}
+              className="text-[#a1a1a1] hover:text-white disabled:text-[#3a3a3a] disabled:cursor-not-allowed transition p-1"
+            >
+              <SkipBack className="w-4 h-4 fill-current" />
+            </button>
+            <button
+              type="button"
               onClick={handleTogglePlay}
               aria-label={isPlaying ? "Pause" : "Play"}
               className="w-9 h-9 rounded-full bg-[#39b54a] text-black hover:bg-[#2e9140] flex items-center justify-center transition"
@@ -224,6 +262,16 @@ export function NowPlayingBar() {
               ) : (
                 <Play className="w-4 h-4 fill-current ml-0.5" />
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSkip(nextTrack)}
+              disabled={!nextTrack}
+              aria-label="Next track"
+              title={nextTrack ? `Next: ${nextTrack.name}` : undefined}
+              className="text-[#a1a1a1] hover:text-white disabled:text-[#3a3a3a] disabled:cursor-not-allowed transition p-1"
+            >
+              <SkipForward className="w-4 h-4 fill-current" />
             </button>
           </div>
           <div className="w-full flex items-center gap-2 text-[10px] text-[#a1a1a1] tabular-nums">

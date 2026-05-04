@@ -25,7 +25,7 @@ import {
   globalToggleFns,
   setGlobalPlayingId,
 } from "@/components/marketplace/SampleCard";
-import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
+import { setNowPlayingQueue, setNowPlayingTrack } from "@/lib/audio/nowPlaying";
 import JSZip from "jszip";
 
 interface LibrarySample {
@@ -605,6 +605,21 @@ export default function LibraryPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery]);
+
+  // Register library samples as the now-playing queue for prev/next.
+  useEffect(() => {
+    setNowPlayingQueue(
+      samples.map((s) => ({
+        id: s.id,
+        name: s.name,
+        artistName: s.artist_name,
+        coverUrl: s.cover_image_url || undefined,
+        artistSlug: s.artist_name || s.creator_id,
+      }))
+    );
+  }, [samples]);
+
+  useEffect(() => () => setNowPlayingQueue([]), []);
 
   // Refresh per-row local status when the layout-level sync (DesktopLibrarySync)
   // pulls down newly purchased samples while the library page is open.

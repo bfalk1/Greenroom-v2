@@ -19,6 +19,7 @@ import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { trackArtistFollow, trackArtistProfileViewed } from "@/lib/analytics";
+import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
 interface Artist {
@@ -126,6 +127,21 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
+
+  // Register artist's samples as the now-playing queue for prev/next.
+  useEffect(() => {
+    setNowPlayingQueue(
+      samples.map((s) => ({
+        id: s.id,
+        name: s.name,
+        artistName: s.artist_name,
+        coverUrl: s.cover_art_url || s.creator_avatar,
+        artistSlug: s.artist_name || s.creator_id,
+      }))
+    );
+  }, [samples]);
+
+  useEffect(() => () => setNowPlayingQueue([]), []);
 
   const handleFollow = async () => {
     if (!user) {

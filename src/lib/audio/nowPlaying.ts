@@ -11,6 +11,7 @@ export interface NowPlayingTrack {
 }
 
 let currentTrack: NowPlayingTrack | null = null;
+let currentQueue: NowPlayingTrack[] = [];
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -38,6 +39,22 @@ export function clearNowPlayingTrack(): void {
   emit();
 }
 
+export function getNowPlayingQueue(): NowPlayingTrack[] {
+  return currentQueue;
+}
+
+export function setNowPlayingQueue(queue: NowPlayingTrack[]): void {
+  if (queue === currentQueue) return;
+  if (
+    queue.length === currentQueue.length &&
+    queue.every((t, i) => t.id === currentQueue[i]?.id)
+  ) {
+    return;
+  }
+  currentQueue = queue;
+  emit();
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -45,10 +62,20 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+const EMPTY_QUEUE: NowPlayingTrack[] = [];
+
 export function useNowPlayingTrack(): NowPlayingTrack | null {
   return useSyncExternalStore(
     subscribe,
     getNowPlayingTrack,
     () => null
+  );
+}
+
+export function useNowPlayingQueue(): NowPlayingTrack[] {
+  return useSyncExternalStore(
+    subscribe,
+    getNowPlayingQueue,
+    () => EMPTY_QUEUE
   );
 }

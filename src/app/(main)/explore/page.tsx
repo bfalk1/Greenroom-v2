@@ -10,6 +10,7 @@ import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { ExploreRow } from "@/components/marketplace/ExploreRow";
 import { SearchSuggestions } from "@/components/marketplace/SearchSuggestions";
 import { useUser } from "@/lib/hooks/useUser";
+import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -166,6 +167,21 @@ export default function ExplorePage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, activeSearch, sortDirection]);
+
+  // Register the visible samples as the now-playing queue.
+  useEffect(() => {
+    setNowPlayingQueue(
+      samples.map((s) => ({
+        id: s.id,
+        name: s.name,
+        artistName: s.artist_name,
+        coverUrl: s.cover_art_url || s.creator_avatar,
+        artistSlug: s.artist_name || s.creator_id,
+      }))
+    );
+  }, [samples]);
+
+  useEffect(() => () => setNowPlayingQueue([]), []);
 
   // Fetch when showResults becomes true or page/filters change
   useEffect(() => {

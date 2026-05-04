@@ -16,6 +16,7 @@ import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
+import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -394,6 +395,34 @@ export default function MarketplacePage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, filters, sortDirection, randomSeed]);
+
+  // Register the active tab's items as the player's queue so the
+  // NowPlayingBar's prev/next can step through them.
+  useEffect(() => {
+    if (activeTab === "samples") {
+      setNowPlayingQueue(
+        samples.map((s) => ({
+          id: s.id,
+          name: s.name,
+          artistName: s.artist_name,
+          coverUrl: s.cover_art_url || s.creator_avatar,
+          artistSlug: s.artist_name || s.creator_id,
+        }))
+      );
+    } else {
+      setNowPlayingQueue(
+        presets.map((p) => ({
+          id: p.id,
+          name: p.name,
+          artistName: p.artist_name,
+          coverUrl: p.cover_image_url || p.creator_avatar || undefined,
+          artistSlug: p.artist_name || p.creator_id,
+        }))
+      );
+    }
+  }, [activeTab, samples, presets]);
+
+  useEffect(() => () => setNowPlayingQueue([]), []);
 
   // Fetch samples on mount and debounce search/filter changes afterward.
   // Keeping this as the single fetch driver avoids the double-fire that
