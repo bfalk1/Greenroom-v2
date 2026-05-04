@@ -6,7 +6,6 @@ import { Upload, X, ArrowLeft, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
-import { createClient } from "@/lib/supabase/client";
 import { trackSampleUpload } from "@/lib/analytics";
 import { toast } from "sonner";
 import { GenreInput } from "@/components/creator/GenreInput";
@@ -197,7 +196,6 @@ function parseFilename(filename: string): {
 export default function CreatorUploadPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
-  const supabase = createClient();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -334,48 +332,27 @@ export default function CreatorUploadPage() {
         console.error("Failed to generate waveform:", e);
       }
 
-      // Upload audio file to Supabase Storage
-      const audioExt = audioFile.name.split(".").pop();
-      const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${audioExt}`;
+      // Upload audio + cover via server-side route (uses service role to bypass RLS)
+      const uploadForm = new FormData();
+      uploadForm.append("audioFile", audioFile);
+      if (coverFile) uploadForm.append("coverFile", coverFile);
 
-      const { error: audioError } = await supabase.storage
-        .from("samples")
-        .upload(audioPath, audioFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+      const uploadRes = await fetch("/api/upload/sample", {
+        method: "POST",
+        body: uploadForm,
+      });
 
-      if (audioError) {
-        throw new Error(`Audio upload failed: ${audioError.message}`);
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || "File upload failed");
       }
+
+      const { fileUrl, coverImageUrl } = (await uploadRes.json()) as {
+        fileUrl: string;
+        coverImageUrl: string | null;
+      };
       setAudioUploaded(true);
-
-      // Get the file URL (private bucket — use signed URL or path)
-      const fileUrl = `samples/${audioPath}`;
-
-      // Upload cover image if provided
-      let coverImageUrl: string | null = null;
-      if (coverFile) {
-        const coverExt = coverFile.name.split(".").pop();
-        const coverPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${coverExt}`;
-
-        const { error: coverError } = await supabase.storage
-          .from("covers")
-          .upload(coverPath, coverFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (coverError) {
-          throw new Error(`Cover upload failed: ${coverError.message}`);
-        }
-        setCoverUploaded(true);
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("covers").getPublicUrl(coverPath);
-        coverImageUrl = publicUrl;
-      }
+      if (coverFile) setCoverUploaded(true);
 
       // Create sample via API
       // Note: previewUrl is NOT set here - it will be generated server-side
