@@ -95,12 +95,12 @@ export async function GET() {
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
 
-          // Set subscription status to active (bypass paywall)
+          // Set subscription status to active (bypass paywall). Credits live
+          // in creditBalance only — see the upsert below.
           user = await prisma.user.update({
             where: { id: user.id },
             data: {
               subscriptionStatus: "active",
-              credits: betaCredits,
             },
             include: {
               creditBalance: true,
@@ -110,12 +110,13 @@ export async function GET() {
         }
       }
 
-      // Create credit balance
-      await prisma.creditBalance.create({
-        data: {
-          userId: authUser.id,
-          balance: betaCredits,
-        },
+      // Upsert (not create) so a concurrent first-login retry doesn't fail
+      // with a unique-constraint error and leave creditBalance.balance drifted
+      // from user.credits.
+      await prisma.creditBalance.upsert({
+        where: { userId: authUser.id },
+        create: { userId: authUser.id, balance: betaCredits },
+        update: { balance: betaCredits },
       });
 
       // Log beta credits as a transaction
@@ -195,11 +196,11 @@ export async function GET() {
           where: { email: authUser.email },
         });
         if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
+          // Credits live in creditBalance only — see the upsert below.
           user = await prisma.user.update({
             where: { id: user.id },
             data: {
               subscriptionStatus: "active",
-              credits: { increment: betaInvite.credits },
             },
             include: {
               creditBalance: true,
@@ -207,12 +208,11 @@ export async function GET() {
             },
           });
 
-          if (user.creditBalance) {
-            await prisma.creditBalance.update({
-              where: { userId: user.id },
-              data: { balance: { increment: betaInvite.credits } },
-            });
-          }
+          await prisma.creditBalance.upsert({
+            where: { userId: user.id },
+            create: { userId: user.id, balance: betaInvite.credits },
+            update: { balance: { increment: betaInvite.credits } },
+          });
 
           await prisma.creditTransaction.create({
             data: {
@@ -231,7 +231,7 @@ export async function GET() {
       }
     }
 
-    const credits = user.creditBalance?.balance ?? user.credits ?? 0;
+    const credits = user.creditBalance?.balance ?? 0;
     const subscription = user.subscription;
     const subscriptionStatus =
       subscription?.status?.toLowerCase() ??

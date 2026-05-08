@@ -136,7 +136,6 @@ async function main() {
         role: c.role,
         bio: c.bio,
         profileCompleted: true,
-        credits: 0,
       },
     });
 

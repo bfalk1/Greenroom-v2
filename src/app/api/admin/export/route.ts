@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
             email: true,
             username: true,
             role: true,
-            credits: true,
+            creditBalance: { select: { balance: true } },
             createdAt: true,
             _count: { select: { purchases: true, samples: true } },
           },
@@ -116,7 +116,8 @@ export async function GET(request: NextRequest) {
 
         csv = "Joined,Email,Username,Role,Credits,Purchases,Samples Uploaded\n";
         users.forEach((u) => {
-          csv += `${u.createdAt.toISOString()},${u.email || ""},${u.username || ""},${u.role},${u.credits},${u._count.purchases},${u._count.samples}\n`;
+          const credits = u.creditBalance?.balance ?? 0;
+          csv += `${u.createdAt.toISOString()},${u.email || ""},${u.username || ""},${u.role},${credits},${u._count.purchases},${u._count.samples}\n`;
         });
 
         filename = `greenroom_users_${new Date().toISOString().split("T")[0]}.csv`;

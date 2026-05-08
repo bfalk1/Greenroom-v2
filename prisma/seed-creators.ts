@@ -113,7 +113,6 @@ async function main() {
                 artistName: creator.artistName,
                 role: "CREATOR",
                 profileCompleted: true,
-                credits: 0,
               },
             });
             results.push({
@@ -149,7 +148,6 @@ async function main() {
           artistName: creator.artistName,
           role: "CREATOR",
           profileCompleted: true,
-          credits: 0,
         },
       });
 

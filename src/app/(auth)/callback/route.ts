@@ -67,22 +67,19 @@ export async function GET(request: Request) {
           },
         });
 
-        // Create credit balance
-        await prisma.creditBalance.create({
-          data: {
-            userId: data.user.id,
-            balance: hasBetaInvite ? betaCredits : 0,
-          },
+        // Create credit balance — upsert so a concurrent retry doesn't fail.
+        await prisma.creditBalance.upsert({
+          where: { userId: data.user.id },
+          create: { userId: data.user.id, balance: hasBetaInvite ? betaCredits : 0 },
+          update: { balance: hasBetaInvite ? betaCredits : 0 },
         });
 
-        // Apply beta invite: credits + subscription bypass
+        // Apply beta invite: subscription bypass + transaction record.
+        // Credits already live in creditBalance from the upsert above.
         if (hasBetaInvite && data.user.email) {
           await prisma.user.update({
             where: { id: user.id },
-            data: {
-              subscriptionStatus: "active",
-              credits: betaCredits,
-            },
+            data: { subscriptionStatus: "active" },
           });
 
           await prisma.creditTransaction.create({
@@ -145,21 +142,15 @@ export async function GET(request: Request) {
       if (hasBetaInvite && !isNewUser && data.user.email) {
         await prisma.user.update({
           where: { id: user.id },
-          data: {
-            subscriptionStatus: "active",
-            credits: { increment: betaCredits },
-          },
+          data: { subscriptionStatus: "active" },
         });
 
-        const existingBalance = await prisma.creditBalance.findUnique({
+        // Upsert so a missing balance row doesn't silently leave the credits unrecorded.
+        await prisma.creditBalance.upsert({
           where: { userId: user.id },
+          create: { userId: user.id, balance: betaCredits },
+          update: { balance: { increment: betaCredits } },
         });
-        if (existingBalance) {
-          await prisma.creditBalance.update({
-            where: { userId: user.id },
-            data: { balance: { increment: betaCredits } },
-          });
-        }
 
         await prisma.creditTransaction.create({
           data: {

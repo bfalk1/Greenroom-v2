@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
         throw new Error("User not found");
       }
 
-      const userCredits = user.creditBalance?.balance ?? user.credits ?? 0;
+      const userCredits = user.creditBalance?.balance ?? 0;
 
       if (userCredits < itemPrice) {
         throw new Error(
@@ -107,18 +107,12 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Deduct credits from creditBalance
-      if (user.creditBalance) {
-        await tx.creditBalance.update({
-          where: { userId: authUser.id },
-          data: { balance: { decrement: itemPrice } },
-        });
-      }
-
-      // Deduct from user.credits too
-      await tx.user.update({
-        where: { id: authUser.id },
-        data: { credits: { decrement: itemPrice } },
+      // Deduct from creditBalance — upsert handles users who somehow lack
+      // a balance row (shouldn't happen anymore, but cheap insurance).
+      await tx.creditBalance.upsert({
+        where: { userId: authUser.id },
+        create: { userId: authUser.id, balance: Math.max(0, userCredits - itemPrice) },
+        update: { balance: { decrement: itemPrice } },
       });
 
       // Create purchase record

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         fullName: true,
         artistName: true,
         avatarUrl: true,
-        credits: true,
+        creditBalance: { select: { balance: true } },
         role: true,
         payoutRate: true,
         isWhitelisted: true,
@@ -54,7 +54,14 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({ users });
+    // Flatten creditBalance.balance to a `credits` field so the admin panel
+    // doesn't need to know about the underlying schema.
+    const flattened = users.map(({ creditBalance, ...rest }) => ({
+      ...rest,
+      credits: creditBalance?.balance ?? 0,
+    }));
+
+    return NextResponse.json({ users: flattened });
   } catch (error) {
     console.error("GET /api/admin/users error:", error);
     return NextResponse.json(
@@ -92,7 +99,11 @@ export async function PATCH(request: NextRequest) {
 
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, credits: true, role: true },
+      select: {
+        id: true,
+        role: true,
+        creditBalance: { select: { balance: true } },
+      },
     });
 
     if (!targetUser) {
@@ -101,11 +112,12 @@ export async function PATCH(request: NextRequest) {
 
     const updateData: {
       role?: "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
-      credits?: number;
       payoutRate?: number | null;
       artistName?: string | null;
       username?: string | null;
     } = {};
+
+    let creditsTarget: number | undefined;
 
     // Role change
     if (role !== undefined) {
@@ -116,14 +128,13 @@ export async function PATCH(request: NextRequest) {
       updateData.role = role as "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
     }
 
-    // Credit adjustment
+    // Credit adjustment — written to creditBalance only (single source of truth).
     if (creditAdjustment !== undefined) {
       const adjustment = parseInt(creditAdjustment);
       if (isNaN(adjustment)) {
         return NextResponse.json({ error: "Invalid credit adjustment" }, { status: 400 });
       }
-      const newCredits = Math.max(0, targetUser.credits + adjustment);
-      updateData.credits = newCredits;
+      creditsTarget = Math.max(0, (targetUser.creditBalance?.balance ?? 0) + adjustment);
     }
 
     // Payout rate (cents per credit for creators)
@@ -181,21 +192,53 @@ export async function PATCH(request: NextRequest) {
 
     let updatedUser;
     try {
-      updatedUser = await prisma.user.update({
-        where: { id: userId },
-        data: updateData,
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          fullName: true,
-          artistName: true,
-          avatarUrl: true,
-          credits: true,
-          role: true,
-          payoutRate: true,
-          isWhitelisted: true,
-        },
+      // Wrap user.update + creditBalance update in a transaction so role and
+      // credit changes commit together.
+      updatedUser = await prisma.$transaction(async (tx) => {
+        const hasUserUpdates = Object.keys(updateData).length > 0;
+        const updated = hasUserUpdates
+          ? await tx.user.update({
+              where: { id: userId },
+              data: updateData,
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                fullName: true,
+                artistName: true,
+                avatarUrl: true,
+                role: true,
+                payoutRate: true,
+                isWhitelisted: true,
+                creditBalance: { select: { balance: true } },
+              },
+            })
+          : await tx.user.findUniqueOrThrow({
+              where: { id: userId },
+              select: {
+                id: true,
+                email: true,
+                username: true,
+                fullName: true,
+                artistName: true,
+                avatarUrl: true,
+                role: true,
+                payoutRate: true,
+                isWhitelisted: true,
+                creditBalance: { select: { balance: true } },
+              },
+            });
+
+        if (creditsTarget !== undefined) {
+          const synced = await tx.creditBalance.upsert({
+            where: { userId },
+            create: { userId, balance: creditsTarget },
+            update: { balance: creditsTarget },
+          });
+          updated.creditBalance = { balance: synced.balance };
+        }
+
+        return updated;
       });
     } catch (err: unknown) {
       // Prisma unique-constraint violation (artistName and username are unique)
@@ -216,7 +259,10 @@ export async function PATCH(request: NextRequest) {
       throw err;
     }
 
-    return NextResponse.json({ user: updatedUser });
+    const { creditBalance, ...rest } = updatedUser;
+    return NextResponse.json({
+      user: { ...rest, credits: creditBalance?.balance ?? 0 },
+    });
   } catch (error) {
     console.error("PATCH /api/admin/users error:", error);
     return NextResponse.json(

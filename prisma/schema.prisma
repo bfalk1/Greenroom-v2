@@ -111,7 +111,6 @@ model User {
   state              String?
   postalCode         String?   @map("postal_code")
   country            String?
-  credits            Int       @default(0)
   subscriptionStatus String?   @map("subscription_status")
   profileCompleted   Boolean   @default(false) @map("profile_completed")
   stripeCustomerId   String?   @map("stripe_customer_id")

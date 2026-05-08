@@ -24,28 +24,23 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // Add credits to balance
-  await prisma.creditBalance.upsert({
-    where: { userId },
-    update: { balance: { increment: credits } },
-    create: { userId, balance: credits },
-  });
-
-  await prisma.user.update({
-    where: { id: userId },
-    data: { credits: { increment: credits } },
-  });
-
-  // Log transaction
-  await prisma.creditTransaction.create({
-    data: {
-      userId,
-      amount: credits,
-      type: "PURCHASE",
-      referenceId: session.id,
-      note: `Purchased ${credits} credits`,
-    },
-  });
+  // Atomic: balance + transaction must commit together.
+  await prisma.$transaction([
+    prisma.creditBalance.upsert({
+      where: { userId },
+      update: { balance: { increment: credits } },
+      create: { userId, balance: credits },
+    }),
+    prisma.creditTransaction.create({
+      data: {
+        userId,
+        amount: credits,
+        type: "PURCHASE",
+        referenceId: session.id,
+        note: `Purchased ${credits} credits`,
+      },
+    }),
+  ]);
 
   console.log(`Issued ${credits} credits to user ${userId} (one-time purchase)`);
 }
@@ -107,32 +102,27 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     },
   });
 
-  // Create or update credit balance and issue credits
-  await prisma.creditBalance.upsert({
-    where: { userId },
-    update: { balance: { increment: tier.creditsPerMonth } },
-    create: { userId, balance: tier.creditsPerMonth },
-  });
-
-  // Update user credits and subscription status
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      credits: { increment: tier.creditsPerMonth },
-      subscriptionStatus: "active",
-    },
-  });
-
-  // Log the credit transaction
-  await prisma.creditTransaction.create({
-    data: {
-      userId,
-      amount: tier.creditsPerMonth,
-      type: "SUBSCRIPTION",
-      referenceId: subscription.id,
-      note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits`,
-    },
-  });
+  // Atomic: balance + subscription_status flag + transaction must commit together.
+  await prisma.$transaction([
+    prisma.creditBalance.upsert({
+      where: { userId },
+      update: { balance: { increment: tier.creditsPerMonth } },
+      create: { userId, balance: tier.creditsPerMonth },
+    }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { subscriptionStatus: "active" },
+    }),
+    prisma.creditTransaction.create({
+      data: {
+        userId,
+        amount: tier.creditsPerMonth,
+        type: "SUBSCRIPTION",
+        referenceId: subscription.id,
+        note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits`,
+      },
+    }),
+  ]);
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -178,30 +168,27 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     });
   }
 
-  // Issue renewal credits
-  await prisma.creditBalance.upsert({
-    where: { userId: user.id },
-    update: { balance: { increment: tier.creditsPerMonth } },
-    create: { userId: user.id, balance: tier.creditsPerMonth },
-  });
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      credits: { increment: tier.creditsPerMonth },
-      subscriptionStatus: "active",
-    },
-  });
-
-  await prisma.creditTransaction.create({
-    data: {
-      userId: user.id,
-      amount: tier.creditsPerMonth,
-      type: "SUBSCRIPTION",
-      referenceId: invoice.id,
-      note: `${tier.displayName} renewal — ${tier.creditsPerMonth} credits`,
-    },
-  });
+  // Atomic: balance + subscription_status flag + transaction must commit together.
+  await prisma.$transaction([
+    prisma.creditBalance.upsert({
+      where: { userId: user.id },
+      update: { balance: { increment: tier.creditsPerMonth } },
+      create: { userId: user.id, balance: tier.creditsPerMonth },
+    }),
+    prisma.user.update({
+      where: { id: user.id },
+      data: { subscriptionStatus: "active" },
+    }),
+    prisma.creditTransaction.create({
+      data: {
+        userId: user.id,
+        amount: tier.creditsPerMonth,
+        type: "SUBSCRIPTION",
+        referenceId: invoice.id,
+        note: `${tier.displayName} renewal — ${tier.creditsPerMonth} credits`,
+      },
+    }),
+  ]);
 }
 
 async function handleSubscriptionUpdated(
@@ -246,30 +233,26 @@ async function handleSubscriptionUpdated(
     },
   });
 
-  // If upgrading, top up the difference in credits
+  // If upgrading, top up the difference in credits — atomically.
   if (isUpgrade) {
     const topUp = newTier.creditsPerMonth - oldTier.creditsPerMonth;
 
-    await prisma.creditBalance.upsert({
-      where: { userId: user.id },
-      update: { balance: { increment: topUp } },
-      create: { userId: user.id, balance: topUp },
-    });
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { credits: { increment: topUp } },
-    });
-
-    await prisma.creditTransaction.create({
-      data: {
-        userId: user.id,
-        amount: topUp,
-        type: "UPGRADE_TOPUP",
-        referenceId: subscription.id,
-        note: `Upgrade from ${oldTier.displayName} to ${newTier.displayName} — ${topUp} bonus credits`,
-      },
-    });
+    await prisma.$transaction([
+      prisma.creditBalance.upsert({
+        where: { userId: user.id },
+        update: { balance: { increment: topUp } },
+        create: { userId: user.id, balance: topUp },
+      }),
+      prisma.creditTransaction.create({
+        data: {
+          userId: user.id,
+          amount: topUp,
+          type: "UPGRADE_TOPUP",
+          referenceId: subscription.id,
+          note: `Upgrade from ${oldTier.displayName} to ${newTier.displayName} — ${topUp} bonus credits`,
+        },
+      }),
+    ]);
   }
 }
 
