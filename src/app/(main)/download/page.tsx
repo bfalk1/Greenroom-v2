@@ -17,7 +17,7 @@ function detectPlatform(): Platform {
 
 const GITHUB_REPO = "bfalk1/Greenroom-v2";
 const RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
-const CURRENT_VERSION = "1.6.0";
+const CURRENT_VERSION = "1.7.0";
 const RELEASE_BASE = `https://github.com/${GITHUB_REPO}/releases/download/v${CURRENT_VERSION}`;
 
 interface ReleaseAsset {

@@ -522,7 +522,7 @@ async function getDesktopDownloadHeaders() {
   const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
 
   return {
-    'User-Agent': 'GREENROOM-Desktop/1.6.0',
+    'User-Agent': 'GREENROOM-Desktop/1.7.0',
     ...(cookieHeader ? { Cookie: cookieHeader } : {}),
   };
 }
