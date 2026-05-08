@@ -2,21 +2,98 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Loader2, Play, Pause } from "lucide-react";
+import { Loader2, Play, Pause, Heart, Download } from "lucide-react";
 import { Sample, getGlobalPlayingId, getGlobalAudio, globalSetters, globalToggleFns, setGlobalPlayingId } from "@/components/marketplace/SampleCard";
 import { Waveform } from "@/components/audio/Waveform";
 import { setNowPlayingTrack } from "@/lib/audio/nowPlaying";
+import { useUser } from "@/lib/hooks/useUser";
+import { trackSampleFavorite, trackSampleDownload } from "@/lib/analytics";
+import { toast } from "sonner";
 
 export interface ExploreRowProps {
   sample: Sample;
+  isFavorited?: boolean;
+  isOwned?: boolean;
+  onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
 }
 
-export function ExploreRow({ sample }: ExploreRowProps) {
+export function ExploreRow({
+  sample,
+  isFavorited: isFavoritedProp = false,
+  isOwned = false,
+  onFavoriteChange,
+}: ExploreRowProps) {
+  const { user } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingState, setIsPlayingState] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isFavorited, setIsFavorited] = useState(isFavoritedProp);
+  const [isFavoriting, setIsFavoriting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIsFavorited(isFavoritedProp);
+  }, [isFavoritedProp]);
+
+  const handleFavorite = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) {
+      toast.error("Please log in to save favorites");
+      return;
+    }
+    if (isFavoriting) return;
+    setIsFavoriting(true);
+    try {
+      const res = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id }),
+      });
+      if (!res.ok) throw new Error("Failed to update favorite");
+      const data = await res.json();
+      setIsFavorited(data.favorited);
+      onFavoriteChange?.(sample.id, data.favorited);
+      trackSampleFavorite(sample.id, data.favorited);
+      if (data.favorited) toast.success("Added to favorites ❤️");
+    } catch {
+      toast.error("Failed to update favorite");
+    } finally {
+      setIsFavoriting(false);
+    }
+  };
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user || !isOwned || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const res = await fetch(`/api/downloads/${sample.id}`);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sample.name}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      trackSampleDownload(sample.id, sample.name, "marketplace");
+      toast.success(`Downloaded "${sample.name}" 🎵`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Download failed";
+      toast.error(message);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Create toggle function for this sample
   const togglePlayFn = useCallback(async () => {
@@ -157,7 +234,7 @@ export function ExploreRow({ sample }: ExploreRowProps) {
   return (
     <div
       ref={rowRef}
-      className={`grid grid-cols-[auto_1fr_80px] md:grid-cols-[auto_1fr_90px_45px_45px_80px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
+      className={`grid grid-cols-[auto_1fr_80px_auto] md:grid-cols-[auto_1fr_90px_45px_45px_80px_auto] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors ${
         isPlayingState ? "bg-[#39b54a]/5" : "hover:bg-[#242424]"
       }`}
     >
@@ -252,6 +329,36 @@ export function ExploreRow({ sample }: ExploreRowProps) {
           </span>
         ) : (
           <span className="text-sm text-[#3a3a3a]">—</span>
+        )}
+      </div>
+
+      {/* Actions: favorite + (download if owned) */}
+      <div className="flex items-center gap-1 justify-end">
+        <button
+          type="button"
+          onClick={handleFavorite}
+          disabled={isFavoriting}
+          aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+          className={`p-1.5 rounded transition ${
+            isFavorited ? "text-red-500" : "text-[#3a3a3a] hover:text-red-500"
+          }`}
+        >
+          <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+        </button>
+        {isOwned && (
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            aria-label="Download sample"
+            className="p-1.5 rounded text-[#3a3a3a] hover:text-[#39b54a] transition"
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+          </button>
         )}
       </div>
     </div>

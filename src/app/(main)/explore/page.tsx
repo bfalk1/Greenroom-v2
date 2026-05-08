@@ -46,6 +46,8 @@ export default function ExplorePage() {
   const [showResults, setShowResults] = useState(false);
   const [genres, setGenres] = useState<string[]>([]);
   const [instruments, setInstruments] = useState<string[]>([]);
+  const [favoritedIds, setFavoritedIds] = useState<Set<string>>(new Set());
+  const [ownedIds, setOwnedIds] = useState<Set<string>>(new Set());
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
@@ -115,6 +117,48 @@ export default function ExplorePage() {
     };
 
     fetchBrowseOptions();
+  }, []);
+
+  // Load favorites + owned sample IDs once a user is signed in so the row
+  // buttons reflect state. Falls back gracefully if either endpoint 401s.
+  useEffect(() => {
+    if (!user) {
+      setFavoritedIds(new Set());
+      setOwnedIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [favRes, libRes] = await Promise.all([
+          fetch("/api/favorites?limit=100"),
+          fetch("/api/library?limit=50"),
+        ]);
+        if (!cancelled && favRes.ok) {
+          const data = await favRes.json();
+          setFavoritedIds(new Set<string>(data.sampleIds || []));
+        }
+        if (!cancelled && libRes.ok) {
+          const data = await libRes.json();
+          setOwnedIds(new Set<string>((data.samples || []).map((s: { id: string }) => s.id)));
+        }
+      } catch (err) {
+        console.error("Failed to load explore meta:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  const handleFavoriteChange = useCallback((sampleId: string, favorited: boolean) => {
+    setFavoritedIds(prev => {
+      const next = new Set(prev);
+      if (favorited) next.add(sampleId);
+      else next.delete(sampleId);
+      return next;
+    });
   }, []);
 
   const fetchSamples = useCallback(
@@ -237,9 +281,9 @@ export default function ExplorePage() {
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-[#b3b3b3] md:text-base">
               Search across real creator uploads, preview instantly, and explore by genre or instrument without leaving the page.
             </p>
-            <Link href="/signup">
+            <Link href={user ? "/marketplace" : "/signup"}>
               <Button className="mt-8 h-12 rounded-full bg-[#39b54a] px-7 text-sm font-semibold text-black shadow-[0_10px_30px_rgba(57,181,74,0.28)] transition hover:bg-[#4bc75d]">
-                Start exploring
+                {user ? "Go to marketplace" : "Start exploring"}
               </Button>
             </Link>
           </div>
@@ -399,13 +443,14 @@ export default function ExplorePage() {
               ) : samples.length > 0 ? (
                 <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
                   {/* Table Header */}
-                  <div className="grid grid-cols-[auto_1fr_80px] md:grid-cols-[auto_1fr_90px_45px_45px_80px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                  <div className="grid grid-cols-[auto_1fr_80px_auto] md:grid-cols-[auto_1fr_90px_45px_45px_80px_auto] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
                     <div className="w-10" />
                     <SortHeader column="name" label="Name" />
                     <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
                     <div className="hidden md:block"><SortHeader column="key" label="Key" /></div>
                     <div className="hidden md:block"><SortHeader column="bpm" label="BPM" /></div>
                     <div className="hidden md:block"><SortHeader column="rating" label="★" /></div>
+                    <div className="w-16" />
                   </div>
 
                   {/* Table Body */}
@@ -414,6 +459,9 @@ export default function ExplorePage() {
                       <ExploreRow
                         key={sample.id}
                         sample={sample}
+                        isFavorited={favoritedIds.has(sample.id)}
+                        isOwned={ownedIds.has(sample.id)}
+                        onFavoriteChange={handleFavoriteChange}
                       />
                     ))}
                   </div>

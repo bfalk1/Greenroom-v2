@@ -42,6 +42,8 @@ const ALLOWED_ROUTES = [
   '/login',
   '/signup',
   '/marketplace',
+  '/sounds', // server-redirects to /explore
+  '/explore', // sidebar "Browse" lands here after the /sounds redirect
   '/library',
   '/artist', // artist/[slug]
   '/account',
@@ -534,8 +536,16 @@ function downloadFileWithHeaders(url, destPath, headers, redirectCount = 0) {
 
     const tempDownloadPath = `${destPath}.download`;
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    if (fs.existsSync(tempDownloadPath)) {
+    // existsSync + unlinkSync is racy — a concurrent download can remove the
+    // temp file between the check and the unlink, surfacing as ENOENT to the
+    // user. Just attempt the unlink and ignore "file not found".
+    try {
       fs.unlinkSync(tempDownloadPath);
+    } catch (err) {
+      if (err && err.code !== 'ENOENT') {
+        reject(err);
+        return;
+      }
     }
 
     const requestUrl = new URL(url);

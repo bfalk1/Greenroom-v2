@@ -55,6 +55,16 @@ export async function updateSession(request: NextRequest) {
     pathname === "/api/invites/verify" ||
     pathname === "/api/beta-invites/verify";
 
+  // If user is logged in and on login/signup, redirect to marketplace.
+  // Must run BEFORE the isPublicPath early-return — /login and /signup are
+  // public paths, so the early-return would otherwise leave logged-in users
+  // staring at an auth form.
+  if (user && (pathname === "/login" || pathname === "/signup")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/marketplace";
+    return NextResponse.redirect(url);
+  }
+
   if (isPublicPath) {
     return supabaseResponse;
   }
@@ -68,13 +78,6 @@ export async function updateSession(request: NextRequest) {
   if (!user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-
-  // If user is logged in and on login/signup, redirect to marketplace
-  if (user && (pathname === "/login" || pathname === "/signup")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/marketplace";
     return NextResponse.redirect(url);
   }
 

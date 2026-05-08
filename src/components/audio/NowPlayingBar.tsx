@@ -33,7 +33,15 @@ export function NowPlayingBar() {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
+  const [isDesktopShell, setIsDesktopShell] = useState(false);
   const scrubBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const greenroom = (window as { greenroom?: { isDesktop?: boolean } }).greenroom;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- detect desktop shell post-hydration to avoid SSR/CSR mismatch
+    setIsDesktopShell(Boolean(greenroom?.isDesktop));
+  }, []);
 
   const currentIndex = useMemo(() => {
     if (!track) return -1;
@@ -199,7 +207,8 @@ export function NowPlayingBar() {
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#2a2a2a] bg-[#0a0a0a]/95 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#2a2a2a] bg-[#0a0a0a]/95 backdrop-blur data-[desktop=true]:left-52"
+      data-desktop={isDesktopShell || undefined}
       role="region"
       aria-label="Audio player"
     >
