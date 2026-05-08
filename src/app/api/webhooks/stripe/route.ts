@@ -80,13 +80,13 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const { periodStart, periodEnd } = getPeriodDates(subscription);
 
-  // Create or update subscription
+  // Create or update subscription. Status lives on users.subscription_status
+  // (single source of truth) — Subscription only stores tier/period/Stripe IDs.
   await prisma.subscription.upsert({
     where: { userId },
     update: {
       tierId: tier.id,
       stripeSubscriptionId: subscription.id,
-      status: "ACTIVE",
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -95,7 +95,6 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       userId,
       tierId: tier.id,
       stripeSubscriptionId: subscription.id,
-      status: "ACTIVE",
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: false,
@@ -161,7 +160,6 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     await prisma.subscription.update({
       where: { userId: user.id },
       data: {
-        status: "ACTIVE",
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
       },
@@ -221,12 +219,11 @@ async function handleSubscriptionUpdated(
   const isUpgrade = newTier.creditsPerMonth > oldTier.creditsPerMonth;
   const { periodStart, periodEnd } = getPeriodDates(subscription);
 
-  // Update the subscription record
+  // Update the subscription record (no status — that lives on users.subscription_status).
   await prisma.subscription.update({
     where: { userId: user.id },
     data: {
       tierId: newTier.id,
-      status: "ACTIVE",
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -272,11 +269,6 @@ async function handleSubscriptionDeleted(
 
   if (!user) return;
 
-  await prisma.subscription.updateMany({
-    where: { userId: user.id },
-    data: { status: "CANCELED" },
-  });
-
   await prisma.user.update({
     where: { id: user.id },
     data: { subscriptionStatus: "canceled" },
@@ -296,11 +288,6 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
   });
 
   if (!user) return;
-
-  await prisma.subscription.updateMany({
-    where: { userId: user.id },
-    data: { status: "PAST_DUE" },
-  });
 
   await prisma.user.update({
     where: { id: user.id },

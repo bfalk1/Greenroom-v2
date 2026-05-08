@@ -22,13 +22,6 @@ enum UserRole {
   ADMIN
 }
 
-enum SubscriptionStatus {
-  ACTIVE
-  PAST_DUE
-  CANCELED
-  INCOMPLETE
-}
-
 enum CreditTransactionType {
   SUBSCRIPTION
   PURCHASE
@@ -170,16 +163,15 @@ model SubscriptionTier {
 }
 
 model Subscription {
-  id                   String             @id @default(uuid()) @db.Uuid
-  userId               String             @unique @map("user_id") @db.Uuid
-  tierId               String             @map("tier_id") @db.Uuid
-  stripeSubscriptionId String?            @map("stripe_subscription_id")
-  status               SubscriptionStatus @default(ACTIVE)
-  currentPeriodStart   DateTime           @map("current_period_start")
-  currentPeriodEnd     DateTime           @map("current_period_end")
-  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
-  createdAt            DateTime           @default(now()) @map("created_at")
-  updatedAt            DateTime           @updatedAt @map("updated_at")
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @unique @map("user_id") @db.Uuid
+  tierId               String   @map("tier_id") @db.Uuid
+  stripeSubscriptionId String?  @map("stripe_subscription_id")
+  currentPeriodStart   DateTime @map("current_period_start")
+  currentPeriodEnd     DateTime @map("current_period_end")
+  cancelAtPeriodEnd    Boolean  @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   tier SubscriptionTier @relation(fields: [tierId], references: [id])

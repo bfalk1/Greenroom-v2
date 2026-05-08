@@ -13,10 +13,16 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const subscription = await prisma.subscription.findUnique({
-      where: { userId: user.id },
-      include: { tier: true },
-    });
+    const [subscription, dbUser] = await Promise.all([
+      prisma.subscription.findUnique({
+        where: { userId: user.id },
+        include: { tier: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: user.id },
+        select: { subscriptionStatus: true },
+      }),
+    ]);
 
     if (!subscription) {
       return NextResponse.json({ subscription: null });
@@ -26,7 +32,9 @@ export async function GET() {
       subscription: {
         tierName: subscription.tier.name,
         tierDisplayName: subscription.tier.displayName,
-        status: subscription.status,
+        // Status reads from users.subscription_status (single source of truth);
+        // uppercased here for the existing UI badge that compares ACTIVE/PAST_DUE/CANCELED.
+        status: (dbUser?.subscriptionStatus ?? "none").toUpperCase(),
         currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         creditsPerMonth: subscription.tier.creditsPerMonth,

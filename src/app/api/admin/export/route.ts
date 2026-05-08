@@ -52,10 +52,11 @@ export async function GET(request: NextRequest) {
           csv += `${p.createdAt.toISOString()},${p.user.email || ""},${p.user.username || ""},${p.amount},${Math.abs(p.amount) * 10},CREDIT_PURCHASE\n`;
         });
 
-        // Add subscription revenue if available
+        // Add subscription revenue if available. Active state comes from
+        // users.subscription_status (single source of truth).
         const subscriptions = await prisma.subscription.findMany({
           where: {
-            status: "ACTIVE",
+            user: { subscriptionStatus: "active" },
             ...(Object.keys(dateFilter).length > 0 && { currentPeriodStart: dateFilter }),
           },
           include: {
