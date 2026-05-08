@@ -1,9 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme, dialog } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme, dialog, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const https = require('https');
-const http = require('http');
 
 let LOCAL_SAMPLE_DIR = null;
 let LOCAL_SAMPLE_INDEX_PATH = null;
@@ -517,28 +515,25 @@ function getLocalSampleStatus(sampleId, sampleName, artistName) {
   };
 }
 
-async function getDesktopDownloadHeaders() {
-  const cookies = await mainWindow.webContents.session.cookies.get({ url: GREENROOM_URL });
-  const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-
-  return {
-    'User-Agent': 'GREENROOM-Desktop/1.7.0',
-    ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-  };
-}
-
-function downloadFileWithHeaders(url, destPath, headers, redirectCount = 0) {
+// Stream a download to disk using Electron's net.request, which goes through
+// the renderer's session. This means:
+//   - cookies are attached automatically (no manual Cookie header)
+//   - Set-Cookie response headers refresh the session, so Supabase can renew
+//     access tokens mid-flight (the old https.get path didn't do this and
+//     would 401 with "Auth session missing!" the moment a token expired)
+//   - cross-origin redirects (e.g. Supabase storage) drop session cookies
+//     automatically per browser semantics
+function downloadFileWithSession(url, destPath) {
   return new Promise((resolve, reject) => {
-    if (redirectCount > 5) {
-      reject(new Error('Too many redirects while preparing sample drag'));
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      reject(new Error('Main window not available for download'));
       return;
     }
 
     const tempDownloadPath = `${destPath}.download`;
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     // existsSync + unlinkSync is racy — a concurrent download can remove the
-    // temp file between the check and the unlink, surfacing as ENOENT to the
-    // user. Just attempt the unlink and ignore "file not found".
+    // temp file between the check and the unlink, surfacing as ENOENT.
     try {
       fs.unlinkSync(tempDownloadPath);
     } catch (err) {
@@ -548,78 +543,65 @@ function downloadFileWithHeaders(url, destPath, headers, redirectCount = 0) {
       }
     }
 
-    const requestUrl = new URL(url);
-    const protocol = requestUrl.protocol === 'https:' ? https : http;
     const file = fs.createWriteStream(tempDownloadPath);
-
+    let settled = false;
+    const settle = (fn) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
     const cleanup = () => {
       file.destroy();
       fs.unlink(tempDownloadPath, () => {});
     };
 
-    const request = protocol.get(
-      requestUrl,
-      { headers },
-      (response) => {
-        const { statusCode = 0, headers: responseHeaders } = response;
+    const request = net.request({
+      method: 'GET',
+      url,
+      session: mainWindow.webContents.session,
+      useSessionCookies: true,
+      redirect: 'follow',
+    });
+    request.setHeader('User-Agent', 'GREENROOM-Desktop/1.7.1');
 
-        if ([301, 302, 303, 307, 308].includes(statusCode)) {
-          file.close(() => {
-            fs.unlink(tempDownloadPath, () => {});
-            const location = responseHeaders.location;
-            if (!location) {
-              reject(new Error('Redirected download missing location header'));
+    request.on('response', (response) => {
+      const statusCode = response.statusCode || 0;
+
+      if (statusCode !== 200) {
+        cleanup();
+        settle(() => reject(new Error(`Failed to download: ${statusCode}`)));
+        return;
+      }
+
+      response.on('data', (chunk) => file.write(chunk));
+      response.on('end', () => {
+        file.end(() => {
+          fs.rename(tempDownloadPath, destPath, (renameErr) => {
+            if (renameErr) {
+              fs.unlink(tempDownloadPath, () => {});
+              settle(() => reject(renameErr));
               return;
             }
-
-            const nextUrl = new URL(location, requestUrl).toString();
-            const nextHeaders = new URL(nextUrl).origin === new URL(GREENROOM_URL).origin
-              ? headers
-              : { 'User-Agent': headers['User-Agent'] };
-
-            downloadFileWithHeaders(nextUrl, destPath, nextHeaders, redirectCount + 1)
-              .then(resolve)
-              .catch(reject);
-          });
-          return;
-        }
-
-        if (statusCode !== 200) {
-          cleanup();
-          reject(new Error(`Failed to download: ${statusCode}`));
-          return;
-        }
-
-        response.pipe(file);
-        file.on('finish', () => {
-          file.close((closeErr) => {
-            if (closeErr) {
-              reject(closeErr);
-              return;
-            }
-
-            fs.rename(tempDownloadPath, destPath, (renameErr) => {
-              if (renameErr) {
-                fs.unlink(tempDownloadPath, () => {});
-                reject(renameErr);
-                return;
-              }
-              resolve(destPath);
-            });
+            settle(() => resolve(destPath));
           });
         });
-      }
-    );
+      });
+      response.on('error', (err) => {
+        cleanup();
+        settle(() => reject(err));
+      });
+    });
 
     request.on('error', (err) => {
       cleanup();
-      reject(err);
+      settle(() => reject(err));
     });
-
     file.on('error', (err) => {
       cleanup();
-      reject(err);
+      settle(() => reject(err));
     });
+
+    request.end();
   });
 }
 
@@ -646,8 +628,7 @@ async function ensureSampleDownloaded(sampleId, sampleName, artistName) {
     const localPath = getSampleLocalPath(sampleId, sampleName, artistName);
     logLocalStoreDebug('sync download start', { sampleId, sampleName, artistName });
     const downloadUrl = `${GREENROOM_URL}/api/downloads/${sampleId}`;
-    const headers = await getDesktopDownloadHeaders();
-    await downloadFileWithHeaders(downloadUrl, localPath, headers);
+    await downloadFileWithSession(downloadUrl, localPath);
     logLocalStoreDebug('sync download finished', {
       sampleId,
       sampleName,
