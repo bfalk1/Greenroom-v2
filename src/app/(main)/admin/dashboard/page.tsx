@@ -43,6 +43,7 @@ type AdminSection =
   | "samples"
   | "payouts"
   | "flagged"
+  | "tools"
   | "payout-settings"
   | "beta-invites"
   | "creator-invites"
@@ -193,6 +194,25 @@ export default function AdminDashboardPage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [addingMod, setAddingMod] = useState(false);
   const [removingModId, setRemovingModId] = useState<string | null>(null);
+
+  const sidebarItems: AdminSidebarItem[] = [
+    { id: "overview", label: "Overview", icon: LayoutDashboard },
+    {
+      id: "applications",
+      label: "Applications",
+      icon: Users,
+      badge: stats?.pendingApplications,
+    },
+    {
+      id: "samples",
+      label: "Samples",
+      icon: Music,
+      badge: stats?.pendingSamples,
+    },
+    { id: "payouts", label: "Payouts", icon: DollarSign },
+    { id: "flagged", label: "Flagged", icon: Flag },
+    { id: "tools", label: "Tools", icon: Settings },
+  ];
 
   const fetchPayouts = useCallback(async (status?: string) => {
     try {
@@ -603,7 +623,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
           )}
-          {activeTab === "applications" && (
+          {activeSection === "applications" && (
             <div>
               {applications.length > 0 ? (
                 <div className="space-y-6">
@@ -752,7 +772,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {activeTab === "samples" && (
+          {activeSection === "samples" && (
             <div>
               {draftSamples.length > 0 ? (
                 <div className="space-y-6">
@@ -799,7 +819,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {activeTab === "payouts" && (
+          {activeSection === "payouts" && (
             <div>
               {/* Filter buttons */}
               <div className="flex gap-2 mb-6">
@@ -1002,13 +1022,13 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {activeTab === "flagged" && (
+          {activeSection === "flagged" && (
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
               <FlaggedAccountsPanel />
             </div>
           )}
 
-          {activeTab === "tools" && (
+          {activeSection === "tools" && (
             <div className="space-y-6">
               {/* Payout Settings */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
@@ -1072,6 +1092,7 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
+        </div>
         </div>
 
         {/* Edit Sample Modal */}
