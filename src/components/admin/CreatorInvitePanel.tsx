@@ -15,6 +15,7 @@ import {
   Copy,
   RefreshCw,
   AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +56,7 @@ export function CreatorInvitePanel() {
   const [sending, setSending] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [listExpanded, setListExpanded] = useState(false);
 
   // Form state
   const [email, setEmail] = useState("");
@@ -305,19 +307,29 @@ export function CreatorInvitePanel() {
 
       {/* Invites List */}
       <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
-        <div className="flex items-center gap-3 mb-6">
+        <button
+          type="button"
+          onClick={() => setListExpanded((prev) => !prev)}
+          aria-expanded={listExpanded}
+          className="flex items-center gap-3 w-full text-left mb-6 last:mb-0 group"
+        >
           <div className="p-2 bg-purple-500/10 rounded-lg">
             <Mail className="w-5 h-5 text-purple-400" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-white">Sent Invites</h3>
             <p className="text-sm text-[#a1a1a1]">
               {invites.length} invite{invites.length !== 1 ? "s" : ""} sent
             </p>
           </div>
-        </div>
+          <ChevronDown
+            className={`w-5 h-5 text-[#a1a1a1] transition-transform group-hover:text-white ${
+              listExpanded ? "rotate-180" : ""
+            }`}
+          />
+        </button>
 
-        {invites.length > 0 ? (
+        {listExpanded && (invites.length > 0 ? (
           <div className="space-y-3">
             {invites.map((invite) => (
               <div
@@ -403,7 +415,7 @@ export function CreatorInvitePanel() {
             <p className="text-[#a1a1a1]">No invites sent yet</p>
             <p className="text-xs text-[#666]">Use the form above to invite creators</p>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );
