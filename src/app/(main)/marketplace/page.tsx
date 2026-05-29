@@ -16,7 +16,7 @@ import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
-import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
+import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -147,9 +147,54 @@ export default function MarketplacePage() {
     }
   }, [samples]);
 
-  const { selectedIndex, isSelected: isKeyboardSelected } = useKeyboardNavigation(samples, {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const presetTotalPages = Math.max(1, Math.ceil(presetTotal / PAGE_SIZE));
+
+  // Pending-play markers consumed when the new page's items mount.
+  const pendingSamplesPlayRef = useRef<"first" | "last" | null>(null);
+  const pendingPresetsPlayRef = useRef<"first" | "last" | null>(null);
+
+  const goToNextSamplesPage = useCallback(() => {
+    if (currentPage >= totalPages) return;
+    pendingSamplesPlayRef.current = "first";
+    setCurrentPage(currentPage + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage, totalPages]);
+
+  const goToPrevSamplesPage = useCallback(() => {
+    if (currentPage <= 1) return;
+    pendingSamplesPlayRef.current = "last";
+    setCurrentPage(currentPage - 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage]);
+
+  const goToNextPresetsPage = useCallback(() => {
+    if (presetCurrentPage >= presetTotalPages) return;
+    pendingPresetsPlayRef.current = "first";
+    setPresetCurrentPage(presetCurrentPage + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [presetCurrentPage, presetTotalPages]);
+
+  const goToPrevPresetsPage = useCallback(() => {
+    if (presetCurrentPage <= 1) return;
+    pendingPresetsPlayRef.current = "last";
+    setPresetCurrentPage(presetCurrentPage - 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [presetCurrentPage]);
+
+  const { selectedIndex, isSelected: isKeyboardSelected, setSelectedIndex } = useKeyboardNavigation(samples, {
     enabled: samples.length > 0 && !loading,
     onPlay: handleKeyboardPlay,
+    onReachEnd: () => goToNextSamplesPage(),
+    onReachStart: () => goToPrevSamplesPage(),
   });
 
   // Handle Escape to stop playback
@@ -230,9 +275,6 @@ export default function MarketplacePage() {
     },
     [searchQuery, filters, sortDirection, randomSeed]
   );
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const presetTotalPages = Math.max(1, Math.ceil(presetTotal / PAGE_SIZE));
 
   const fetchFollowingData = useCallback(async () => {
     if (!user) {
@@ -423,6 +465,75 @@ export default function MarketplacePage() {
   }, [activeTab, samples, presets]);
 
   useEffect(() => () => setNowPlayingQueue([]), []);
+
+  // After a samples-page change (from arrows or bar), play the requested edge.
+  useEffect(() => {
+    if (
+      activeTab !== "samples" ||
+      loading ||
+      samples.length === 0 ||
+      !pendingSamplesPlayRef.current
+    ) {
+      return;
+    }
+    const direction = pendingSamplesPlayRef.current;
+    pendingSamplesPlayRef.current = null;
+    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    if (!target) return;
+    const targetIndex = direction === "first" ? 0 : samples.length - 1;
+    setSelectedIndex(targetIndex);
+    // Defer so newly-mounted rows have registered with globalToggleFns.
+    setTimeout(() => toggleGlobalPlay(target.id), 0);
+  }, [activeTab, samples, loading, setSelectedIndex]);
+
+  // Same for presets when their page changes.
+  useEffect(() => {
+    if (
+      activeTab !== "presets" ||
+      presetLoading ||
+      presets.length === 0 ||
+      !pendingPresetsPlayRef.current
+    ) {
+      return;
+    }
+    const direction = pendingPresetsPlayRef.current;
+    pendingPresetsPlayRef.current = null;
+    const target = direction === "first" ? presets[0] : presets[presets.length - 1];
+    if (!target) return;
+    setTimeout(() => toggleGlobalPlay(target.id), 0);
+  }, [activeTab, presets, presetLoading]);
+
+  // Register cross-page navigation for the active tab so the bar can
+  // auto-advance/retreat when at the queue edges.
+  useEffect(() => {
+    if (activeTab === "samples") {
+      setQueueNavigation({
+        hasPrevPage: currentPage > 1,
+        hasNextPage: currentPage < totalPages,
+        onPrevPage: goToPrevSamplesPage,
+        onNextPage: goToNextSamplesPage,
+      });
+    } else {
+      setQueueNavigation({
+        hasPrevPage: presetCurrentPage > 1,
+        hasNextPage: presetCurrentPage < presetTotalPages,
+        onPrevPage: goToPrevPresetsPage,
+        onNextPage: goToNextPresetsPage,
+      });
+    }
+  }, [
+    activeTab,
+    currentPage,
+    totalPages,
+    presetCurrentPage,
+    presetTotalPages,
+    goToPrevSamplesPage,
+    goToNextSamplesPage,
+    goToPrevPresetsPage,
+    goToNextPresetsPage,
+  ]);
+
+  useEffect(() => () => setQueueNavigation({}), []);
 
   // Fetch samples on mount and debounce search/filter changes afterward.
   // Keeping this as the single fetch driver avoids the double-fire that

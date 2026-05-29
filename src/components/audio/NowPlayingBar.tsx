@@ -7,6 +7,7 @@ import {
   clearNowPlayingTrack,
   useNowPlayingTrack,
   useNowPlayingQueue,
+  useQueueNavigation,
 } from "@/lib/audio/nowPlaying";
 import {
   getGlobalAudio,
@@ -27,6 +28,7 @@ function formatTime(seconds: number): string {
 export function NowPlayingBar() {
   const track = useNowPlayingTrack();
   const queue = useNowPlayingQueue();
+  const navigation = useQueueNavigation();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -53,6 +55,15 @@ export function NowPlayingBar() {
     currentIndex >= 0 && currentIndex < queue.length - 1
       ? queue[currentIndex + 1]
       : null;
+
+  // Cross-page navigation kicks in when there's no in-queue prev/next but the
+  // active list has more pages. The page handles pagination + auto-play.
+  const canCrossToPrev =
+    !prevTrack && currentIndex >= 0 && !!navigation.hasPrevPage && !!navigation.onPrevPage;
+  const canCrossToNext =
+    !nextTrack && currentIndex >= 0 && !!navigation.hasNextPage && !!navigation.onNextPage;
+  const prevEnabled = !!prevTrack || canCrossToPrev;
+  const nextEnabled = !!nextTrack || canCrossToNext;
 
   // Subscribe to audio element events for play/pause/time updates
   useEffect(() => {
@@ -106,8 +117,28 @@ export function NowPlayingBar() {
       }
       // Fallback: do nothing if the row isn't mounted (e.g., on a different page).
     },
-    [prevTrack, nextTrack]
+    []
   );
+
+  const handlePrev = useCallback(async () => {
+    if (prevTrack) {
+      await handleSkip(prevTrack);
+      return;
+    }
+    if (canCrossToPrev) {
+      navigation.onPrevPage?.();
+    }
+  }, [prevTrack, handleSkip, canCrossToPrev, navigation]);
+
+  const handleNext = useCallback(async () => {
+    if (nextTrack) {
+      await handleSkip(nextTrack);
+      return;
+    }
+    if (canCrossToNext) {
+      navigation.onNextPage?.();
+    }
+  }, [nextTrack, handleSkip, canCrossToNext, navigation]);
 
   const handleTogglePlay = useCallback(async () => {
     const audio = getGlobalAudio();
@@ -252,10 +283,16 @@ export function NowPlayingBar() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => handleSkip(prevTrack)}
-              disabled={!prevTrack}
+              onClick={handlePrev}
+              disabled={!prevEnabled}
               aria-label="Previous track"
-              title={prevTrack ? `Previous: ${prevTrack.name}` : undefined}
+              title={
+                prevTrack
+                  ? `Previous: ${prevTrack.name}`
+                  : canCrossToPrev
+                  ? "Previous page"
+                  : undefined
+              }
               className="text-[#a1a1a1] hover:text-white disabled:text-[#3a3a3a] disabled:cursor-not-allowed transition p-1"
             >
               <SkipBack className="w-4 h-4 fill-current" />
@@ -274,10 +311,16 @@ export function NowPlayingBar() {
             </button>
             <button
               type="button"
-              onClick={() => handleSkip(nextTrack)}
-              disabled={!nextTrack}
+              onClick={handleNext}
+              disabled={!nextEnabled}
               aria-label="Next track"
-              title={nextTrack ? `Next: ${nextTrack.name}` : undefined}
+              title={
+                nextTrack
+                  ? `Next: ${nextTrack.name}`
+                  : canCrossToNext
+                  ? "Next page"
+                  : undefined
+              }
               className="text-[#a1a1a1] hover:text-white disabled:text-[#3a3a3a] disabled:cursor-not-allowed transition p-1"
             >
               <SkipForward className="w-4 h-4 fill-current" />

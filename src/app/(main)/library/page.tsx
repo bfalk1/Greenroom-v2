@@ -24,8 +24,9 @@ import {
   globalSetters,
   globalToggleFns,
   setGlobalPlayingId,
+  toggleGlobalPlay,
 } from "@/components/marketplace/SampleCard";
-import { setNowPlayingQueue, setNowPlayingTrack } from "@/lib/audio/nowPlaying";
+import { setNowPlayingQueue, setNowPlayingTrack, setQueueNavigation } from "@/lib/audio/nowPlaying";
 import JSZip from "jszip";
 
 interface LibrarySample {
@@ -621,6 +622,48 @@ export default function LibraryPage() {
 
   useEffect(() => () => setNowPlayingQueue([]), []);
 
+  // Cross-page navigation: bar prev/next at edges + ArrowDown/ArrowUp at edges
+  // advance pagination and auto-play the new page's first/last item.
+  const pendingPlayRef = useRef<"first" | "last" | null>(null);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage >= totalPages) return;
+    pendingPlayRef.current = "first";
+    setCurrentPage((p) => p + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage, totalPages]);
+
+  const goToPrevPage = useCallback(() => {
+    if (currentPage <= 1) return;
+    pendingPlayRef.current = "last";
+    setCurrentPage((p) => p - 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (loading || samples.length === 0 || !pendingPlayRef.current) return;
+    const direction = pendingPlayRef.current;
+    pendingPlayRef.current = null;
+    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    if (!target) return;
+    setTimeout(() => toggleGlobalPlay(target.id), 0);
+  }, [samples, loading]);
+
+  useEffect(() => {
+    setQueueNavigation({
+      hasPrevPage: currentPage > 1,
+      hasNextPage: currentPage < totalPages,
+      onPrevPage: goToPrevPage,
+      onNextPage: goToNextPage,
+    });
+  }, [currentPage, totalPages, goToPrevPage, goToNextPage]);
+
+  useEffect(() => () => setQueueNavigation({}), []);
+
   // Refresh per-row local status when the layout-level sync (DesktopLibrarySync)
   // pulls down newly purchased samples while the library page is open.
   useEffect(() => {
@@ -643,6 +686,8 @@ export default function LibraryPage() {
   const { selectedIndex } = useKeyboardNavigation(samples, {
     enabled: samples.length > 0 && !loading,
     onPlay: () => {},
+    onReachEnd: () => goToNextPage(),
+    onReachStart: () => goToPrevPage(),
   });
 
   if (userLoading || (loading && !hasFetchedInitiallyRef.current)) {

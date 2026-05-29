@@ -10,8 +10,16 @@ export interface NowPlayingTrack {
   artistSlug?: string;
 }
 
+export interface QueueNavigation {
+  hasPrevPage?: boolean;
+  hasNextPage?: boolean;
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
+}
+
 let currentTrack: NowPlayingTrack | null = null;
 let currentQueue: NowPlayingTrack[] = [];
+let currentNavigation: QueueNavigation = {};
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -55,6 +63,24 @@ export function setNowPlayingQueue(queue: NowPlayingTrack[]): void {
   emit();
 }
 
+export function getQueueNavigation(): QueueNavigation {
+  return currentNavigation;
+}
+
+export function setQueueNavigation(nav: QueueNavigation): void {
+  if (
+    nav === currentNavigation ||
+    (nav.hasPrevPage === currentNavigation.hasPrevPage &&
+      nav.hasNextPage === currentNavigation.hasNextPage &&
+      nav.onPrevPage === currentNavigation.onPrevPage &&
+      nav.onNextPage === currentNavigation.onNextPage)
+  ) {
+    return;
+  }
+  currentNavigation = nav;
+  emit();
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -77,5 +103,15 @@ export function useNowPlayingQueue(): NowPlayingTrack[] {
     subscribe,
     getNowPlayingQueue,
     () => EMPTY_QUEUE
+  );
+}
+
+const EMPTY_NAVIGATION: QueueNavigation = {};
+
+export function useQueueNavigation(): QueueNavigation {
+  return useSyncExternalStore(
+    subscribe,
+    getQueueNavigation,
+    () => EMPTY_NAVIGATION
   );
 }

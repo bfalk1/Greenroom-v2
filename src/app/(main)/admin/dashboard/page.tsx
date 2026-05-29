@@ -18,8 +18,14 @@ import {
   Trash2,
   Plus,
   Flag,
+  LayoutDashboard,
+  Mail,
+  UserPlus,
+  Infinity as InfinityIcon,
+  FileText,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { AdminSidebar, AdminSidebarItem } from "@/components/admin/AdminSidebar";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
 import { ExportPanel } from "@/components/admin/ExportPanel";
@@ -30,6 +36,20 @@ import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
 import { InviteInfiniteUserPanel } from "@/components/admin/InviteInfiniteUserPanel";
 import { toast } from "sonner";
+
+type AdminSection =
+  | "overview"
+  | "applications"
+  | "samples"
+  | "payouts"
+  | "flagged"
+  | "payout-settings"
+  | "beta-invites"
+  | "creator-invites"
+  | "infinite-invites"
+  | "moderators"
+  | "audit-log"
+  | "exports";
 
 interface Stats {
   totalUsers: number;
@@ -156,7 +176,7 @@ export default function AdminDashboardPage() {
   const [payoutFilter, setPayoutFilter] = useState<string>("PENDING");
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("applications");
+  const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [editingSample, setEditingSample] = useState<ReturnType<
     typeof mapSampleForPanel
   > | null>(null);
@@ -498,160 +518,91 @@ export default function AdminDashboardPage() {
           </p>
         </div>
 
-        {/* Platform Overview Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Total Users
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.totalUsers ?? "—"}
-                </p>
-              </div>
-              <Users className="w-8 h-8 text-blue-400" />
-            </div>
-          </div>
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Total Creators
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.totalCreators ?? "—"}
-                </p>
-              </div>
-              <Users className="w-8 h-8 text-purple-400" />
-            </div>
-          </div>
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Total Samples
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.totalSamples ?? "—"}
-                </p>
-              </div>
-              <Music className="w-8 h-8 text-[#39b54a]" />
-            </div>
-          </div>
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Total Purchases
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.totalPurchases ?? "—"}
-                </p>
-              </div>
-              <CheckCircle2 className="w-8 h-8 text-green-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Action Items */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Pending Applications
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.pendingApplications ?? applications.length}
-                </p>
-              </div>
-              <Clock className="w-8 h-8 text-[#39b54a]" />
-            </div>
-          </div>
-          <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-[#a1a1a1] mb-1">
-                  Samples Awaiting Review
-                </p>
-                <p className="text-3xl font-bold text-white">
-                  {stats?.pendingSamples ?? draftSamples.length}
-                </p>
-              </div>
-              <Music className="w-8 h-8 text-[#39b54a]" />
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-4 mb-8 border-b border-[#2a2a2a]">
-          <button
-            onClick={() => setActiveTab("applications")}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "applications"
-                ? "border-[#39b54a] text-[#39b54a]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <Users className="w-4 h-4 inline mr-2" />
-            Creator Applications ({applications.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("samples")}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "samples"
-                ? "border-[#39b54a] text-[#39b54a]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <Music className="w-4 h-4 inline mr-2" />
-            Sample Moderation ({draftSamples.length})
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("payouts");
-              fetchPayouts("PENDING");
+        {/* Sidebar layout */}
+        <div className="flex flex-col md:flex-row gap-6">
+          <AdminSidebar
+            items={sidebarItems}
+            activeId={activeSection}
+            onSelect={(id) => {
+              const next = id as AdminSection;
+              setActiveSection(next);
+              if (next === "payouts") {
+                fetchPayouts("PENDING");
+              }
             }}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "payouts"
-                ? "border-[#39b54a] text-[#39b54a]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <DollarSign className="w-4 h-4 inline mr-2" />
-            Payouts
-            {payoutRequests.filter((p) => p.status === "PENDING").length > 0 && (
-              <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-yellow-500/20 text-yellow-400">
-                {payoutRequests.filter((p) => p.status === "PENDING").length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("flagged")}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "flagged"
-                ? "border-[#39b54a] text-[#39b54a]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            <Flag className="w-4 h-4 inline mr-2" />
-            Flagged Accounts
-          </button>
-          <button
-            onClick={() => setActiveTab("tools")}
-            className={`px-4 py-3 font-medium border-b-2 transition ${
-              activeTab === "tools"
-                ? "border-[#39b54a] text-[#39b54a]"
-                : "border-transparent text-[#a1a1a1] hover:text-white"
-            }`}
-          >
-            Admin Tools
-          </button>
-        </div>
+          />
 
         {/* Content */}
-        <div>
+        <div className="flex-1 min-w-0">
+          {activeSection === "overview" && (
+            <div>
+              {/* Platform Overview Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Users</p>
+                      <p className="text-3xl font-bold text-white">{stats?.totalUsers ?? "—"}</p>
+                    </div>
+                    <Users className="w-8 h-8 text-blue-400" />
+                  </div>
+                </div>
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Creators</p>
+                      <p className="text-3xl font-bold text-white">{stats?.totalCreators ?? "—"}</p>
+                    </div>
+                    <Users className="w-8 h-8 text-purple-400" />
+                  </div>
+                </div>
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Samples</p>
+                      <p className="text-3xl font-bold text-white">{stats?.totalSamples ?? "—"}</p>
+                    </div>
+                    <Music className="w-8 h-8 text-[#39b54a]" />
+                  </div>
+                </div>
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Purchases</p>
+                      <p className="text-3xl font-bold text-white">{stats?.totalPurchases ?? "—"}</p>
+                    </div>
+                    <CheckCircle2 className="w-8 h-8 text-green-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Items */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Pending Applications</p>
+                      <p className="text-3xl font-bold text-white">
+                        {stats?.pendingApplications ?? applications.length}
+                      </p>
+                    </div>
+                    <Clock className="w-8 h-8 text-[#39b54a]" />
+                  </div>
+                </div>
+                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Samples Awaiting Review</p>
+                      <p className="text-3xl font-bold text-white">
+                        {stats?.pendingSamples ?? draftSamples.length}
+                      </p>
+                    </div>
+                    <Music className="w-8 h-8 text-[#39b54a]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {activeTab === "applications" && (
             <div>
               {applications.length > 0 ? (

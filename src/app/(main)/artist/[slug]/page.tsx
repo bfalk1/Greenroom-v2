@@ -19,7 +19,8 @@ import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { trackArtistFollow, trackArtistProfileViewed } from "@/lib/analytics";
-import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
+import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
+import { toggleGlobalPlay } from "@/components/marketplace/SampleCard";
 import { toast } from "sonner";
 
 interface Artist {
@@ -142,6 +143,47 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   }, [samples]);
 
   useEffect(() => () => setNowPlayingQueue([]), []);
+
+  // Cross-page navigation: bar's prev/next at edges paginates and auto-plays.
+  const pendingPlayRef = React.useRef<"first" | "last" | null>(null);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage >= totalPages) return;
+    pendingPlayRef.current = "first";
+    setCurrentPage((p) => p + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage, totalPages]);
+
+  const goToPrevPage = useCallback(() => {
+    if (currentPage <= 1) return;
+    pendingPlayRef.current = "last";
+    setCurrentPage((p) => p - 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (samplesLoading || samples.length === 0 || !pendingPlayRef.current) return;
+    const direction = pendingPlayRef.current;
+    pendingPlayRef.current = null;
+    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    if (!target) return;
+    setTimeout(() => toggleGlobalPlay(target.id), 0);
+  }, [samples, samplesLoading]);
+
+  useEffect(() => {
+    setQueueNavigation({
+      hasPrevPage: currentPage > 1,
+      hasNextPage: currentPage < totalPages,
+      onPrevPage: goToPrevPage,
+      onNextPage: goToNextPage,
+    });
+  }, [currentPage, totalPages, goToPrevPage, goToNextPage]);
+
+  useEffect(() => () => setQueueNavigation({}), []);
 
   const handleFollow = async () => {
     if (!user) {

@@ -7,13 +7,14 @@ interface UseKeyboardNavigationOptions {
   onSelect?: (index: number) => void;
   onPlay?: (index: number) => void;
   onReachEnd?: () => void;
+  onReachStart?: () => void;
 }
 
 export function useKeyboardNavigation<T>(
   items: T[],
   options: UseKeyboardNavigationOptions = {}
 ) {
-  const { enabled = true, onSelect, onPlay, onReachEnd } = options;
+  const { enabled = true, onSelect, onPlay, onReachEnd, onReachStart } = options;
   const [selectedIndex, setSelectedIndex] = useState(-1);
 
   // Auto-select first item when items load
@@ -44,8 +45,21 @@ export function useKeyboardNavigation<T>(
       switch (e.key) {
         case "ArrowUp":
           e.preventDefault();
+          if (selectedIndex <= 0) {
+            // If a reach-start handler is provided, defer to it instead of
+            // wrapping. Pages use this to advance pagination backwards.
+            if (onReachStart) {
+              onReachStart();
+              break;
+            }
+            const wrapIndex = items.length - 1;
+            setSelectedIndex(wrapIndex);
+            onSelect?.(wrapIndex);
+            onPlay?.(wrapIndex);
+            break;
+          }
           {
-            const newIndex = selectedIndex <= 0 ? items.length - 1 : selectedIndex - 1;
+            const newIndex = selectedIndex - 1;
             setSelectedIndex(newIndex);
             onSelect?.(newIndex);
             onPlay?.(newIndex);
@@ -85,7 +99,7 @@ export function useKeyboardNavigation<T>(
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [enabled, items.length, selectedIndex, onSelect, onPlay, onReachEnd]);
+  }, [enabled, items.length, selectedIndex, onSelect, onPlay, onReachEnd, onReachStart]);
 
   const isSelected = useCallback(
     (index: number) => index === selectedIndex,

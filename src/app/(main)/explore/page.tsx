@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Search, Music, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,8 @@ import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { ExploreRow } from "@/components/marketplace/ExploreRow";
 import { SearchSuggestions } from "@/components/marketplace/SearchSuggestions";
 import { useUser } from "@/lib/hooks/useUser";
-import { setNowPlayingQueue } from "@/lib/audio/nowPlaying";
+import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
+import { toggleGlobalPlay } from "@/components/marketplace/SampleCard";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
@@ -227,6 +228,49 @@ export default function ExplorePage() {
 
   useEffect(() => () => setNowPlayingQueue([]), []);
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Cross-page navigation + auto-play when the bar steps off the queue's edge.
+  const pendingPlayRef = useRef<"first" | "last" | null>(null);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage >= totalPages) return;
+    pendingPlayRef.current = "first";
+    setCurrentPage((p) => p + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage, totalPages]);
+
+  const goToPrevPage = useCallback(() => {
+    if (currentPage <= 1) return;
+    pendingPlayRef.current = "last";
+    setCurrentPage((p) => p - 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (loading || samples.length === 0 || !pendingPlayRef.current) return;
+    const direction = pendingPlayRef.current;
+    pendingPlayRef.current = null;
+    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    if (!target) return;
+    setTimeout(() => toggleGlobalPlay(target.id), 0);
+  }, [samples, loading]);
+
+  useEffect(() => {
+    setQueueNavigation({
+      hasPrevPage: currentPage > 1,
+      hasNextPage: currentPage < totalPages,
+      onPrevPage: goToPrevPage,
+      onNextPage: goToNextPage,
+    });
+  }, [currentPage, totalPages, goToPrevPage, goToNextPage]);
+
+  useEffect(() => () => setQueueNavigation({}), []);
+
   // Fetch when showResults becomes true or page/filters change
   useEffect(() => {
     if (showResults) {
@@ -234,8 +278,6 @@ export default function ExplorePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showResults, activeSearch, filters, sortDirection, currentPage]);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
