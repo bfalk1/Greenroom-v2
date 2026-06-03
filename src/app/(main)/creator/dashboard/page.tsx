@@ -219,11 +219,20 @@ function CreatorSampleRow({
       {/* BPM */}
       <span className="hidden md:block text-sm text-[#a1a1a1]">{sample.bpm || "—"}</span>
 
-      {/* Rating */}
+      {/* Rating — only shown once the sample has real ratings */}
       <div className="hidden md:flex items-center gap-1">
-        <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-        <span className="text-sm text-white">{sample.ratingAvg.toFixed(1)}</span>
-        <span className="text-xs text-[#666]">({sample.ratingCount})</span>
+        {sample.ratingCount > 0 ? (
+          <>
+            <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+            <span className="text-sm text-white">{sample.ratingAvg.toFixed(1)}</span>
+            <span className="text-xs text-[#666]">({sample.ratingCount})</span>
+          </>
+        ) : (
+          <>
+            <Star className="w-3.5 h-3.5 text-[#3a3a3a]" />
+            <span className="text-xs text-[#666]">New</span>
+          </>
+        )}
       </div>
 
       {/* Status */}
