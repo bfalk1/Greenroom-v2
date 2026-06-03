@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TERMS_EFFECTIVE_DATE_LABEL } from "@/lib/legal";
 
 export default function TermsPage() {
   return (
@@ -6,7 +7,7 @@ export default function TermsPage() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <h1 className="text-4xl font-bold text-white mb-8">User Terms of Use</h1>
         <div className="prose prose-invert prose-sm max-w-none space-y-6 text-[#a1a1a1]">
-          <p className="text-sm">Effective Date: April 2026</p>
+          <p className="text-sm">Effective Date: {TERMS_EFFECTIVE_DATE_LABEL}</p>
 
           <h2 className="text-xl font-semibold text-white mt-8">1. Overview</h2>
           <p>

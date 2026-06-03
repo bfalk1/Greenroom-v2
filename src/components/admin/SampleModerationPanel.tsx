@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
+import { formatSampleType } from "@/lib/utils/sampleType";
 
 interface SampleModerationPanelProps {
   sample: {
@@ -65,9 +66,14 @@ export function SampleModerationPanel({
       <div className="mb-6">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h3 className="text-lg font-bold text-white mb-1">
-              {sample.name}
-            </h3>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-white">
+                {sample.name}
+              </h3>
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30 whitespace-nowrap">
+                {formatSampleType(sample.sample_type)}
+              </span>
+            </div>
             <p className="text-[#a1a1a1] text-sm">
               by {creator?.full_name || "Unknown"}
             </p>
@@ -83,7 +89,7 @@ export function SampleModerationPanel({
             <p className="text-white font-medium">{sample.genre}</p>
           </div>
           <div>
-            <p className="text-xs text-[#a1a1a1] mb-1">Type</p>
+            <p className="text-xs text-[#a1a1a1] mb-1">Instrument</p>
             <p className="text-white font-medium">{sample.instrument_type}</p>
           </div>
           <div>

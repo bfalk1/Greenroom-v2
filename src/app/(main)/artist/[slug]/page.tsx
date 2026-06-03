@@ -18,9 +18,10 @@ import { Pagination } from "@/components/ui/pagination";
 import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
+import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackArtistFollow, trackArtistProfileViewed } from "@/lib/analytics";
 import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
-import { toggleGlobalPlay } from "@/components/marketplace/SampleCard";
+import { toggleGlobalPlay, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { toast } from "sonner";
 
 interface Artist {
@@ -96,6 +97,7 @@ export default function ArtistPage({ params }: ArtistPageProps) {
   );
 
   const handlePageChange = (page: number) => {
+    setSelectedIndex(0);
     setCurrentPage(page);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -165,14 +167,39 @@ export default function ArtistPage({ params }: ArtistPageProps) {
     }
   }, [currentPage]);
 
+  const handleKeyboardPlay = useCallback((index: number) => {
+    const sample = samples[index];
+    if (sample) toggleGlobalPlay(sample.id);
+  }, [samples]);
+
+  const { selectedIndex, setSelectedIndex } = useKeyboardNavigation(samples, {
+    enabled: samples.length > 0 && !samplesLoading,
+    onPlay: handleKeyboardPlay,
+    onReachEnd: () => goToNextPage(),
+    onReachStart: () => goToPrevPage(),
+  });
+
+  // Stop playback on Escape / ArrowLeft, matching the marketplace.
+  useEffect(() => {
+    const handleStop = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "ArrowLeft") {
+        stopGlobalPlayback();
+      }
+    };
+    window.addEventListener("keydown", handleStop);
+    return () => window.removeEventListener("keydown", handleStop);
+  }, []);
+
   useEffect(() => {
     if (samplesLoading || samples.length === 0 || !pendingPlayRef.current) return;
     const direction = pendingPlayRef.current;
     pendingPlayRef.current = null;
-    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    const targetIndex = direction === "first" ? 0 : samples.length - 1;
+    const target = samples[targetIndex];
     if (!target) return;
+    setSelectedIndex(targetIndex);
     setTimeout(() => toggleGlobalPlay(target.id), 0);
-  }, [samples, samplesLoading]);
+  }, [samples, samplesLoading, setSelectedIndex]);
 
   useEffect(() => {
     setQueueNavigation({
@@ -489,9 +516,17 @@ export default function ArtistPage({ params }: ArtistPageProps) {
 
         {/* Samples */}
         <div className="pb-16">
-          <h2 className="text-xl font-semibold text-white mb-6">
+          <h2 className="text-xl font-semibold text-white mb-2">
             Samples ({artist.sample_count})
           </h2>
+
+          {samples.length > 0 && !samplesLoading && (
+            <div className="mb-4 text-xs text-[#666] flex items-center gap-2">
+              <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">↑↓</span> navigate
+              <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
+              <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Esc</span> stop
+            </div>
+          )}
 
           {samples.length > 0 ? (
             <>
@@ -510,14 +545,16 @@ export default function ArtistPage({ params }: ArtistPageProps) {
                             className="h-12 bg-[#1a1a1a] animate-pulse"
                           />
                         ))
-                    : samples.map((sample) => (
+                    : samples.map((sample, index) => (
                         <SampleRow
                           key={sample.id}
                           sample={sample}
                           user={userForCard}
                           isOwned={purchasedIds.has(sample.id)}
+                          isSelected={selectedIndex === index}
                           showArtist={false}
                           onPurchase={handlePurchase}
+                          onHighlight={() => setSelectedIndex(index)}
                           refreshUser={refreshUser}
                         />
                       ))}

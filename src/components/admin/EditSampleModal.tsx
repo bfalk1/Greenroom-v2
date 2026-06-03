@@ -61,7 +61,7 @@ export function EditSampleModal({
     name: sample.name,
     genre: sample.genre,
     instrument_type: sample.instrument_type,
-    sample_type: sample.sample_type,
+    sample_type: (sample.sample_type || "").toUpperCase(),
     key: sample.key,
     bpm: sample.bpm?.toString() || "",
     credit_price: sample.credit_price,

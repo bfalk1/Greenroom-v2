@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -18,18 +19,47 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
     const offset = parseInt(searchParams.get("offset") || "0");
     const search = searchParams.get("search") || "";
+    const genre = searchParams.get("genre") || "";
+    const instrumentType = searchParams.get("instrumentType") || "";
+    const sampleType = searchParams.get("sampleType") || "";
+    const key = searchParams.get("key") || "";
+    const scale = searchParams.get("scale") || "";
+    const sortBy = searchParams.get("sortBy") || "";
 
     const where: any = { userId: authUser.id, sampleId: { not: null } };
 
+    // Filters apply to the related sample; Prisma treats sibling keys as AND.
+    const sampleWhere: Prisma.SampleWhereInput = {};
     if (search) {
-      where.sample = {
-        OR: [
-          { name: { contains: search, mode: "insensitive" } },
-          { creator: { artistName: { contains: search, mode: "insensitive" } } },
-          { genre: { contains: search, mode: "insensitive" } },
-        ],
-      };
+      sampleWhere.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { creator: { artistName: { contains: search, mode: "insensitive" } } },
+        { genre: { contains: search, mode: "insensitive" } },
+      ];
     }
+    if (genre && genre !== "all") sampleWhere.genre = genre;
+    if (instrumentType && instrumentType !== "all") {
+      sampleWhere.instrumentType = instrumentType;
+    }
+    if (sampleType && sampleType !== "all") {
+      sampleWhere.sampleType = sampleType.toUpperCase() as "LOOP" | "ONE_SHOT";
+    }
+    if (key && key !== "all" && scale && scale !== "all") {
+      sampleWhere.key = `${key} ${scale}`;
+    } else if (key && key !== "all") {
+      sampleWhere.key = { startsWith: key };
+    } else if (scale && scale !== "all") {
+      sampleWhere.key = { endsWith: scale };
+    }
+    if (Object.keys(sampleWhere).length > 0) {
+      where.sample = sampleWhere;
+    }
+
+    // Default to most recently acquired; allow sorting by sample attributes.
+    let orderBy: Prisma.PurchaseOrderByWithRelationInput = { createdAt: "desc" };
+    if (sortBy === "newest") orderBy = { sample: { createdAt: "desc" } };
+    else if (sortBy === "popular") orderBy = { sample: { downloadCount: "desc" } };
+    else if (sortBy === "rating") orderBy = { sample: { ratingAvg: "desc" } };
 
     const [purchases, total] = await Promise.all([
       prisma.purchase.findMany({
@@ -47,7 +77,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy,
         take: limit,
         skip: offset,
       }),

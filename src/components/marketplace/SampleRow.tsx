@@ -28,6 +28,7 @@ export interface SampleRowProps {
   showArtist?: boolean;
   onPurchase: (sample: Sample) => void;
   onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
+  onHighlight?: () => void;
   refreshUser: () => void;
 }
 
@@ -41,6 +42,7 @@ export function SampleRow({
   showArtist = true,
   onPurchase,
   onFavoriteChange,
+  onHighlight,
 }: SampleRowProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingState, setIsPlayingState] = useState(false);
@@ -199,6 +201,7 @@ export function SampleRow({
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    onHighlight?.();
     await togglePlayFn();
   };
 
@@ -310,6 +313,7 @@ export function SampleRow({
       style={{ WebkitUserSelect: "none" } as React.CSSProperties}
       onMouseDown={handleRowMouseDown}
       onMouseUp={isDesktop && isOwned ? handlePointerUp : undefined}
+      onClick={() => onHighlight?.()}
     >
       {/* Drag Handle (visual indicator) */}
       <div

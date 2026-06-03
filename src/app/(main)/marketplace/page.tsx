@@ -425,6 +425,7 @@ export default function MarketplacePage() {
 
   const handleTabChange = (tab: MarketplaceTab) => {
     setActiveTab(tab);
+    setSelectedIndex(0);
     stopGlobalPlayback();
   };
 
@@ -559,6 +560,7 @@ export default function MarketplacePage() {
   };
 
   const handlePageChange = (page: number) => {
+    setSelectedIndex(0);
     setCurrentPage(page);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -911,6 +913,7 @@ export default function MarketplacePage() {
                       isSelected={isKeyboardSelected(index)}
                       onPurchase={handlePurchase}
                       onFavoriteChange={handleFavoriteChange}
+                      onHighlight={() => setSelectedIndex(index)}
                       refreshUser={refreshUser}
                     />
                   ))}
