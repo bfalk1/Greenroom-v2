@@ -84,38 +84,36 @@ export function SampleRating({
   const displayRating = userRating || 0;
   const showingUserRating = userRating > 0;
 
-  // Compact mode for inline display
+  // Compact mode: a read-only readout of the COMMUNITY AVERAGE (matches the
+  // Creator Studio sample rows). Used in the marketplace browse / library /
+  // owned-preset table rows, where shoppers want to see how a sample is rated
+  // overall — not an input control bound to their own (usually empty) rating.
+  // The interactive star input still lives in the full (non-compact) widget
+  // used on cards and detail views.
   if (compact) {
+    const hasRatings = ratingCount > 0;
     return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => {
-          const isActive = star <= (hoveredRating || displayRating);
-          const isUserRated = showingUserRating && star <= userRating && !hoveredRating;
-          
-          return (
-            <button
-              key={star}
-              disabled={!canRate || submitting}
-              onMouseEnter={() => canRate && setHoveredRating(star)}
-              onMouseLeave={() => setHoveredRating(0)}
-              onClick={() => handleRate(star)}
-              className={`transition-transform ${
-                canRate ? "hover:scale-110 cursor-pointer" : "cursor-default"
-              } disabled:cursor-not-allowed`}
-              title={canRate ? `Rate ${star} star${star !== 1 ? "s" : ""}` : ""}
-            >
-              <Star
-                className={`w-3 h-3 transition-colors ${
-                  isActive
-                    ? isUserRated
-                      ? "fill-[#FFD700] text-[#FFD700]"
-                      : "fill-[#39b54a] text-[#39b54a]"
-                    : "text-[#3a3a3a]"
-                }`}
-              />
-            </button>
-          );
-        })}
+      <div
+        className="flex items-center gap-1"
+        title={
+          hasRatings
+            ? `Average rating ${averageRating.toFixed(1)} from ${ratingCount} rating${ratingCount === 1 ? "" : "s"}`
+            : "No ratings yet"
+        }
+      >
+        <Star
+          className={`w-3.5 h-3.5 ${
+            hasRatings ? "fill-yellow-500 text-yellow-500" : "text-[#3a3a3a]"
+          }`}
+        />
+        {hasRatings ? (
+          <>
+            <span className="text-sm text-white">{averageRating.toFixed(1)}</span>
+            <span className="text-xs text-[#666]">({ratingCount})</span>
+          </>
+        ) : (
+          <span className="text-xs text-[#666]">New</span>
+        )}
       </div>
     );
   }
@@ -151,7 +149,7 @@ export function SampleRating({
         );
       })}
       <span className="text-xs text-[#a1a1a1] ml-2">
-        {averageRating.toFixed(1)} ({ratingCount})
+        {ratingCount > 0 ? `${averageRating.toFixed(1)} (${ratingCount})` : "New"}
       </span>
     </div>
   );
