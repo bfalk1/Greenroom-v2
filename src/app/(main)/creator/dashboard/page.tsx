@@ -360,7 +360,7 @@ export default function CreatorDashboardPage() {
         <div className="text-center">
           <h2 className="text-xl font-bold text-white mb-2">Creator Access Required</h2>
           <p className="text-[#a1a1a1] mb-4">
-            Apply to become a creator to access the dashboard.
+            Apply to become a creator to access your studio.
           </p>
           <Button
             onClick={() => router.push("/marketplace")}
@@ -386,7 +386,7 @@ export default function CreatorDashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-white">Creator Dashboard</h1>
+            <h1 className="text-3xl font-bold text-white">Creator Studio</h1>
             <p className="text-[#a1a1a1] mt-1">
               {new Date().toLocaleString("default", {
                 month: "long",

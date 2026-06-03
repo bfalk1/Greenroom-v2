@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, ChevronUp, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Search, Music, ChevronUp, ChevronDown, ArrowRight } from "lucide-react";
+import { eurostile, display } from "@/lib/fonts";
 import { Pagination } from "@/components/ui/pagination";
 import { Sample, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
@@ -309,31 +309,42 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div className={`${eurostile.variable} relative min-h-screen bg-[#050505] text-white`}>
+      {/* ambient green glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-0 h-[460px] w-[680px] -translate-x-1/2 rounded-full opacity-25 blur-[130px]"
+        style={{ background: "radial-gradient(circle, rgba(57,181,74,0.5), transparent 70%)" }}
+      />
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="max-w-5xl mx-auto">
           {/* Hero */}
-          <div className="text-center mb-12 rounded-[32px] border border-[#2a2a2a] bg-[radial-gradient(circle_at_top,rgba(57,181,74,0.18),transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-6 py-12 md:px-12 md:py-16 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-            <span className="inline-flex items-center rounded-full border border-[#39b54a]/30 bg-[#39b54a]/10 px-4 py-1 text-xs font-medium uppercase tracking-[0.24em] text-[#8ee39a]">
+          <div className="relative overflow-hidden text-center mb-14 rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(57,181,74,0.16),transparent_55%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01))] px-6 py-14 md:px-12 md:py-20 shadow-[0_30px_80px_-40px_rgba(0,0,0,0.8)]">
+            <span className="inline-flex items-center rounded-full border border-[#39b54a]/30 bg-[#39b54a]/10 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-[#8ee39a]">
               Discover sounds faster
             </span>
-            <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white md:text-6xl">
+            <h1
+              style={display}
+              className="mx-auto mt-6 max-w-3xl text-[clamp(2.2rem,6vw,4.25rem)] uppercase leading-[0.95] tracking-[-0.01em] text-white"
+            >
               Find the right sample for your next track.
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-[#b3b3b3] md:text-base">
+            <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-[#a1a1a1] md:text-base">
               Search across real creator uploads, preview instantly, and explore by genre or instrument without leaving the page.
             </p>
-            <Link href={user ? "/marketplace" : "/signup"}>
-              <Button className="mt-8 h-12 rounded-full bg-[#39b54a] px-7 text-sm font-semibold text-black shadow-[0_10px_30px_rgba(57,181,74,0.28)] transition hover:bg-[#4bc75d]">
-                {user ? "Go to marketplace" : "Start exploring"}
-              </Button>
+            <Link
+              href={user ? "/marketplace" : "/signup"}
+              className="group mt-9 inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-8 py-4 text-base font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_36px_rgba(0,255,136,0.5)]"
+            >
+              {user ? "Go to marketplace" : "Start exploring"}
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
 
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="mb-16">
             <div className="relative mx-auto max-w-3xl">
-              <div className="flex items-center rounded-2xl border border-[#2a2a2a] bg-[#111111]/95 p-2 shadow-[0_18px_50px_rgba(0,0,0,0.32)] backdrop-blur">
+              <div className="flex items-center rounded-2xl border border-white/10 bg-white/[0.03] p-2 shadow-[0_18px_50px_-20px_rgba(0,0,0,0.6)] backdrop-blur">
                 <div className="flex items-center flex-1 px-4 py-3">
                   <Search className="mr-3 h-5 w-5 text-[#666]" />
                   <input
@@ -348,7 +359,7 @@ export default function ExplorePage() {
                 </div>
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#39b54a] px-6 py-3 text-sm font-semibold text-black transition hover:bg-[#4bc75d] md:px-8"
+                  className="rounded-xl bg-[#39b54a] px-6 py-3 text-sm font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_28px_rgba(0,255,136,0.4)] md:px-8"
                 >
                   Search
                 </button>
@@ -369,13 +380,13 @@ export default function ExplorePage() {
 
           {/* Browse Genres */}
           <div className="mb-12">
-            <h2 className="text-lg font-semibold text-white mb-4">Browse genres</h2>
+            <h2 style={display} className="mb-5 text-lg uppercase tracking-[0.12em] text-white">Browse genres</h2>
             <div className="flex flex-wrap gap-3">
               {genres.map((genre) => (
                 <button
                   key={genre}
                   onClick={() => handleGenreClick(genre)}
-                  className="px-4 py-2 rounded-full border border-[#3a3a3a] text-white text-sm hover:border-[#39b54a] hover:text-[#39b54a] transition"
+                  className="rounded-full border border-white/12 bg-white/[0.02] px-4 py-2 text-sm text-[#cfcfcf] transition hover:border-[#39b54a] hover:bg-[#39b54a]/10 hover:text-[#39b54a]"
                 >
                   {genre}
                 </button>
@@ -385,7 +396,7 @@ export default function ExplorePage() {
                   setFilters(prev => ({ ...prev, genre: "all" }));
                   setShowResults(true);
                 }}
-                className="px-4 py-2 rounded-full border border-[#3a3a3a] text-[#a1a1a1] text-sm hover:border-[#39b54a] hover:text-[#39b54a] transition"
+                className="rounded-full border border-white/12 bg-white/[0.02] px-4 py-2 text-sm text-[#8a8a8a] transition hover:border-[#39b54a] hover:bg-[#39b54a]/10 hover:text-[#39b54a]"
               >
                 Explore All
               </button>
@@ -394,13 +405,13 @@ export default function ExplorePage() {
 
           {/* Browse Instruments */}
           <div className="mb-12">
-            <h2 className="text-lg font-semibold text-white mb-4">Browse instruments</h2>
+            <h2 style={display} className="mb-5 text-lg uppercase tracking-[0.12em] text-white">Browse instruments</h2>
             <div className="flex flex-wrap gap-3">
               {instruments.map((instrument) => (
                 <button
                   key={instrument}
                   onClick={() => handleInstrumentClick(instrument)}
-                  className="px-4 py-2 rounded-full border border-[#3a3a3a] text-white text-sm hover:border-[#39b54a] hover:text-[#39b54a] transition"
+                  className="rounded-full border border-white/12 bg-white/[0.02] px-4 py-2 text-sm text-[#cfcfcf] transition hover:border-[#39b54a] hover:bg-[#39b54a]/10 hover:text-[#39b54a]"
                 >
                   {instrument}
                 </button>
@@ -410,7 +421,7 @@ export default function ExplorePage() {
                   setFilters(prev => ({ ...prev, instrumentType: "all" }));
                   setShowResults(true);
                 }}
-                className="px-4 py-2 rounded-full border border-[#3a3a3a] text-[#a1a1a1] text-sm hover:border-[#39b54a] hover:text-[#39b54a] transition"
+                className="rounded-full border border-white/12 bg-white/[0.02] px-4 py-2 text-sm text-[#8a8a8a] transition hover:border-[#39b54a] hover:bg-[#39b54a]/10 hover:text-[#39b54a]"
               >
                 Explore All
               </button>
@@ -449,16 +460,18 @@ export default function ExplorePage() {
             </div>
 
             {!user && (
-              <div className="mb-6 p-4 bg-gradient-to-r from-[#39b54a]/20 to-[#1a1a1a] border border-[#39b54a]/30 rounded-lg">
+              <div className="mb-6 rounded-2xl border border-[#39b54a]/30 bg-gradient-to-r from-[#39b54a]/15 to-white/[0.02] p-5">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <p className="text-white">
-                    <span className="font-semibold">Subscribe to download.</span>{" "}
+                    <span className="font-bold">Subscribe to download.</span>{" "}
                     <span className="text-[#a1a1a1]">Get unlimited access to all samples.</span>
                   </p>
-                  <Link href="/signup">
-                    <Button className="bg-[#39b54a] hover:bg-[#2da03e] text-black font-semibold">
-                      Get Started
-                    </Button>
+                  <Link
+                    href="/signup"
+                    className="group inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-6 py-3 text-sm font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_28px_rgba(0,255,136,0.4)]"
+                  >
+                    Get Started
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </Link>
                 </div>
               </div>
@@ -466,7 +479,7 @@ export default function ExplorePage() {
 
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-[#a1a1a1]">
+                <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-[#a1a1a1]">
                   {total} sample{total !== 1 ? "s" : ""}
                 </h2>
               </div>
@@ -478,14 +491,14 @@ export default function ExplorePage() {
                     .map((_, i) => (
                       <div
                         key={i}
-                        className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse"
+                        className="h-12 bg-white/[0.03] rounded-lg animate-pulse"
                       />
                     ))}
                 </div>
               ) : samples.length > 0 ? (
-                <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] overflow-hidden">
                   {/* Table Header */}
-                  <div className="grid grid-cols-[auto_1fr_80px_auto] md:grid-cols-[auto_1fr_90px_45px_45px_80px_auto] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                  <div className="grid grid-cols-[auto_1fr_80px_auto] md:grid-cols-[auto_1fr_90px_45px_45px_80px_auto] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-white/8 bg-white/[0.03]">
                     <div className="w-10" />
                     <SortHeader column="name" label="Name" />
                     <div className="hidden md:block"><SortHeader column="genre" label="Genre" /></div>
@@ -496,7 +509,7 @@ export default function ExplorePage() {
                   </div>
 
                   {/* Table Body */}
-                  <div className="divide-y divide-[#2a2a2a]">
+                  <div className="divide-y divide-white/5">
                     {samples.map((sample) => (
                       <ExploreRow
                         key={sample.id}
@@ -511,7 +524,7 @@ export default function ExplorePage() {
                 </div>
               ) : (
                 <div className="text-center py-16">
-                  <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
+                  <Music className="w-12 h-12 text-white/15 mx-auto mb-4" />
                   <p className="text-[#a1a1a1]">
                     No samples found matching your filters.
                   </p>

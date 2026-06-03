@@ -23,6 +23,7 @@ import {
   UserPlus,
   Infinity as InfinityIcon,
   FileText,
+  Upload,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AdminSidebar, AdminSidebarItem } from "@/components/admin/AdminSidebar";
@@ -35,12 +36,14 @@ import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
 import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
 import { InviteInfiniteUserPanel } from "@/components/admin/InviteInfiniteUserPanel";
+import { CreatorUploadsPanel } from "@/components/admin/CreatorUploadsPanel";
 import { toast } from "sonner";
 
 type AdminSection =
   | "overview"
   | "applications"
   | "samples"
+  | "creator-uploads"
   | "payouts"
   | "flagged"
   | "tools"
@@ -209,6 +212,7 @@ export default function AdminDashboardPage() {
       icon: Music,
       badge: stats?.pendingSamples,
     },
+    { id: "creator-uploads", label: "Creator Uploads", icon: Upload },
     { id: "payouts", label: "Payouts", icon: DollarSign },
     { id: "flagged", label: "Flagged", icon: Flag },
     { id: "tools", label: "Tools", icon: Settings },
@@ -1026,6 +1030,10 @@ export default function AdminDashboardPage() {
             <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
               <FlaggedAccountsPanel />
             </div>
+          )}
+
+          {activeSection === "creator-uploads" && (
+            <CreatorUploadsPanel />
           )}
 
           {activeSection === "tools" && (

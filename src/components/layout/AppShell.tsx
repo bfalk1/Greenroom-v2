@@ -7,6 +7,7 @@ import { DesktopSidebar } from "./DesktopSidebar";
 import { DesktopTitleBar } from "./DesktopTitleBar";
 import { DesktopLibrarySync } from "@/components/desktop/DesktopLibrarySync";
 import { NowPlayingBar } from "@/components/audio/NowPlayingBar";
+import { TermsReacceptanceGate } from "@/components/legal/TermsReacceptanceGate";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -59,6 +60,7 @@ export function AppShell({ children }: AppShellProps) {
         <main className="flex-1 pb-24">{children}</main>
         <Footer />
         <NowPlayingBar />
+        <TermsReacceptanceGate />
       </div>
     );
   }
@@ -75,6 +77,7 @@ export function AppShell({ children }: AppShellProps) {
         <DesktopLibrarySync />
         <main className="ml-52 pt-10 pb-24 min-h-screen">{children}</main>
         <NowPlayingBar />
+        <TermsReacceptanceGate />
       </div>
     );
   }
@@ -86,6 +89,7 @@ export function AppShell({ children }: AppShellProps) {
       <main className="flex-1 pb-24">{children}</main>
       <Footer />
       <NowPlayingBar />
+      <TermsReacceptanceGate />
     </div>
   );
 }

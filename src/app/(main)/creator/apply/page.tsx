@@ -247,7 +247,7 @@ export default function CreatorApplicationPage() {
                   onClick={() => router.push("/creator/dashboard")}
                   className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
                 >
-                  Go to Dashboard
+                  Go to Creator Studio
                 </Button>
               </>
             )}

@@ -42,7 +42,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Public paths — no auth required
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
   const isPublicPath = 
     publicPaths.includes(pathname) || 
     pathname.startsWith("/waitlist") ||

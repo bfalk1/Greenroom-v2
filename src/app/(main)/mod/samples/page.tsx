@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
+import { formatSampleType } from "@/lib/utils/sampleType";
 import { toast } from "sonner";
 
 interface SampleCreator {
@@ -457,6 +458,9 @@ export default function ModSamplesPage() {
                           }`}>
                             {sample.status}
                           </span>
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30">
+                            {formatSampleType(sample.sampleType)}
+                          </span>
                         </div>
                         <p className="text-sm text-[#a1a1a1] mt-1">
                           by {sample.creator.artistName || sample.creator.email} · {sample.genre} · {sample.instrumentType}
@@ -525,7 +529,12 @@ export default function ModSamplesPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <h3 className="text-white font-medium">{sample.name}</h3>
+                        <div className="flex items-center gap-3">
+                          <h3 className="text-white font-medium">{sample.name}</h3>
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30">
+                            {formatSampleType(sample.sampleType)}
+                          </span>
+                        </div>
                         <p className="text-sm text-[#a1a1a1] mt-1">
                           by {sample.creator.artistName || sample.creator.email}
                         </p>

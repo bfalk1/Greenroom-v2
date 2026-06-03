@@ -19,6 +19,7 @@ export interface AppUser {
   banner_url: string | null;
   profile_completed: boolean;
   is_whitelisted?: boolean;
+  terms_accepted_at: string | null;
 }
 
 interface UserContextType {
@@ -92,6 +93,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             avatar_url: null,
             banner_url: null,
             profile_completed: false,
+            terms_accepted_at: null,
           });
         }
       } catch (error) {

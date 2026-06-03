@@ -1,10 +1,12 @@
+import { TERMS_EFFECTIVE_DATE_LABEL } from "@/lib/legal";
+
 export default function LicensePage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <h1 className="text-4xl font-bold text-white mb-8">Sample License Agreement</h1>
         <div className="prose prose-invert prose-sm max-w-none space-y-6 text-[#a1a1a1]">
-          <p className="text-sm">Effective Date: April 2026</p>
+          <p className="text-sm">Effective Date: {TERMS_EFFECTIVE_DATE_LABEL}</p>
 
           <h2 className="text-xl font-semibold text-white mt-8">1. Grant of License</h2>
           <p>

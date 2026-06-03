@@ -251,6 +251,7 @@ export async function GET() {
         bio: user.bio,
         banner_url: user.bannerUrl,
         is_whitelisted: user.isWhitelisted ?? false,
+        terms_accepted_at: user.termsAcceptedAt,
       },
     });
   } catch (error) {

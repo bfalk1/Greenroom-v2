@@ -6,6 +6,7 @@ import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, H
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
+import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
@@ -25,6 +26,7 @@ import {
   globalToggleFns,
   setGlobalPlayingId,
   toggleGlobalPlay,
+  stopGlobalPlayback,
 } from "@/components/marketplace/SampleCard";
 import { setNowPlayingQueue, setNowPlayingTrack, setQueueNavigation } from "@/lib/audio/nowPlaying";
 import JSZip from "jszip";
@@ -61,6 +63,7 @@ function LibraryRow({
   userRating,
   isSelected,
   onSelect,
+  onHighlight,
   isChecked,
   statusRefreshKey,
 }: {
@@ -69,6 +72,7 @@ function LibraryRow({
   userRating?: number;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  onHighlight?: () => void;
   isChecked: boolean;
   statusRefreshKey: number;
 }) {
@@ -198,6 +202,7 @@ function LibraryRow({
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    onHighlight?.();
     await togglePlayFn();
   };
 
@@ -269,6 +274,7 @@ function LibraryRow({
       style={{ WebkitUserSelect: "none" } as React.CSSProperties}
       onMouseDown={handleRowMouseDown}
       onMouseUp={isDesktop ? handlePointerUp : undefined}
+      onClick={() => onHighlight?.()}
     >
       {/* Checkbox */}
       <button
@@ -436,6 +442,22 @@ function LibraryRow({
 }
 
 const PAGE_SIZE = 20;
+type LibraryFilterState = {
+  genre: string;
+  instrumentType: string;
+  sampleType: string;
+  key: string;
+  sortBy: string;
+};
+
+const DEFAULT_LIBRARY_FILTERS: LibraryFilterState = {
+  genre: "all",
+  instrumentType: "all",
+  sampleType: "all",
+  key: "all",
+  sortBy: "random",
+};
+
 export default function LibraryPage() {
   const { user, loading: userLoading } = useUser();
   const [samples, setSamples] = useState<LibrarySample[]>([]);
@@ -447,7 +469,40 @@ export default function LibraryPage() {
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [localStatusRefreshKey, setLocalStatusRefreshKey] = useState(0);
+  const [filters, setFilters] = useState<LibraryFilterState>(DEFAULT_LIBRARY_FILTERS);
+  const [filtersKey, setFiltersKey] = useState(0);
   const hasFetchedInitiallyRef = useRef(false);
+
+  const isFiltered =
+    searchQuery.trim() !== "" ||
+    filters.genre !== "all" ||
+    filters.instrumentType !== "all" ||
+    filters.sampleType !== "all" ||
+    filters.key !== "all";
+
+  // Build the shared query params for both the paginated fetch and the
+  // fetch-all used by bulk download, so selection/download respect filters.
+  const applyFilters = useCallback(
+    (params: URLSearchParams) => {
+      if (searchQuery) params.set("search", searchQuery);
+      if (filters.genre !== "all") params.set("genre", filters.genre);
+      if (filters.instrumentType !== "all") {
+        params.set("instrumentType", filters.instrumentType);
+      }
+      if (filters.sampleType !== "all") params.set("sampleType", filters.sampleType);
+      if (filters.key !== "all") {
+        if (filters.key === "Major" || filters.key === "Minor") {
+          params.set("scale", filters.key);
+        } else {
+          params.set("key", filters.key);
+        }
+      }
+      if (filters.sortBy && filters.sortBy !== "random") {
+        params.set("sortBy", filters.sortBy);
+      }
+    },
+    [searchQuery, filters]
+  );
 
   const fetchAllLibrarySamples = useCallback(async () => {
     const allSamples: LibrarySample[] = [];
@@ -459,9 +514,7 @@ export default function LibraryPage() {
         limit: String(PAGE_SIZE),
         offset: String(offset),
       });
-      if (searchQuery) {
-        params.set("search", searchQuery);
-      }
+      applyFilters(params);
 
       const res = await fetch(`/api/library?${params.toString()}`);
       const data = await res.json();
@@ -482,7 +535,7 @@ export default function LibraryPage() {
     } while (allSamples.length < totalCount);
 
     return allSamples;
-  }, [searchQuery]);
+  }, [applyFilters]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -565,7 +618,7 @@ export default function LibraryPage() {
         limit: String(PAGE_SIZE),
         offset: String((page - 1) * PAGE_SIZE),
       });
-      if (searchQuery) params.set("search", searchQuery);
+      applyFilters(params);
 
       const res = await fetch(`/api/library?${params}`);
       const data = await res.json();
@@ -583,15 +636,30 @@ export default function LibraryPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, searchQuery]);
+  }, [user, applyFilters]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handlePageChange = (page: number) => {
+    setSelectedIndex(0);
     setCurrentPage(page);
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+
+  const handleFilterChange = (newFilters: LibraryFilterState) => {
+    setFilters(newFilters);
+    setCurrentPage(1);
+    setSelectedIndex(0);
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilters(DEFAULT_LIBRARY_FILTERS);
+    setFiltersKey((k) => k + 1);
+    setCurrentPage(1);
+    setSelectedIndex(0);
   };
 
   // Initial ratings load
@@ -644,14 +712,39 @@ export default function LibraryPage() {
     }
   }, [currentPage]);
 
+  const handleKeyboardPlay = useCallback((index: number) => {
+    const sample = samples[index];
+    if (sample) toggleGlobalPlay(sample.id);
+  }, [samples]);
+
+  const { selectedIndex, setSelectedIndex } = useKeyboardNavigation(samples, {
+    enabled: samples.length > 0 && !loading,
+    onPlay: handleKeyboardPlay,
+    onReachEnd: () => goToNextPage(),
+    onReachStart: () => goToPrevPage(),
+  });
+
+  // Stop playback on Escape / ArrowLeft, matching the marketplace.
+  useEffect(() => {
+    const handleStop = (e: KeyboardEvent) => {
+      if (e.key === "Escape" || e.key === "ArrowLeft") {
+        stopGlobalPlayback();
+      }
+    };
+    window.addEventListener("keydown", handleStop);
+    return () => window.removeEventListener("keydown", handleStop);
+  }, []);
+
   useEffect(() => {
     if (loading || samples.length === 0 || !pendingPlayRef.current) return;
     const direction = pendingPlayRef.current;
     pendingPlayRef.current = null;
-    const target = direction === "first" ? samples[0] : samples[samples.length - 1];
+    const targetIndex = direction === "first" ? 0 : samples.length - 1;
+    const target = samples[targetIndex];
     if (!target) return;
+    setSelectedIndex(targetIndex);
     setTimeout(() => toggleGlobalPlay(target.id), 0);
-  }, [samples, loading]);
+  }, [samples, loading, setSelectedIndex]);
 
   useEffect(() => {
     setQueueNavigation({
@@ -682,14 +775,6 @@ export default function LibraryPage() {
     return () => clearTimeout(timer);
   }, [fetchLibrary, searchQuery, user, currentPage]);
 
-  // Keyboard navigation
-  const { selectedIndex } = useKeyboardNavigation(samples, {
-    enabled: samples.length > 0 && !loading,
-    onPlay: () => {},
-    onReachEnd: () => goToNextPage(),
-    onReachStart: () => goToPrevPage(),
-  });
-
   if (userLoading || (loading && !hasFetchedInitiallyRef.current)) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
@@ -708,7 +793,7 @@ export default function LibraryPage() {
           </p>
         </div>
 
-        {samples.length > 0 && (
+        {(samples.length > 0 || isFiltered) && (
           <div className="mb-6 space-y-4">
             <div className="flex items-center gap-4">
               <div className="relative flex-1">
@@ -737,6 +822,16 @@ export default function LibraryPage() {
                 </Button>
               )}
             </div>
+
+            <SampleFilters key={filtersKey} onFilterChange={handleFilterChange} />
+          </div>
+        )}
+
+        {samples.length > 0 && !loading && (
+          <div className="mb-4 text-xs text-[#666] flex items-center gap-2">
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">↑↓</span> navigate
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
+            <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Esc</span> stop
           </div>
         )}
 
@@ -759,6 +854,7 @@ export default function LibraryPage() {
                   userRating={userRatings[sample.id]}
                   isSelected={selectedIndex === index}
                   onSelect={toggleSelect}
+                  onHighlight={() => setSelectedIndex(index)}
                   isChecked={selectedIds.has(sample.id)}
                   statusRefreshKey={localStatusRefreshKey}
                 />
@@ -779,10 +875,19 @@ export default function LibraryPage() {
               </div>
             )}
           </div>
-        ) : samples.length > 0 ? (
+        ) : isFiltered ? (
           <div className="text-center py-16">
             <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
-            <p className="text-[#a1a1a1]">No samples match your search.</p>
+            <p className="text-[#a1a1a1] mb-6">
+              No samples in your library match these filters.
+            </p>
+            <Button
+              onClick={clearFilters}
+              variant="outline"
+              className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+            >
+              Clear filters
+            </Button>
           </div>
         ) : (
           <div className="text-center py-16">
