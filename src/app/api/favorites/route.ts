@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const offset = Math.max(0, Math.min(parseInt(searchParams.get("offset") || "0") || 0, 10000));
 
     // Fetch sample favorites (existing behavior)
     const [favorites, total] = await Promise.all([

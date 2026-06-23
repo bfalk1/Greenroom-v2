@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 
 // PATCH /api/user/email — Change email with password verification
@@ -47,12 +46,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Create admin client for email update
-    const supabaseAdmin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(newEmail)) {
@@ -74,29 +67,27 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Update email in Supabase Auth using admin client
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      authUser.id,
-      { email: newEmail, email_confirm: true }
-    );
+    // Use the user-scoped session client so Supabase emails a confirmation link
+    // to the NEW address; the change only takes effect once the user clicks it.
+    // We do NOT auto-confirm or pre-update auth/our DB — ownership of the new
+    // mailbox must be proven first (prevents verified-email squatting). Our DB
+    // email is reconciled from the auth email on the next /api/user/me load.
+    const { error: updateError } = await supabase.auth.updateUser({
+      email: newEmail,
+    });
 
     if (updateError) {
       console.error("Email update error:", updateError);
       return NextResponse.json(
-        { error: "Failed to update email" },
+        { error: "Failed to start email change" },
         { status: 500 }
       );
     }
 
-    // Update email in our database too
-    await prisma.user.update({
-      where: { id: authUser.id },
-      data: { email: newEmail },
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      message: "Email updated successfully" 
+    return NextResponse.json({
+      success: true,
+      message:
+        "Check your new email for a confirmation link to complete the change.",
     });
   } catch (error) {
     console.error("PATCH /api/user/email error:", error);

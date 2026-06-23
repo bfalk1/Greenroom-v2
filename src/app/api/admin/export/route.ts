@@ -2,6 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 
+/**
+ * Escape a value for a CSV cell, defending against spreadsheet formula
+ * injection. Values like `=HYPERLINK(...)`, `+`, `-`, `@`, or a leading
+ * tab/CR auto-execute when an admin opens the file in Excel/Sheets, so we
+ * prefix a single quote; we also RFC-4180-quote any value containing a comma,
+ * quote, or newline so user-supplied names/emails can't corrupt columns.
+ */
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  let s = String(value);
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = "'" + s;
+  }
+  if (/[",\r\n]/.test(s)) {
+    s = '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/** Build one CSV row from cells, escaping each. */
+function csvRow(cells: unknown[]): string {
+  return cells.map(csvCell).join(",") + "\n";
+}
+
 // GET /api/admin/export?type=revenue|downloads|users|payouts|transactions&from=&to=
 export async function GET(request: NextRequest) {
   try {
@@ -49,7 +73,14 @@ export async function GET(request: NextRequest) {
 
         csv = "Date,User Email,Username,Credits,Amount (cents),Type\n";
         purchases.forEach((p) => {
-          csv += `${p.createdAt.toISOString()},${p.user.email || ""},${p.user.username || ""},${p.amount},${Math.abs(p.amount) * 10},CREDIT_PURCHASE\n`;
+          csv += csvRow([
+            p.createdAt.toISOString(),
+            p.user.email || "",
+            p.user.username || "",
+            p.amount,
+            Math.abs(p.amount) * 10,
+            "CREDIT_PURCHASE",
+          ]);
         });
 
         // Add subscription revenue if available. Active state comes from
@@ -68,7 +99,14 @@ export async function GET(request: NextRequest) {
         subscriptions.forEach((s) => {
           const tierName = s.tier?.name || "unknown";
           const amount = s.tier?.priceUsdCents || 0;
-          csv += `${s.currentPeriodStart?.toISOString() || ""},${s.user.email || ""},${s.user.username || ""},0,${amount},SUBSCRIPTION_${tierName.toUpperCase()}\n`;
+          csv += csvRow([
+            s.currentPeriodStart?.toISOString() || "",
+            s.user.email || "",
+            s.user.username || "",
+            0,
+            amount,
+            `SUBSCRIPTION_${tierName.toUpperCase()}`,
+          ]);
         });
 
         filename = `greenroom_revenue_${new Date().toISOString().split("T")[0]}.csv`;
@@ -94,7 +132,14 @@ export async function GET(request: NextRequest) {
         csv = "Date,User Email,Username,Sample Name,Creator,Credits Spent\n";
         downloads.forEach((d) => {
           if (!d.sample) return;
-          csv += `${d.createdAt.toISOString()},${d.user.email || ""},${d.user.username || ""},${d.sample.name},${d.sample.creator.artistName || d.sample.creator.username},${d.creditsSpent}\n`;
+          csv += csvRow([
+            d.createdAt.toISOString(),
+            d.user.email || "",
+            d.user.username || "",
+            d.sample.name,
+            d.sample.creator.artistName || d.sample.creator.username,
+            d.creditsSpent,
+          ]);
         });
 
         filename = `greenroom_downloads_${new Date().toISOString().split("T")[0]}.csv`;
@@ -118,7 +163,15 @@ export async function GET(request: NextRequest) {
         csv = "Joined,Email,Username,Role,Credits,Purchases,Samples Uploaded\n";
         users.forEach((u) => {
           const credits = u.creditBalance?.balance ?? 0;
-          csv += `${u.createdAt.toISOString()},${u.email || ""},${u.username || ""},${u.role},${credits},${u._count.purchases},${u._count.samples}\n`;
+          csv += csvRow([
+            u.createdAt.toISOString(),
+            u.email || "",
+            u.username || "",
+            u.role,
+            credits,
+            u._count.purchases,
+            u._count.samples,
+          ]);
         });
 
         filename = `greenroom_users_${new Date().toISOString().split("T")[0]}.csv`;
@@ -136,7 +189,15 @@ export async function GET(request: NextRequest) {
 
         csv = "Date,Creator Email,Artist Name,Credits Spent,Amount (cents),Status,Stripe Transfer ID\n";
         payouts.forEach((p) => {
-          csv += `${p.createdAt.toISOString()},${p.creator.email || ""},${p.creator.artistName || p.creator.username},${p.totalCreditsSpent},${p.amountUsdCents},${p.status},${p.stripeTransferId || ""}\n`;
+          csv += csvRow([
+            p.createdAt.toISOString(),
+            p.creator.email || "",
+            p.creator.artistName || p.creator.username,
+            p.totalCreditsSpent,
+            p.amountUsdCents,
+            p.status,
+            p.stripeTransferId || "",
+          ]);
         });
 
         filename = `greenroom_payouts_${new Date().toISOString().split("T")[0]}.csv`;
@@ -154,7 +215,14 @@ export async function GET(request: NextRequest) {
 
         csv = "Date,User Email,Username,Type,Amount,Note\n";
         transactions.forEach((t) => {
-          csv += `${t.createdAt.toISOString()},${t.user.email || ""},${t.user.username || ""},${t.type},${t.amount},${t.note || ""}\n`;
+          csv += csvRow([
+            t.createdAt.toISOString(),
+            t.user.email || "",
+            t.user.username || "",
+            t.type,
+            t.amount,
+            t.note || "",
+          ]);
         });
 
         filename = `greenroom_transactions_${new Date().toISOString().split("T")[0]}.csv`;
@@ -172,7 +240,19 @@ export async function GET(request: NextRequest) {
 
         csv = "Date,Name,Creator,Genre,Type,Key,BPM,Credits,Downloads,Rating,Status\n";
         samples.forEach((s) => {
-          csv += `${s.createdAt.toISOString()},${s.name},${s.creator.artistName || s.creator.username},${s.genre || ""},${s.sampleType},${s.key || ""},${s.bpm || ""},${s.creditPrice},${s.downloadCount},${s.ratingAvg?.toFixed(2) || ""},${s.status}\n`;
+          csv += csvRow([
+            s.createdAt.toISOString(),
+            s.name,
+            s.creator.artistName || s.creator.username,
+            s.genre || "",
+            s.sampleType,
+            s.key || "",
+            s.bpm || "",
+            s.creditPrice,
+            s.downloadCount,
+            s.ratingAvg?.toFixed(2) || "",
+            s.status,
+          ]);
         });
 
         filename = `greenroom_samples_${new Date().toISOString().split("T")[0]}.csv`;

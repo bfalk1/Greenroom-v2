@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const offset = Math.max(0, Math.min(parseInt(searchParams.get("offset") || "0") || 0, 10000));
     const search = searchParams.get("search") || "";
     const genre = searchParams.get("genre") || "";
     const instrumentType = searchParams.get("instrumentType") || "";
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const scale = searchParams.get("scale") || "";
     const sortBy = searchParams.get("sortBy") || "";
 
-    const where: any = { userId: authUser.id, sampleId: { not: null } };
+    const where: Prisma.PurchaseWhereInput = { userId: authUser.id, sampleId: { not: null } };
 
     // Filters apply to the related sample; Prisma treats sibling keys as AND.
     const sampleWhere: Prisma.SampleWhereInput = {};
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     );
     
     const validPaths = previewPaths.filter((p): p is string => p !== null);
-    let signedUrlMap: Record<string, string> = {};
+    const signedUrlMap: Record<string, string> = {};
     
     if (validPaths.length > 0) {
       const { data } = await serviceClient.storage

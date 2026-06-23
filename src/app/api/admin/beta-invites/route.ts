@@ -143,10 +143,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Optional custom credit grant (e.g. infinite/premium invites). Postgres int max is ~2.1B.
+    // Only ADMINs may set a custom amount — a MODERATOR issuing invites gets the
+    // default grant, so a rogue/compromised moderator can't mint large balances.
     let creditsOverride: number | undefined;
     if (credits !== undefined) {
       if (typeof credits !== "number" || !Number.isInteger(credits) || credits < 0 || credits > 2_000_000_000) {
         return NextResponse.json({ error: "Credits must be a non-negative integer under 2,000,000,000" }, { status: 400 });
+      }
+      if (admin.role !== "ADMIN") {
+        return NextResponse.json({ error: "Only admins can set a custom credit amount on invites" }, { status: 403 });
       }
       creditsOverride = credits;
     }

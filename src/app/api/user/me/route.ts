@@ -11,6 +11,11 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Invites (CREATOR role, beta credits, paywall bypass) are only honored once
+    // the email is verified — otherwise registering with another person's
+    // invited address would inherit their entitlements. Mirrors the callback.
+    const emailConfirmed = Boolean(authUser.email_confirmed_at);
+
     // Find user in our DB (by ID first, then by email for seeded accounts)
     let user = await prisma.user.findUnique({
       where: { id: authUser.id },
@@ -41,8 +46,8 @@ export async function GET() {
       let role: "USER" | "CREATOR" = "USER";
       let artistName: string | undefined;
       let pendingInvite: { email: string } | null = null;
-      
-      if (authUser.email) {
+
+      if (authUser.email && emailConfirmed) {
         const invite = await prisma.creatorInvite.findUnique({
           where: { email: authUser.email },
         });
@@ -82,7 +87,7 @@ export async function GET() {
 
       // Check for beta invite
       let betaCredits = 0;
-      if (authUser.email) {
+      if (authUser.email && emailConfirmed) {
         const betaInvite = await prisma.betaInvite.findUnique({
           where: { email: authUser.email },
         });
@@ -144,7 +149,7 @@ export async function GET() {
           },
         });
       }
-    } else if (user.role === "USER" && authUser.email) {
+    } else if (user.role === "USER" && authUser.email && emailConfirmed) {
       // Existing user - check if they have a pending invite to upgrade
       const invite = await prisma.creatorInvite.findUnique({
         where: { email: authUser.email },
@@ -191,7 +196,7 @@ export async function GET() {
       }
 
       // Check for pending beta invite for existing users
-      if (authUser.email) {
+      if (authUser.email && emailConfirmed) {
         const betaInvite = await prisma.betaInvite.findUnique({
           where: { email: authUser.email },
         });
@@ -228,6 +233,24 @@ export async function GET() {
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
         }
+      }
+    }
+
+    // Reconcile our stored email with the verified auth email — e.g. after the
+    // user confirmed an email change (see PATCH /api/user/email). Keyed by auth
+    // id; guarded so a rare email collision can't break the whole request.
+    if (authUser.email && user.email !== authUser.email) {
+      try {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { email: authUser.email },
+          include: {
+            creditBalance: true,
+            subscription: { include: { tier: true } },
+          },
+        });
+      } catch (e) {
+        console.error("Failed to reconcile user email:", e);
       }
     }
 

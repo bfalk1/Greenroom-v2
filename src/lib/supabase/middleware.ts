@@ -31,24 +31,67 @@ export async function updateSession(request: NextRequest) {
 
   const {
     data: { user },
-    error: authError,
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  
-  // Log for debugging API auth issues
-  if (pathname.startsWith("/api/")) {
-    console.log("[Middleware]", pathname, { userId: user?.id, authError: authError?.message });
+
+  // For any authenticated request, load the account's status ONCE. Reused for
+  // both suspension enforcement (immediately below) and the subscription
+  // paywall further down, so we don't query the users table twice.
+  let userData:
+    | { subscription_status: string | null; role: string | null; is_active: boolean | null }
+    | null = null;
+  if (user) {
+    const { data } = await supabase
+      .from("users")
+      .select("subscription_status, role, is_active")
+      .eq("id", user.id)
+      .single();
+    userData = data;
+
+    // Suspended accounts (is_active = false) are blocked everywhere except the
+    // auth pages (so they can still sign out / read the notice) and health.
+    // This is the real enforcement point — admin "suspend" also revokes the
+    // Supabase session, but a still-valid cookie must not grant access.
+    if (userData && userData.is_active === false) {
+      const allowedWhileSuspended =
+        pathname === "/login" ||
+        pathname === "/signup" ||
+        pathname === "/callback" ||
+        pathname.startsWith("/api/health");
+
+      if (!allowedWhileSuspended) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Account suspended" },
+            { status: 403 }
+          );
+        }
+        const url = request.nextUrl.clone();
+        url.pathname = "/login";
+        url.searchParams.set("error", "suspended");
+        return NextResponse.redirect(url);
+      }
+      return supabaseResponse;
+    }
   }
 
-  // Public paths — no auth required
+  // Public paths — no auth required.
+  // Sample reads are public per-endpoint via an ALLOWLIST (not a blanket
+  // startsWith): only the catalog list, a single sample, and its preview. Any
+  // other /api/samples/** sub-route (e.g. following) is NOT public by default,
+  // so a future sub-route can't silently ship unauthenticated.
   const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
-  const isPublicPath = 
-    publicPaths.includes(pathname) || 
+  const isPublicSamplePath =
+    pathname === "/api/samples" ||
+    /^\/api\/samples\/[^/]+$/.test(pathname) ||
+    /^\/api\/samples\/[^/]+\/preview$/.test(pathname);
+  const isPublicPath =
+    publicPaths.includes(pathname) ||
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
-    pathname.startsWith("/api/samples") ||
+    isPublicSamplePath ||
     pathname.startsWith("/api/genres") ||
     pathname.startsWith("/api/search") ||
     pathname.startsWith("/artist/") ||
@@ -90,16 +133,9 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/admin/") ||
     pathname.startsWith("/mod/");
   
-  // Check subscription in DB for paywall routes
+  // Check subscription in DB for paywall routes (reuses the userData loaded above).
   if (user && !isPaywallExempt) {
-    // Need to check subscription status
-    const { data: userData } = await supabase
-      .from("users")
-      .select("subscription_status, role")
-      .eq("id", user.id)
-      .single();
-    
-    const hasActiveSubscription = 
+    const hasActiveSubscription =
       userData?.subscription_status === "active" || 
       userData?.subscription_status === "past_due" ||
       userData?.role === "CREATOR" ||

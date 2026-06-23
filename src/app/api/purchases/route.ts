@@ -60,6 +60,11 @@ export async function POST(request: NextRequest) {
           throw new Error("You already own this sample");
         }
 
+        // Creators can't buy their own samples (would just cycle credits).
+        if (sample.creatorId === authUser.id) {
+          throw new Error("You cannot purchase your own sample");
+        }
+
         itemName = sample.name;
         itemPrice = sample.creditPrice;
         itemType = "sample";
@@ -84,9 +89,20 @@ export async function POST(request: NextRequest) {
           throw new Error("You already own this preset");
         }
 
+        if (preset.creatorId === authUser.id) {
+          throw new Error("You cannot purchase your own preset");
+        }
+
         itemName = preset.name;
         itemPrice = preset.creditPrice;
         itemType = "preset";
+      }
+
+      // Defense-in-depth: a malformed/maliciously-edited item price must never
+      // turn a "purchase" into a credit grant (negative price → decrement of a
+      // negative → balance increase). Require a positive whole number.
+      if (!Number.isInteger(itemPrice) || itemPrice < 1) {
+        throw new Error("Item is not purchasable");
       }
 
       // Check sufficient credits

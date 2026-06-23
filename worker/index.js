@@ -7,14 +7,30 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { PrismaClient } from "@prisma/client";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import cron from "node-cron";
 
-const execAsync = promisify(exec);
+// execFile (no shell) is used for ALL external commands. ffmpeg/ffprobe
+// arguments — including the input path derived from a creator-controlled
+// fileUrl — are passed as an argv array, so shell metacharacters can never be
+// interpreted. Never reintroduce exec()/a shell string here.
+const execFileAsync = promisify(execFile);
+
+// Audio container extensions ffmpeg may need as a format hint. The extension is
+// only ever taken from this allow-list; anything else falls back to ".wav" so a
+// crafted fileUrl can't smuggle unexpected characters into a temp filename.
+const ALLOWED_AUDIO_EXTS = new Set([
+  ".wav", ".aif", ".aiff", ".flac", ".mp3", ".m4a", ".ogg", ".oga", ".wma", ".aac",
+]);
+
+function safeAudioExt(fileUrl) {
+  const ext = path.extname(String(fileUrl || "")).toLowerCase();
+  return ALLOWED_AUDIO_EXTS.has(ext) ? ext : ".wav";
+}
 
 // Debug mode - set DEBUG=true in Railway to enable verbose logging
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -41,8 +57,7 @@ const {
 
 debug("Environment check:", {
   hasDbUrl: !!DATABASE_URL,
-  dbUrlPrefix: DATABASE_URL?.substring(0, 30) + "...",
-  supabaseUrl: NEXT_PUBLIC_SUPABASE_URL,
+  hasSupabaseUrl: !!NEXT_PUBLIC_SUPABASE_URL,
   hasServiceKey: !!SUPABASE_SERVICE_ROLE_KEY,
   cronSchedule: CRON_SCHEDULE,
   nodeEnv: process.env.NODE_ENV,
@@ -95,39 +110,45 @@ async function ensureBucketExists() {
 
 async function generatePreview(inputPath, outputPath) {
   const startTime = Date.now();
-  
-  // Probe the file first to understand what we're dealing with
+
+  // Probe the file first to understand what we're dealing with.
+  // Args are passed as an array to execFile — no shell, so inputPath is inert.
   try {
-    const probeCmd = `ffprobe -v error -show_entries stream=codec_name,sample_fmt,sample_rate,channels -of json "${inputPath}"`;
-    const { stdout: probeOutput } = await execAsync(probeCmd);
+    const { stdout: probeOutput } = await execFileAsync("ffprobe", [
+      "-v", "error",
+      "-show_entries", "stream=codec_name,sample_fmt,sample_rate,channels",
+      "-of", "json",
+      inputPath,
+    ]);
     debug("ffprobe result:", probeOutput);
   } catch (probeError) {
     debug("ffprobe failed (continuing anyway):", probeError.message);
   }
-  
-  // Try multiple strategies in order of preference
+
+  // Try multiple strategies in order of preference. Each strategy is an argv
+  // array handed to execFile('ffmpeg', args) — never a shell string.
   const strategies = [
     // Strategy 1: Standard conversion with aformat filter for 32-bit float WAV
-    `ffmpeg -y -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
-    
+    ["-y", "-i", inputPath, "-af", "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo", "-t", String(PREVIEW_DURATION), "-b:a", PREVIEW_BITRATE, outputPath],
+
     // Strategy 2: Force WAV demuxer with ignore_unknown for non-standard WAV chunks
-    `ffmpeg -y -f wav -ignore_unknown -i "${inputPath}" -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
-    
+    ["-y", "-f", "wav", "-ignore_unknown", "-i", inputPath, "-af", "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo", "-t", String(PREVIEW_DURATION), "-b:a", PREVIEW_BITRATE, outputPath],
+
     // Strategy 3: Try as raw 32-bit float PCM (common for DAW exports)
-    `ffmpeg -y -f f32le -ar 44100 -ac 2 -i "${inputPath}" -t ${PREVIEW_DURATION} -b:a ${PREVIEW_BITRATE} "${outputPath}"`,
-    
+    ["-y", "-f", "f32le", "-ar", "44100", "-ac", "2", "-i", inputPath, "-t", String(PREVIEW_DURATION), "-b:a", PREVIEW_BITRATE, outputPath],
+
     // Strategy 4: Use lavfi to generate silence if all else fails (marks as needing manual review)
     // This ensures the pipeline doesn't break completely
   ];
-  
+
   let lastError = null;
-  
+
   for (let i = 0; i < strategies.length; i++) {
-    const cmd = strategies[i];
-    debug(`Trying strategy ${i + 1}:`, cmd);
-    
+    const args = strategies[i];
+    debug(`Trying strategy ${i + 1}:`, ["ffmpeg", ...args].join(" "));
+
     try {
-      const { stdout, stderr } = await execAsync(cmd);
+      const { stdout, stderr } = await execFileAsync("ffmpeg", args);
       const duration = Date.now() - startTime;
       debug(`Strategy ${i + 1} succeeded in ${duration}ms`);
       if (stderr) debug("ffmpeg stderr:", stderr.substring(0, 500));
@@ -244,8 +265,10 @@ async function uploadPreview(localPath, remotePath) {
 async function processSample(sample) {
   const tmpDir = os.tmpdir();
   
-  // Preserve original extension from fileUrl - ffmpeg needs correct extension to detect format
-  const originalExt = path.extname(sample.fileUrl) || '.wav';
+  // Preserve original extension from fileUrl as a format hint for ffmpeg, but
+  // only ever from the allow-list — sample.fileUrl is creator-controlled and
+  // must not be able to inject characters into the temp filename.
+  const originalExt = safeAudioExt(sample.fileUrl);
   const inputFile = path.join(tmpDir, `${sample.id}_input${originalExt}`);
   const outputFile = path.join(tmpDir, `${sample.id}_preview.mp3`);
   const sampleStartTime = Date.now();
@@ -431,7 +454,7 @@ debug("System info:", {
 });
 
 // Check ffmpeg availability
-execAsync("ffmpeg -version")
+execFileAsync("ffmpeg", ["-version"])
   .then(({ stdout }) => {
     const version = stdout.split("\n")[0];
     console.log(`ffmpeg: ${version}`);

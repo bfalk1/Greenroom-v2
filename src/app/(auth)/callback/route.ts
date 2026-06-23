@@ -29,8 +29,16 @@ export async function GET(request: Request) {
       let betaCredits = 0;
       let inviteArtistName: string | null = null;
 
+      // Only honor invites once the email is verified. Otherwise anyone who
+      // signs up with someone else's invited address would inherit the CREATOR
+      // role / credits / paywall bypass. If Supabase email confirmation is on,
+      // email_confirmed_at is always set here; this is defense-in-depth in case
+      // it is ever turned off. Unverified users are created as plain USERs and
+      // can re-consume the invite on their next (verified) sign-in.
+      const emailConfirmed = Boolean(data.user.email_confirmed_at);
+
       // Check for a valid creator invite (for both new and existing users)
-      if (data.user.email) {
+      if (data.user.email && emailConfirmed) {
         const invite = await prisma.creatorInvite.findUnique({
           where: { email: data.user.email },
         });
