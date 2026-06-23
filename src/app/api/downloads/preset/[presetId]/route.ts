@@ -59,6 +59,11 @@ export async function GET(
     const bucket = parts[0];
     const path = parts.slice(1).join("/");
 
+    // Defense-in-depth: preset files always live in the private `presets` bucket.
+    if (bucket !== "presets" || !path || fileUrl.includes("..")) {
+      return NextResponse.json({ error: "Invalid file reference" }, { status: 400 });
+    }
+
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!

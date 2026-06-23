@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
+import { isOwnedStorageRef, isSafeStorageRef } from "@/lib/storage";
 
 // Display names for synth enums
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sortBy") || "popular";
     const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const offset = Math.max(0, Math.min(parseInt(searchParams.get("offset") || "0") || 0, 10000));
 
     const where: Prisma.PresetWhereInput = {
       status: "PUBLISHED",
@@ -260,7 +261,7 @@ export async function GET(request: NextRequest) {
 
     const validPaths = previewPaths.filter((p): p is string => p !== null);
 
-    let signedUrlMap: Record<string, string> = {};
+    const signedUrlMap: Record<string, string> = {};
     if (validPaths.length > 0) {
       const { data } = await serviceClient.storage
         .from("previews")
@@ -373,6 +374,17 @@ export async function POST(request: NextRequest) {
         { error: "Audio preview is required for presets" },
         { status: 400 }
       );
+    }
+
+    // fileUrl/previewUrl are later split into <bucket>/<path> and read with the
+    // service-role client. Require them to reference objects this creator owns
+    // (preset file in `presets`, audio preview in `previews`) — never another
+    // tenant's bucket/object, and never anything with path/shell metacharacters.
+    if (!isOwnedStorageRef(fileUrl, "presets", authUser.id)) {
+      return NextResponse.json({ error: "Invalid file reference" }, { status: 400 });
+    }
+    if (!isSafeStorageRef(previewUrl, "previews")) {
+      return NextResponse.json({ error: "Invalid preview reference" }, { status: 400 });
     }
 
     // Validate enum values

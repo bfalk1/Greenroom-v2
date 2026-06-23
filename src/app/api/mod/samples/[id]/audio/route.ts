@@ -43,6 +43,11 @@ export async function GET(
     const bucket = parts[0];
     const path = parts.slice(1).join("/");
 
+    // Defense-in-depth: sample audio always lives in the private `samples` bucket.
+    if (bucket !== "samples" || !path || sample.fileUrl.includes("..")) {
+      return NextResponse.json({ error: "Invalid file reference" }, { status: 400 });
+    }
+
     const serviceClient = createServiceClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!

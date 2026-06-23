@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { validateRasterImage } from "@/lib/upload";
 
 // Use service role for storage operations (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -26,29 +27,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "File must be an image" }, { status: 400 });
-    }
-
     // Validate file size (5MB)
     if (file.size > 5 * 1024 * 1024) {
       return NextResponse.json({ error: "File must be smaller than 5MB" }, { status: 400 });
     }
 
-    // Generate filename
-    const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const filename = `${user.id}-${Date.now()}.${ext}`;
-
-    // Convert to buffer
+    // Convert to buffer and verify it's a real raster image by magic bytes —
+    // never trust the client MIME (which would allow image/svg+xml -> stored
+    // active content in a public bucket). ext + contentType are server-derived.
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    const image = validateRasterImage(file.name, buffer);
+    if (!image.ok) {
+      return NextResponse.json({ error: image.error }, { status: 400 });
+    }
+
+    const filename = `${user.id}-${Date.now()}.${image.ext}`;
 
     // Upload using service role (bypasses RLS)
     const { error: uploadError } = await supabaseAdmin.storage
       .from("avatars")
       .upload(filename, buffer, {
-        contentType: file.type,
+        contentType: image.contentType,
         cacheControl: "3600",
         upsert: true,
       });

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 
-// GET /api/samples/[id] — Public, return single sample
+// GET /api/samples/[id] — Public for PUBLISHED samples; DRAFT/REVIEW are visible
+// only to the owning creator or a MODERATOR/ADMIN.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -29,6 +30,51 @@ export async function GET(
       return NextResponse.json({ error: "Sample not found" }, { status: 404 });
     }
 
+    // Only published, active samples are public. For anything pre-publication
+    // (DRAFT/REVIEW or deactivated), require the viewer to be the owner or a
+    // moderator/admin — and 404 (not 403) so we don't confirm the id exists.
+    const isPublic = sample.status === "PUBLISHED" && sample.isActive;
+    if (!isPublic) {
+      const supabase = await createClient();
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      let allowed = false;
+      if (authUser) {
+        if (authUser.id === sample.creatorId) {
+          allowed = true;
+        } else {
+          const viewer = await prisma.user.findUnique({
+            where: { id: authUser.id },
+            select: { role: true },
+          });
+          allowed = viewer?.role === "MODERATOR" || viewer?.role === "ADMIN";
+        }
+      }
+
+      if (!allowed) {
+        return NextResponse.json({ error: "Sample not found" }, { status: 404 });
+      }
+    }
+
+    // Never expose the raw private `samples/` storage path. Hand back a
+    // short-lived signed URL to the public MP3 preview when one exists.
+    let previewSignedUrl: string | null = null;
+    if (sample.previewUrl?.startsWith("previews/")) {
+      const { createClient: createServiceClient } = await import(
+        "@supabase/supabase-js"
+      );
+      const serviceClient = createServiceClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+      const { data } = await serviceClient.storage
+        .from("previews")
+        .createSignedUrl(sample.previewUrl.replace("previews/", ""), 3600);
+      previewSignedUrl = data?.signedUrl ?? null;
+    }
+
     const mapped = {
       id: sample.id,
       name: sample.name,
@@ -45,7 +91,8 @@ export async function GET(
       bpm: sample.bpm,
       credit_price: sample.creditPrice,
       tags: sample.tags,
-      file_url: sample.previewUrl || sample.fileUrl,
+      file_url: previewSignedUrl,
+      preview_url: previewSignedUrl,
       cover_art_url: sample.coverImageUrl,
       average_rating: sample.ratingAvg,
       total_ratings: sample.ratingCount,
@@ -85,7 +132,7 @@ export async function PUT(
     // Must be CREATOR role
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
-      select: { role: true },
+      select: { role: true, isWhitelisted: true },
     });
 
     if (!dbUser || dbUser.role !== "CREATOR") {
@@ -132,6 +179,29 @@ export async function PUT(
       "status",
       "isActive",
     ];
+
+    // Credit price drives how many credits a buyer is charged (and, when
+    // negative, would be *added* to their balance). Validate it the same way
+    // POST does: a positive integer no greater than the creator's cap.
+    if (body.creditPrice !== undefined) {
+      const price = parseInt(body.creditPrice);
+      const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
+      if (!Number.isInteger(price) || price < 1 || price > maxCreditPrice) {
+        return NextResponse.json(
+          { error: `Credit price must be a whole number between 1 and ${maxCreditPrice}` },
+          { status: 400 }
+        );
+      }
+    }
+    if (body.bpm !== undefined && body.bpm !== null && body.bpm !== "") {
+      const bpm = parseInt(body.bpm);
+      if (!Number.isInteger(bpm) || bpm < 1 || bpm > 1000) {
+        return NextResponse.json(
+          { error: "BPM must be a whole number between 1 and 1000" },
+          { status: 400 }
+        );
+      }
+    }
 
     const updateData: Record<string, unknown> = {};
     for (const field of allowedFields) {
@@ -207,28 +277,18 @@ export async function DELETE(
       );
     }
 
-    // Delete related records first (cascade)
-    // Get purchase IDs for this sample
-    const purchases = await prisma.purchase.findMany({
-      where: { sampleId: id },
-      select: { id: true },
+    // Delete the sample and every dependent row atomically. Done in a single
+    // transaction so a mid-cascade failure can't leave the sample live while its
+    // buyers' purchase/ownership/download history is already gone (or vice
+    // versa) — that state is unrecoverable. Order respects FK dependencies:
+    // downloads -> purchases -> ratings/favorites -> sample.
+    await prisma.$transaction(async (tx) => {
+      await tx.download.deleteMany({ where: { sampleId: id } });
+      await tx.purchase.deleteMany({ where: { sampleId: id } });
+      await tx.rating.deleteMany({ where: { sampleId: id } });
+      await tx.favorite.deleteMany({ where: { sampleId: id } });
+      await tx.sample.delete({ where: { id } });
     });
-    const purchaseIds = purchases.map((p) => p.id);
-
-    // Delete downloads linked to these purchases
-    if (purchaseIds.length > 0) {
-      await prisma.download.deleteMany({
-        where: { purchaseId: { in: purchaseIds } },
-      });
-    }
-
-    // Delete purchases, ratings, favorites for this sample
-    await prisma.purchase.deleteMany({ where: { sampleId: id } });
-    await prisma.rating.deleteMany({ where: { sampleId: id } });
-    await prisma.favorite.deleteMany({ where: { sampleId: id } });
-
-    // Now delete the sample
-    await prisma.sample.delete({ where: { id } });
 
     return NextResponse.json({ success: true, message: "Sample deleted" });
   } catch (error) {

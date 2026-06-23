@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
+import { isOwnedStorageRef, isSafeStorageRef } from "@/lib/storage";
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const bpmMax = searchParams.get("bpmMax");
     const sortBy = searchParams.get("sortBy") || "popular";
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
-    const offset = parseInt(searchParams.get("offset") || "0");
+    const offset = Math.max(0, Math.min(parseInt(searchParams.get("offset") || "0") || 0, 10000));
 
     const where: Prisma.SampleWhereInput = {
       status: "PUBLISHED",
@@ -329,7 +330,7 @@ export async function GET(request: NextRequest) {
     const validPaths = previewPaths.filter((p): p is string => p !== null);
     
     // Batch request for all signed URLs at once
-    let signedUrlMap: Record<string, string> = {};
+    const signedUrlMap: Record<string, string> = {};
     if (validPaths.length > 0) {
       const { data } = await serviceClient.storage
         .from("previews")
@@ -435,6 +436,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // fileUrl is later handed to the service-role storage client (RLS bypass)
+    // and to the ffmpeg preview worker, so it must reference an object in the
+    // `samples` bucket under THIS creator's own prefix. Reject anything else to
+    // prevent cross-tenant reads and path/shell injection. previewUrl is
+    // normally filled in by the worker; accept it only if it is a safe ref.
+    if (!isOwnedStorageRef(fileUrl, "samples", authUser.id)) {
+      return NextResponse.json(
+        { error: "Invalid file reference" },
+        { status: 400 }
+      );
+    }
+    let safePreviewUrl: string | null = null;
+    if (previewUrl != null && previewUrl !== "") {
+      if (
+        isOwnedStorageRef(previewUrl, "samples", authUser.id) ||
+        isSafeStorageRef(previewUrl, "previews")
+      ) {
+        safePreviewUrl = previewUrl;
+      } else {
+        return NextResponse.json(
+          { error: "Invalid preview reference" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Enforce credit price limit: max 5 for non-whitelisted creators
     const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
     const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
@@ -470,7 +497,7 @@ export async function POST(request: NextRequest) {
               : tags.split(",").map((t: string) => t.trim().toLowerCase()))
           : [],
         fileUrl,
-        previewUrl: previewUrl || null,
+        previewUrl: safePreviewUrl,
         coverImageUrl: coverImageUrl || null,
         waveformData: waveformData || null,
         status: initialStatus,

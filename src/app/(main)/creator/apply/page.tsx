@@ -8,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Music, Upload, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/lib/hooks/useUser";
-import { createClient } from "@/lib/supabase/client";
 
 interface Application {
   id: string;
@@ -96,31 +95,32 @@ export default function CreatorApplicationPage() {
     setFileUploadProgress(10);
 
     try {
-      const supabase = createClient();
-
-      // Generate a unique path for the file
-      const timestamp = Date.now();
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filePath = `${user?.id}/${timestamp}_${safeName}`;
+      // Upload via server-side route (uses service role to bypass RLS)
+      const uploadForm = new FormData();
+      uploadForm.append("zipFile", file);
 
       setFileUploadProgress(30);
 
-      const { error } = await supabase.storage
-        .from("applications")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
+      const res = await fetch("/api/upload/application", {
+        method: "POST",
+        body: uploadForm,
+      });
 
-      if (error) {
-        throw error;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "File upload failed");
       }
+
+      const { path, fileName } = (await res.json()) as {
+        path: string;
+        fileName: string;
+      };
 
       setFileUploadProgress(100);
       setFormData((prev) => ({
         ...prev,
-        zip_file_path: filePath,
-        zip_file_name: file.name,
+        zip_file_path: path,
+        zip_file_name: fileName,
       }));
       toast.success("File uploaded successfully");
       setTimeout(() => setFileUploadProgress(0), 1000);
