@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { prisma } from "./prisma";
 import {
   wrapEmailHtml,
   emailHeading,
@@ -42,6 +43,19 @@ interface SendEmailOptions {
   html?: string;
   replyTo?: string;
   from?: string;
+  // When true, this is a marketing/promotional send and is suppressed for
+  // recipients who have unsubscribed (User.emailOptOutAt set). Transactional
+  // email (payouts, invites, receipts) must NOT set this — those always send.
+  marketing?: boolean;
+}
+
+// Returns true if the recipient has unsubscribed from marketing email.
+export async function isEmailUnsubscribed(email: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase().trim() },
+    select: { emailOptOutAt: true },
+  });
+  return Boolean(user?.emailOptOutAt);
 }
 
 interface SendTemplateEmailOptions {
@@ -53,6 +67,13 @@ interface SendTemplateEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions) {
+  // Honor unsubscribes for marketing email. Transactional sends omit `marketing`
+  // and always go out.
+  if (options.marketing && (await isEmailUnsubscribed(options.to))) {
+    console.log(`[Email] Skipping marketing send to ${options.to} — unsubscribed`);
+    return null;
+  }
+
   const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
   
   // Add unsubscribe link to HTML emails if not already present
@@ -268,10 +289,9 @@ You're receiving this because you have an active Greenroom creator account.
 // Admin notification for payout summary
 export async function sendPayoutSummaryToAdmin(summary: {
   processed: number;
-  payoutsSent: number;
+  payoutsQueued: number;
   totalAmountUsd: number;
   skippedBelowThreshold: number;
-  skippedNoStripe: number;
   errors: string[];
 }) {
   const hasErrors = summary.errors.length > 0;
@@ -286,35 +306,33 @@ ${summary.errors.map(e => `<p style="margin:0 0 4px;color:${EMAIL_COLORS.textSec
 
   const content = `
 ${emailHeading("Monthly payout summary")}
-${emailLede(`Processed ${summary.processed} creators · sent ${summary.payoutsSent} payouts · total ${totalStr}.`)}
+${emailLede(`Processed ${summary.processed} creators · queued ${summary.payoutsQueued} payouts for approval · total ${totalStr}. Approve them in the admin payouts panel.`)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;"><tr>
-<td width="50%" valign="top" style="padding-right:6px;">${emailStatCard(String(summary.payoutsSent), "Payouts sent")}</td>
-<td width="50%" valign="top" style="padding-left:6px;">${emailStatCard(totalStr, "Total amount")}</td>
+<td width="50%" valign="top" style="padding-right:6px;">${emailStatCard(String(summary.payoutsQueued), "Payouts queued")}</td>
+<td width="50%" valign="top" style="padding-left:6px;">${emailStatCard(totalStr, "Total queued")}</td>
 </tr></table>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr><td style="background:${EMAIL_COLORS.surfaceElevated};border:1px solid ${EMAIL_COLORS.border};border-radius:12px;padding:20px;">
 <p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Creators processed:</strong> ${summary.processed}</p>
-<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Below $50 threshold:</strong> ${summary.skippedBelowThreshold}</p>
-<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">No Stripe connected:</strong> ${summary.skippedNoStripe}</p>
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Below minimum:</strong> ${summary.skippedBelowThreshold}</p>
 </td></tr></table>
 ${errorsBlock}
 `;
 
   return sendEmail({
     to: ADMIN_EMAIL,
-    subject: `Monthly payouts — ${summary.payoutsSent} sent${hasErrors ? " (with errors)" : ""}`,
+    subject: `Monthly payouts — ${summary.payoutsQueued} queued for approval${hasErrors ? " (with errors)" : ""}`,
     text: `Monthly Payout Summary
 
 Processed: ${summary.processed} creators
-Payouts Sent: ${summary.payoutsSent}
-Total Amount: ${totalStr}
-Skipped (below $50): ${summary.skippedBelowThreshold}
-Skipped (no Stripe): ${summary.skippedNoStripe}
+Payouts Queued (awaiting admin approval): ${summary.payoutsQueued}
+Total Queued: ${totalStr}
+Skipped (below minimum): ${summary.skippedBelowThreshold}
 ${hasErrors ? `\nErrors:\n${summary.errors.join("\n")}` : ""}
 
 ---
 Automated admin summary from Greenroom.`,
     html: wrapEmailHtml({
-      preheader: `${summary.payoutsSent} payouts sent · total ${totalStr}.`,
+      preheader: `${summary.payoutsQueued} payouts queued for approval · total ${totalStr}.`,
       content,
       whyReceiving: "You're receiving this because you're listed as the Greenroom platform admin.",
     }),

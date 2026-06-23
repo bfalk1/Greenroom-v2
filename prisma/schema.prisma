@@ -117,6 +117,7 @@ model User {
   isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
   customPayoutRate   Int?      @map("custom_payout_rate")
   termsAcceptedAt    DateTime? @map("terms_accepted_at")
+  emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
