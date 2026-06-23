@@ -23,8 +23,25 @@ export async function POST(request: Request) {
       );
     }
 
+    // Only allow checkout against a priceId that maps to an active tier. This is
+    // the SAME lookup the Stripe webhook uses to grant the subscription + credits
+    // (see handleCheckoutCompleted), so accepting anything else would let a user
+    // subscribe at an off-list/legacy/test price that the webhook can't resolve —
+    // leaving a live Stripe subscription with no Greenroom record.
+    const tier = await prisma.subscriptionTier.findFirst({
+      where: { stripePriceId: priceId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!tier) {
+      return NextResponse.json(
+        { error: "Invalid subscription plan" },
+        { status: 400 }
+      );
+    }
+
     // Find or create the user in our DB
-    let dbUser = await prisma.user.findUnique({
+    const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
     });
 

@@ -15,7 +15,11 @@ function getPeriodDates(subscription: Stripe.Subscription) {
   };
 }
 
-async function handleCreditPurchase(session: Stripe.Checkout.Session) {
+async function handleCreditPurchase(
+  session: Stripe.Checkout.Session,
+  eventId: string,
+  eventType: string
+) {
   const userId = session.metadata?.userId;
   const credits = parseInt(session.metadata?.credits || "0", 10);
 
@@ -24,8 +28,11 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // Atomic: balance + transaction must commit together.
+  // Atomic: event marker + balance + transaction commit together. The marker is
+  // the first op so a redelivered event conflicts on the PK and rolls back the
+  // whole grant (idempotency — each event applies exactly once).
   await prisma.$transaction([
+    prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
     prisma.creditBalance.upsert({
       where: { userId },
       update: { balance: { increment: credits } },
@@ -45,10 +52,14 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
   console.log(`Issued ${credits} credits to user ${userId} (one-time purchase)`);
 }
 
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+async function handleCheckoutCompleted(
+  session: Stripe.Checkout.Session,
+  eventId: string,
+  eventType: string
+) {
   // Handle one-time credit purchases separately
   if (session.metadata?.type === "credit_purchase") {
-    return handleCreditPurchase(session);
+    return handleCreditPurchase(session, eventId, eventType);
   }
 
   const userId = session.metadata?.userId;
@@ -101,8 +112,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     },
   });
 
-  // Atomic: balance + subscription_status flag + transaction must commit together.
+  // Atomic: event marker + balance + subscription_status flag + transaction
+  // must commit together (idempotency — see handleCreditPurchase).
   await prisma.$transaction([
+    prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
     prisma.creditBalance.upsert({
       where: { userId },
       update: { balance: { increment: tier.creditsPerMonth } },
@@ -124,7 +137,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   ]);
 }
 
-async function handleInvoicePaid(invoice: Stripe.Invoice) {
+async function handleInvoicePaid(
+  invoice: Stripe.Invoice,
+  eventId: string,
+  eventType: string
+) {
   // Skip the first invoice (handled by checkout.session.completed)
   if (invoice.billing_reason === "subscription_create") {
     return;
@@ -166,8 +183,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     });
   }
 
-  // Atomic: balance + subscription_status flag + transaction must commit together.
+  // Atomic: event marker + balance + subscription_status flag + transaction
+  // must commit together (idempotency — see handleCreditPurchase).
   await prisma.$transaction([
+    prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
     prisma.creditBalance.upsert({
       where: { userId: user.id },
       update: { balance: { increment: tier.creditsPerMonth } },
@@ -190,7 +209,9 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 }
 
 async function handleSubscriptionUpdated(
-  subscription: Stripe.Subscription
+  subscription: Stripe.Subscription,
+  eventId: string,
+  eventType: string
 ) {
   const stripeCustomerId =
     typeof subscription.customer === "string"
@@ -235,6 +256,7 @@ async function handleSubscriptionUpdated(
     const topUp = newTier.creditsPerMonth - oldTier.creditsPerMonth;
 
     await prisma.$transaction([
+      prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
       prisma.creditBalance.upsert({
         where: { userId: user.id },
         update: { balance: { increment: topUp } },
@@ -326,17 +348,25 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed":
         await handleCheckoutCompleted(
-          event.data.object as Stripe.Checkout.Session
+          event.data.object as Stripe.Checkout.Session,
+          event.id,
+          event.type
         );
         break;
 
       case "invoice.paid":
-        await handleInvoicePaid(event.data.object as Stripe.Invoice);
+        await handleInvoicePaid(
+          event.data.object as Stripe.Invoice,
+          event.id,
+          event.type
+        );
         break;
 
       case "customer.subscription.updated":
         await handleSubscriptionUpdated(
-          event.data.object as Stripe.Subscription
+          event.data.object as Stripe.Subscription,
+          event.id,
+          event.type
         );
         break;
 
@@ -356,6 +386,19 @@ export async function POST(request: Request) {
         console.log(`Unhandled event type: ${event.type}`);
     }
   } catch (error) {
+    // A unique-violation on stripe_webhook_events means this event id was
+    // already processed (Stripe redelivery). The grant rolled back, so it's
+    // safe — ack with 200 so Stripe stops retrying.
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: string }).code === "P2002"
+    ) {
+      console.log(`Duplicate Stripe event ignored: ${event.id} (${event.type})`);
+      return NextResponse.json({ received: true, duplicate: true });
+    }
+
     console.error(`Error handling ${event.type}:`, error);
     return NextResponse.json(
       { error: "Webhook handler failed" },
