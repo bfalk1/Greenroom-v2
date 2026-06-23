@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import {
+  computePayoutCents,
+  resolveCentsPerCredit,
+  DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+} from "@/lib/payoutMath";
 
 // GET /api/creator/presets — Auth required, CREATOR role
 export async function GET(_request: NextRequest) {
@@ -28,11 +33,13 @@ export async function GET(_request: NextRequest) {
 
     const settings = await prisma.platformSetting.findUnique({
       where: { id: "default" },
-      select: { creatorPayoutRate: true, creditValueCents: true },
+      select: { creatorPayoutRate: true },
     });
 
-    const payoutRate = dbUser.customPayoutRate ?? settings?.creatorPayoutRate ?? 70;
-    const creditValueCents = settings?.creditValueCents ?? 10;
+    const centsPerCredit = resolveCentsPerCredit(
+      dbUser.customPayoutRate,
+      settings?.creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT
+    );
 
     const presets = await prisma.preset.findMany({
       where: { creatorId: authUser.id },
@@ -55,7 +62,7 @@ export async function GET(_request: NextRequest) {
 
     const mapped = presets.map((p) => {
       const totalCredits = p.purchases.reduce((sum, pur) => sum + pur.creditsSpent, 0);
-      const earningsUsd = (totalCredits * creditValueCents * payoutRate) / 10000;
+      const earningsUsd = computePayoutCents(totalCredits, centsPerCredit) / 100;
 
       return {
         id: p.id,
@@ -79,7 +86,7 @@ export async function GET(_request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ presets: mapped, payoutRate });
+    return NextResponse.json({ presets: mapped, centsPerCredit });
   } catch (error) {
     console.error("GET /api/creator/presets error:", error);
     return NextResponse.json(

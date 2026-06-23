@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import {
+  computePayoutCents,
+  resolveCentsPerCredit,
+  DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+} from "@/lib/payoutMath";
 
 // GET /api/creator/samples — Auth required, CREATOR role
 export async function GET(_request: NextRequest) {
@@ -26,14 +31,18 @@ export async function GET(_request: NextRequest) {
       );
     }
 
-    // Get platform settings for payout rate calculation
+    // Effective creator rate in cents per credit: per-creator override, else the
+    // platform default, else the lib default. Same resolution the payout engine
+    // uses, so this displayed estimate matches the eventual Stripe transfer.
     const settings = await prisma.platformSetting.findUnique({
       where: { id: "default" },
-      select: { creatorPayoutRate: true, creditValueCents: true },
+      select: { creatorPayoutRate: true },
     });
 
-    const payoutRate = dbUser.customPayoutRate ?? settings?.creatorPayoutRate ?? 70;
-    const creditValueCents = settings?.creditValueCents ?? 10;
+    const centsPerCredit = resolveCentsPerCredit(
+      dbUser.customPayoutRate,
+      settings?.creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT
+    );
 
     const samples = await prisma.sample.findMany({
       where: { creatorId: authUser.id },
@@ -109,8 +118,8 @@ export async function GET(_request: NextRequest) {
     const mapped = samples.map((s, i) => {
       // Calculate total credits spent on this sample
       const totalCredits = s.purchases.reduce((sum, p) => sum + p.creditsSpent, 0);
-      // Calculate earnings: credits * credit value * payout rate
-      const earningsUsd = (totalCredits * creditValueCents * payoutRate) / 10000;
+      // Earnings = credits × cents-per-credit, in dollars (matches the payout engine).
+      const earningsUsd = computePayoutCents(totalCredits, centsPerCredit) / 100;
 
       const previewPath = previewPaths[i];
       const signedPreviewUrl = previewPath ? signedPreviewMap[previewPath] || null : null;
@@ -145,7 +154,7 @@ export async function GET(_request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ samples: mapped, payoutRate });
+    return NextResponse.json({ samples: mapped, centsPerCredit });
   } catch (error) {
     console.error("GET /api/creator/samples error:", error);
     return NextResponse.json(

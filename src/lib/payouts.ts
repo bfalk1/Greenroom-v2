@@ -1,55 +1,113 @@
 import { prisma } from "@/lib/prisma";
-
-// Default payout: $0.03 per credit (3 cents)
-const DEFAULT_PAYOUT_CENTS_PER_CREDIT = 3;
+import {
+  computePayoutCents,
+  resolveCentsPerCredit,
+  DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+} from "@/lib/payoutMath";
 
 /**
- * Get the effective payout rate for a creator (in cents per credit).
- * Uses creator's custom rate if set by admin, otherwise $0.03/credit.
- * 
- * The payoutRate field stores cents per credit (e.g., 3 = $0.03, 5 = $0.05)
+ * Single source of truth for creator payouts.
+ *
+ * The money math lives in `payoutMath.ts` (pure + unit-tested). This module
+ * adds the DB lookups: the per-creator rate override (`customPayoutRate`, in
+ * cents-per-credit), the platform default (`PlatformSetting.creatorPayoutRate`,
+ * also cents-per-credit), and the credits actually earned — counting BOTH sample
+ * and preset purchases (counting only samples is what previously left preset
+ * sales unpaid).
+ *
+ * Every payout path (monthly cron, admin execution, creator earnings display)
+ * MUST go through these helpers so the displayed estimate and the real transfer
+ * can never diverge again.
  */
-export async function getCreatorPayoutConfig(creatorId: string) {
-  // Get creator's custom rate if set
-  const creator = await prisma.user.findUnique({
-    where: { id: creatorId },
-    select: { customPayoutRate: true },
-  });
 
-  const centsPerCredit = creator?.customPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
+type PayoutConfig = {
+  /** Effective per-creator rate in cents per credit (e.g. 7 = $0.07/credit). */
+  centsPerCredit: number;
+  /** True when the creator has an explicit override (not the platform default). */
+  isCustomRate: boolean;
+};
+
+/** Resolve the effective payout configuration for a creator. */
+export async function getCreatorPayoutConfig(
+  creatorId: string
+): Promise<PayoutConfig> {
+  const [settings, creator] = await Promise.all([
+    prisma.platformSetting.findFirst({
+      select: { creatorPayoutRate: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: creatorId },
+      select: { customPayoutRate: true },
+    }),
+  ]);
+
+  const platformDefaultCents =
+    settings?.creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
+  const centsPerCredit = resolveCentsPerCredit(
+    creator?.customPayoutRate,
+    platformDefaultCents
+  );
 
   return {
-    defaultRate: DEFAULT_PAYOUT_CENTS_PER_CREDIT,
-    customRate: creator?.customPayoutRate,
     centsPerCredit,
-    isCustomRate: creator?.customPayoutRate !== null && creator?.customPayoutRate !== undefined,
+    isCustomRate: creator?.customPayoutRate != null,
   };
 }
 
 /**
- * Calculate creator earnings in cents for a given number of credits.
- * Formula: credits * centsPerCredit
- * Default: $0.03 per credit
+ * Calculate creator earnings in whole cents for a given number of credits.
+ * amount = floor(credits × centsPerCredit)
  */
 export async function calculateCreatorEarningsCents(
   creatorId: string,
   creditsEarned: number
 ): Promise<number> {
-  const config = await getCreatorPayoutConfig(creatorId);
-  
-  // Simple: credits * cents per credit
-  // e.g., 100 credits * 3 cents = 300 cents = $3.00
-  return creditsEarned * config.centsPerCredit;
+  const cfg = await getCreatorPayoutConfig(creatorId);
+  return computePayoutCents(creditsEarned, cfg.centsPerCredit);
 }
 
 /**
- * Get a breakdown of earnings info for display
+ * Total credits spent on a creator's ENTIRE catalog — samples AND presets — in
+ * an optional time window. Use this everywhere payouts/earnings are computed so
+ * preset sales are always included.
+ */
+export async function getCreatorCreditsSpent(
+  creatorId: string,
+  range?: { gte?: Date; lt?: Date; lte?: Date }
+): Promise<number> {
+  const [samples, presets] = await Promise.all([
+    prisma.sample.findMany({ where: { creatorId }, select: { id: true } }),
+    prisma.preset.findMany({ where: { creatorId }, select: { id: true } }),
+  ]);
+
+  const sampleIds = samples.map((s) => s.id);
+  const presetIds = presets.map((p) => p.id);
+  if (sampleIds.length === 0 && presetIds.length === 0) return 0;
+
+  const itemFilter: { sampleId?: { in: string[] }; presetId?: { in: string[] } }[] = [];
+  if (sampleIds.length) itemFilter.push({ sampleId: { in: sampleIds } });
+  if (presetIds.length) itemFilter.push({ presetId: { in: presetIds } });
+
+  const purchases = await prisma.purchase.findMany({
+    where: {
+      OR: itemFilter,
+      ...(range ? { createdAt: range } : {}),
+    },
+    select: { creditsSpent: true },
+  });
+
+  return purchases.reduce((sum, p) => sum + p.creditsSpent, 0);
+}
+
+/**
+ * Display-friendly earnings info for a creator. Field names kept stable for the
+ * earnings UI (`centsPerCredit`, `perCreditDisplay`, `isCustomRate`).
  */
 export async function getCreatorEarningsInfo(creatorId: string) {
-  const config = await getCreatorPayoutConfig(creatorId);
-  
+  const cfg = await getCreatorPayoutConfig(creatorId);
   return {
-    ...config,
-    perCreditDisplay: `$${(config.centsPerCredit / 100).toFixed(2)}`,
+    centsPerCredit: cfg.centsPerCredit,
+    isCustomRate: cfg.isCustomRate,
+    perCreditDisplay: `$${(cfg.centsPerCredit / 100).toFixed(2)}`,
   };
 }

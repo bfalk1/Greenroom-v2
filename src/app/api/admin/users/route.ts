@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         avatarUrl: true,
         creditBalance: { select: { balance: true } },
         role: true,
-        payoutRate: true,
+        customPayoutRate: true,
         isWhitelisted: true,
         createdAt: true,
       },
@@ -91,7 +91,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, role, creditAdjustment, payoutRate, artistName, username } = body;
+    const { userId, role, creditAdjustment, customPayoutRate, artistName, username } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "userId required" }, { status: 400 });
@@ -102,6 +102,7 @@ export async function PATCH(request: NextRequest) {
       select: {
         id: true,
         role: true,
+        customPayoutRate: true,
         creditBalance: { select: { balance: true } },
       },
     });
@@ -112,7 +113,7 @@ export async function PATCH(request: NextRequest) {
 
     const updateData: {
       role?: "USER" | "CREATOR" | "MODERATOR" | "ADMIN";
-      payoutRate?: number | null;
+      customPayoutRate?: number | null;
       artistName?: string | null;
       username?: string | null;
     } = {};
@@ -137,20 +138,21 @@ export async function PATCH(request: NextRequest) {
       creditsTarget = Math.max(0, (targetUser.creditBalance?.balance ?? 0) + adjustment);
     }
 
-    // Payout rate (cents per credit for creators)
-    // Default is $0.03/credit (3 cents). Admin can override.
-    if (payoutRate !== undefined) {
-      if (payoutRate === null || payoutRate === "") {
-        updateData.payoutRate = null; // Use default ($0.03/credit)
+    // Per-creator payout rate as a PERCENTAGE of credit value (e.g. 70 = 70%).
+    // This is the single field the payout engine reads (lib/payouts.ts); empty
+    // means fall back to the platform default (PlatformSetting.creatorPayoutRate).
+    if (customPayoutRate !== undefined) {
+      if (customPayoutRate === null || customPayoutRate === "") {
+        updateData.customPayoutRate = null; // Use platform default
       } else {
-        const rate = parseInt(payoutRate);
-        if (isNaN(rate) || rate < 1 || rate > 50) {
+        const rate = parseInt(customPayoutRate);
+        if (isNaN(rate) || rate < 0 || rate > 100) {
           return NextResponse.json(
-            { error: "Payout rate must be 1-50 cents per credit, or empty for default ($0.03)" },
+            { error: "Payout rate must be 0-100 (percent), or empty for the platform default" },
             { status: 400 }
           );
         }
-        updateData.payoutRate = rate;
+        updateData.customPayoutRate = rate;
       }
     }
 
@@ -208,7 +210,7 @@ export async function PATCH(request: NextRequest) {
                 artistName: true,
                 avatarUrl: true,
                 role: true,
-                payoutRate: true,
+                customPayoutRate: true,
                 isWhitelisted: true,
                 creditBalance: { select: { balance: true } },
               },
@@ -223,12 +225,13 @@ export async function PATCH(request: NextRequest) {
                 artistName: true,
                 avatarUrl: true,
                 role: true,
-                payoutRate: true,
+                customPayoutRate: true,
                 isWhitelisted: true,
                 creditBalance: { select: { balance: true } },
               },
             });
 
+        const oldBalance = targetUser.creditBalance?.balance ?? 0;
         if (creditsTarget !== undefined) {
           const synced = await tx.creditBalance.upsert({
             where: { userId },
@@ -236,6 +239,67 @@ export async function PATCH(request: NextRequest) {
             update: { balance: creditsTarget },
           });
           updated.creditBalance = { balance: synced.balance };
+
+          // Keep the credit ledger consistent with the balance: record the
+          // actual applied delta (may differ from the requested adjustment if
+          // it was clamped at 0) so reconciliation always ties out.
+          const appliedDelta = creditsTarget - oldBalance;
+          if (appliedDelta !== 0) {
+            await tx.creditTransaction.create({
+              data: {
+                userId,
+                amount: appliedDelta,
+                type: "ADMIN_ADJUSTMENT",
+                note: `Admin balance adjustment by ${authUser.id}`,
+              },
+            });
+          }
+        }
+
+        // Audit trail for every privileged mutation in this request. Written in
+        // the SAME transaction so the log can never diverge from the change.
+        if (updateData.role !== undefined && updateData.role !== targetUser.role) {
+          await tx.auditLog.create({
+            data: {
+              actorId: authUser.id,
+              action: "ROLE_CHANGED",
+              targetType: "User",
+              targetId: userId,
+              metadata: { from: targetUser.role, to: updateData.role },
+            },
+          });
+        }
+        if (
+          updateData.customPayoutRate !== undefined &&
+          updateData.customPayoutRate !== targetUser.customPayoutRate
+        ) {
+          await tx.auditLog.create({
+            data: {
+              actorId: authUser.id,
+              action: "PAYOUT_RATE_CHANGED",
+              targetType: "User",
+              targetId: userId,
+              metadata: {
+                from: targetUser.customPayoutRate,
+                to: updateData.customPayoutRate,
+              },
+            },
+          });
+        }
+        if (creditsTarget !== undefined && creditsTarget !== oldBalance) {
+          await tx.auditLog.create({
+            data: {
+              actorId: authUser.id,
+              action: "CREDIT_ADJUSTED",
+              targetType: "User",
+              targetId: userId,
+              metadata: {
+                from: oldBalance,
+                to: creditsTarget,
+                delta: creditsTarget - oldBalance,
+              },
+            },
+          });
         }
 
         return updated;

@@ -29,14 +29,16 @@ export async function GET(request: NextRequest) {
     const earningsInfo = await getCreatorEarningsInfo(authUser.id);
     const centsPerCredit = earningsInfo.centsPerCredit;
 
-    // Get all sample IDs for this creator
-    const creatorSamples = await prisma.sample.findMany({
-      where: { creatorId: authUser.id },
-      select: { id: true },
-    });
+    // Get all sample + preset IDs for this creator. Presets earn too, so the
+    // chart must count both or it would disagree with the earnings totals.
+    const [creatorSamples, creatorPresets] = await Promise.all([
+      prisma.sample.findMany({ where: { creatorId: authUser.id }, select: { id: true } }),
+      prisma.preset.findMany({ where: { creatorId: authUser.id }, select: { id: true } }),
+    ]);
     const sampleIds = creatorSamples.map((s) => s.id);
+    const presetIds = creatorPresets.map((p) => p.id);
 
-    if (sampleIds.length === 0) {
+    if (sampleIds.length === 0 && presetIds.length === 0) {
       return NextResponse.json({ history: [], period });
     }
 
@@ -44,9 +46,13 @@ export async function GET(request: NextRequest) {
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
 
+    const itemFilter: { sampleId?: { in: string[] }; presetId?: { in: string[] } }[] = [];
+    if (sampleIds.length) itemFilter.push({ sampleId: { in: sampleIds } });
+    if (presetIds.length) itemFilter.push({ presetId: { in: presetIds } });
+
     const purchases = await prisma.purchase.findMany({
       where: {
-        sampleId: { in: sampleIds },
+        OR: itemFilter,
         createdAt: { gte: twelveMonthsAgo },
       },
       select: {

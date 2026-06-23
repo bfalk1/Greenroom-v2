@@ -476,6 +476,7 @@ model CreatorPayout {
 
   creator User @relation(fields: [creatorId], references: [id])
 
+  @@unique([creatorId, periodStart, periodEnd])
   @@index([creatorId])
   @@index([periodStart, periodEnd])
   @@map("creator_payouts")

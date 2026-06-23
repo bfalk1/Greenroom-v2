@@ -160,6 +160,20 @@ export async function PATCH(request: NextRequest) {
         data: { status: "FAILED" },
       });
 
+      await prisma.auditLog.create({
+        data: {
+          actorId: authUser.id,
+          action: "PAYOUT_REJECTED",
+          targetType: "CreatorPayout",
+          targetId: payoutId,
+          metadata: {
+            creatorId: payout.creatorId,
+            amountUsdCents: payout.amountUsdCents,
+            note: body.note ?? null,
+          },
+        },
+      });
+
       return NextResponse.json({
         payout: {
           id: updated.id,
@@ -194,19 +208,24 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Create the Stripe Transfer
+    // Create the Stripe Transfer. The idempotencyKey (the payout id) guarantees
+    // Stripe creates at most ONE transfer for this payout even if the request
+    // is retried or two admins approve concurrently — no double-pay.
     let transfer;
     try {
-      transfer = await stripe.transfers.create({
-        amount: payout.amountUsdCents,
-        currency: "usd",
-        destination: payout.creator.stripeConnectId,
-        description: `Greenroom creator payout: ${payout.periodStart.toISOString().split("T")[0]} to ${payout.periodEnd.toISOString().split("T")[0]}`,
-        metadata: {
-          payoutId: payout.id,
-          creatorId: payout.creatorId,
+      transfer = await stripe.transfers.create(
+        {
+          amount: payout.amountUsdCents,
+          currency: "usd",
+          destination: payout.creator.stripeConnectId,
+          description: `Greenroom creator payout: ${payout.periodStart.toISOString().split("T")[0]} to ${payout.periodEnd.toISOString().split("T")[0]}`,
+          metadata: {
+            payoutId: payout.id,
+            creatorId: payout.creatorId,
+          },
         },
-      });
+        { idempotencyKey: `payout-${payout.id}` }
+      );
     } catch (stripeError) {
       console.error("Stripe Transfer failed:", stripeError);
 
@@ -214,6 +233,21 @@ export async function PATCH(request: NextRequest) {
       await prisma.creatorPayout.update({
         where: { id: payoutId },
         data: { status: "FAILED" },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          actorId: authUser.id,
+          action: "PAYOUT_FAILED",
+          targetType: "CreatorPayout",
+          targetId: payoutId,
+          metadata: {
+            creatorId: payout.creatorId,
+            amountUsdCents: payout.amountUsdCents,
+            error:
+              stripeError instanceof Error ? stripeError.message : "Unknown",
+          },
+        },
       });
 
       const message =
@@ -234,6 +268,20 @@ export async function PATCH(request: NextRequest) {
         status: "PAID",
         paidAt: new Date(),
         stripeTransferId: transfer.id,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: authUser.id,
+        action: "PAYOUT_APPROVED",
+        targetType: "CreatorPayout",
+        targetId: payoutId,
+        metadata: {
+          creatorId: payout.creatorId,
+          amountUsdCents: payout.amountUsdCents,
+          stripeTransferId: transfer.id,
+        },
       },
     });
 

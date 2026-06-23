@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { calculateCreatorEarningsCents, getCreatorEarningsInfo } from "@/lib/payouts";
+import {
+  calculateCreatorEarningsCents,
+  getCreatorEarningsInfo,
+  getCreatorCreditsSpent,
+} from "@/lib/payouts";
 
 // GET /api/creator/earnings — fetch earnings data for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -57,9 +61,11 @@ export async function GET(_request: NextRequest) {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
     
-    const thisMonthCredits = purchases
-      .filter((p) => new Date(p.createdAt) >= startOfMonth)
-      .reduce((sum, p) => sum + p.creditsSpent, 0);
+    // Credits earned this month across the WHOLE catalog (samples + presets),
+    // so the figure matches what the creator is actually paid.
+    const thisMonthCredits = await getCreatorCreditsSpent(authUser.id, {
+      gte: startOfMonth,
+    });
 
     // Get total downloads across all creator's samples
     const totalDownloads = await prisma.download.count({
@@ -80,11 +86,8 @@ export async function GET(_request: NextRequest) {
       .filter((p) => p.status === "PENDING")
       .reduce((sum, p) => sum + p.amountUsdCents, 0);
 
-    // Calculate total credits earned
-    const totalCreditsEarned = purchases.reduce(
-      (sum, p) => sum + p.creditsSpent,
-      0
-    );
+    // Total credits earned across the WHOLE catalog (samples + presets).
+    const totalCreditsEarned = await getCreatorCreditsSpent(authUser.id);
 
     // Calculate earnings using creator's effective payout rate
     const totalEarningsCents = await calculateCreatorEarningsCents(

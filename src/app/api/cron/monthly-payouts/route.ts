@@ -1,73 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe/client";
-import { calculateCreatorEarningsCents } from "@/lib/payouts";
-import { 
-  sendPayoutNotification, 
-  sendPayoutFailedNotification, 
-  sendPayoutSummaryToAdmin 
-} from "@/lib/email";
+import {
+  calculateCreatorEarningsCents,
+  getCreatorCreditsSpent,
+} from "@/lib/payouts";
+import { computeUnpaidCents, MIN_PAYOUT_CENTS } from "@/lib/payoutMath";
+import { sendPayoutSummaryToAdmin } from "@/lib/email";
 
-// Minimum payout threshold in cents ($50 = 5000 cents)
-const MIN_PAYOUT_CENTS = 5000;
+// This iterates every active creator; give it room beyond the default limit.
+export const maxDuration = 300;
 
-// Verify cron secret to prevent unauthorized access
+// Verify cron secret to prevent unauthorized access. FAIL CLOSED: an unconfigured
+// secret rejects every request (no dev bypass — set CRON_SECRET locally to run it).
 function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
-  
-  // If no CRON_SECRET is set, allow in development
-  if (!cronSecret && process.env.NODE_ENV === "development") {
-    return true;
-  }
-  
+
   if (!cronSecret) {
-    console.error("CRON_SECRET not configured");
+    console.error("CRON_SECRET not configured — refusing to run payouts");
     return false;
   }
-  
+
   return authHeader === `Bearer ${cronSecret}`;
 }
 
 // POST /api/cron/monthly-payouts
-// Runs on 1st of each month to process automated payouts for creators
+//
+// Runs on the 1st of each month. For every creator with an unpaid balance over
+// the minimum, it creates a PENDING CreatorPayout row — a queue for the admin.
+// It NEVER moves money: the only place a Stripe transfer is created is the admin
+// approval path (PATCH /api/admin/payouts). This keeps a human checkpoint on
+// every real disbursement.
 export async function POST(request: NextRequest) {
-  // Verify authorization
   if (!verifyCronSecret(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const results = {
     processed: 0,
-    payoutsCreated: 0,
-    payoutsSent: 0,
-    totalAmountCents: 0,
+    payoutsQueued: 0,
+    totalQueuedCents: 0,
     skippedBelowThreshold: 0,
-    skippedNoStripe: 0,
+    skippedExisting: 0,
     errors: [] as string[],
   };
 
   try {
-    // Calculate period: previous full month
+    // Period label = the previous full calendar month. The row's AMOUNT is the
+    // all-time unpaid balance (catch-up model); the period is just when it was
+    // generated and the key for the per-period uniqueness guard.
     const now = new Date();
-    const periodEnd = new Date(now.getFullYear(), now.getMonth(), 1); // 1st of current month
-    periodEnd.setMilliseconds(-1); // Last moment of previous month
-    const periodStart = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), 1); // 1st of previous month
+    const periodEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+    periodEnd.setMilliseconds(-1); // last moment of previous month
+    const periodStart = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), 1);
 
-    console.log(`Processing payouts for period: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`);
+    console.log(
+      `Queuing payouts for period: ${periodStart.toISOString()} to ${periodEnd.toISOString()}`
+    );
 
-    // Get all creators
     const creators = await prisma.user.findMany({
-      where: {
-        role: "CREATOR",
-        isActive: true,
-      },
-      select: {
-        id: true,
-        email: true,
-        artistName: true,
-        stripeConnectId: true,
-      },
+      where: { role: "CREATOR", isActive: true },
+      select: { id: true, email: true },
     });
 
     console.log(`Found ${creators.length} active creators`);
@@ -76,206 +69,71 @@ export async function POST(request: NextRequest) {
       results.processed++;
 
       try {
-        // Get creator's samples
-        const creatorSamples = await prisma.sample.findMany({
-          where: { creatorId: creator.id },
+        // Don't queue a second payout for the same generation period.
+        const existingPayout = await prisma.creatorPayout.findFirst({
+          where: { creatorId: creator.id, periodStart, periodEnd },
           select: { id: true },
         });
-
-        const sampleIds = creatorSamples.map((s) => s.id);
-
-        if (sampleIds.length === 0) {
-          continue; // No samples, skip
-        }
-
-        // Get purchases in the payout period
-        const periodPurchases = await prisma.purchase.findMany({
-          where: {
-            sampleId: { in: sampleIds },
-            createdAt: {
-              gte: periodStart,
-              lte: periodEnd,
-            },
-          },
-          select: { creditsSpent: true },
-        });
-
-        const periodCredits = periodPurchases.reduce(
-          (sum, p) => sum + p.creditsSpent,
-          0
-        );
-
-        if (periodCredits === 0) {
-          continue; // No earnings this period
-        }
-
-        // Calculate earnings for this period
-        const periodEarningsCents = await calculateCreatorEarningsCents(
-          creator.id,
-          periodCredits
-        );
-
-        // Check for existing payout for this period (avoid duplicates)
-        const existingPayout = await prisma.creatorPayout.findFirst({
-          where: {
-            creatorId: creator.id,
-            periodStart: periodStart,
-            periodEnd: periodEnd,
-          },
-        });
-
         if (existingPayout) {
-          console.log(`Payout already exists for ${creator.email} for this period`);
+          results.skippedExisting++;
           continue;
         }
 
-        // Get total unpaid earnings (all time, minus paid payouts)
-        const allTimePurchases = await prisma.purchase.findMany({
-          where: { sampleId: { in: sampleIds } },
-          select: { creditsSpent: true },
+        // All-time earnings (samples + presets) minus everything already
+        // accounted for — PAID *and* in-flight PENDING. Subtracting PENDING is
+        // essential under the approval gate: pending rows sit unapproved, so
+        // counting only PAID would re-queue them and double-pay on approval.
+        const accounted = await prisma.creatorPayout.findMany({
+          where: { creatorId: creator.id, status: { in: ["PAID", "PENDING"] } },
+          select: { amountUsdCents: true, totalCreditsSpent: true },
         });
+        const accountedCents = accounted.reduce((s, p) => s + p.amountUsdCents, 0);
+        const accountedCredits = accounted.reduce((s, p) => s + p.totalCreditsSpent, 0);
 
-        const totalCredits = allTimePurchases.reduce(
-          (sum, p) => sum + p.creditsSpent,
-          0
-        );
-
+        const totalCredits = await getCreatorCreditsSpent(creator.id);
         const totalEarningsCents = await calculateCreatorEarningsCents(
           creator.id,
           totalCredits
         );
 
-        const paidPayouts = await prisma.creatorPayout.findMany({
-          where: {
-            creatorId: creator.id,
-            status: "PAID",
-          },
-          select: { amountUsdCents: true },
-        });
+        const unpaidCents = computeUnpaidCents(totalEarningsCents, accountedCents);
+        const unpaidCredits = Math.max(0, totalCredits - accountedCredits);
 
-        const totalPaidCents = paidPayouts.reduce(
-          (sum, p) => sum + p.amountUsdCents,
-          0
-        );
-
-        const unpaidEarningsCents = totalEarningsCents - totalPaidCents;
-
-        // Check minimum threshold
-        if (unpaidEarningsCents < MIN_PAYOUT_CENTS) {
+        if (unpaidCents < MIN_PAYOUT_CENTS) {
           results.skippedBelowThreshold++;
-          console.log(
-            `Skipping ${creator.email}: $${(unpaidEarningsCents / 100).toFixed(2)} below $${MIN_PAYOUT_CENTS / 100} threshold`
-          );
           continue;
         }
 
-        // Check Stripe Connect status
-        if (!creator.stripeConnectId) {
-          results.skippedNoStripe++;
-          console.log(`Skipping ${creator.email}: No Stripe Connect account`);
-          continue;
-        }
-
-        // Verify Stripe account is active
-        let stripeAccount;
-        try {
-          stripeAccount = await stripe.accounts.retrieve(creator.stripeConnectId);
-        } catch (stripeError) {
-          results.skippedNoStripe++;
-          console.log(`Skipping ${creator.email}: Stripe account retrieval failed`);
-          continue;
-        }
-
-        if (!stripeAccount.charges_enabled) {
-          results.skippedNoStripe++;
-          console.log(`Skipping ${creator.email}: Stripe charges not enabled`);
-          continue;
-        }
-
-        // Create payout record
-        const payout = await prisma.creatorPayout.create({
+        // Amount and credits are stored on the SAME (all-time-unpaid) basis so
+        // the row is internally consistent for reconciliation/invoices.
+        await prisma.creatorPayout.create({
           data: {
             creatorId: creator.id,
-            periodStart: periodStart,
-            periodEnd: periodEnd,
-            totalCreditsSpent: periodCredits,
-            amountUsdCents: unpaidEarningsCents,
+            periodStart,
+            periodEnd,
+            totalCreditsSpent: unpaidCredits,
+            amountUsdCents: unpaidCents,
             status: "PENDING",
           },
         });
 
-        results.payoutsCreated++;
+        results.payoutsQueued++;
+        results.totalQueuedCents += unpaidCents;
         console.log(
-          `Created payout for ${creator.email}: $${(unpaidEarningsCents / 100).toFixed(2)}`
+          `Queued payout for ${creator.email}: $${(unpaidCents / 100).toFixed(2)}`
         );
-
-        // Attempt automatic Stripe transfer
-        try {
-          const transfer = await stripe.transfers.create({
-            amount: unpaidEarningsCents,
-            currency: "usd",
-            destination: creator.stripeConnectId,
-            description: `Greenroom automated payout: ${periodStart.toISOString().split("T")[0]} to ${periodEnd.toISOString().split("T")[0]}`,
-            metadata: {
-              payoutId: payout.id,
-              creatorId: creator.id,
-              automated: "true",
-            },
-          });
-
-          // Update payout as PAID
-          await prisma.creatorPayout.update({
-            where: { id: payout.id },
-            data: {
-              status: "PAID",
-              paidAt: new Date(),
-              stripeTransferId: transfer.id,
-            },
-          });
-
-          results.payoutsSent++;
-          results.totalAmountCents += unpaidEarningsCents;
-          console.log(
-            `Sent payout to ${creator.email}: $${(unpaidEarningsCents / 100).toFixed(2)} (${transfer.id})`
-          );
-
-          // Send email notification to creator
-          try {
-            await sendPayoutNotification(
-              creator.email,
-              creator.artistName || creator.email,
-              unpaidEarningsCents / 100,
-              periodStart,
-              periodEnd
-            );
-          } catch (emailError) {
-            console.error(`Failed to send payout email to ${creator.email}:`, emailError);
-          }
-        } catch (stripeError) {
-          // Mark as failed but keep the record
-          await prisma.creatorPayout.update({
-            where: { id: payout.id },
-            data: { status: "FAILED" },
-          });
-
-          const errorMsg =
-            stripeError instanceof Error ? stripeError.message : "Unknown error";
-          results.errors.push(`${creator.email}: Stripe transfer failed - ${errorMsg}`);
-          console.error(`Stripe transfer failed for ${creator.email}:`, stripeError);
-
-          // Send failure notification to creator
-          try {
-            await sendPayoutFailedNotification(
-              creator.email,
-              creator.artistName || creator.email,
-              unpaidEarningsCents / 100,
-              errorMsg
-            );
-          } catch (emailError) {
-            console.error(`Failed to send failure email to ${creator.email}:`, emailError);
-          }
-        }
       } catch (creatorError) {
+        // The @@unique([creatorId, periodStart, periodEnd]) backstop can catch a
+        // concurrent run; treat that as already-queued, not an error.
+        if (
+          creatorError &&
+          typeof creatorError === "object" &&
+          "code" in creatorError &&
+          (creatorError as { code?: string }).code === "P2002"
+        ) {
+          results.skippedExisting++;
+          continue;
+        }
         const errorMsg =
           creatorError instanceof Error ? creatorError.message : "Unknown error";
         results.errors.push(`${creator.email}: ${errorMsg}`);
@@ -283,16 +141,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("Monthly payout processing complete:", results);
+    console.log("Monthly payout queueing complete:", results);
 
-    // Send summary email to admin
+    // Summary to admin (so a partial/zero run is observable). Best-effort.
     try {
       await sendPayoutSummaryToAdmin({
         processed: results.processed,
-        payoutsSent: results.payoutsSent,
-        totalAmountUsd: results.totalAmountCents / 100,
+        payoutsQueued: results.payoutsQueued,
+        totalAmountUsd: results.totalQueuedCents / 100,
         skippedBelowThreshold: results.skippedBelowThreshold,
-        skippedNoStripe: results.skippedNoStripe,
         errors: results.errors,
       });
     } catch (emailError) {
@@ -307,7 +164,7 @@ export async function POST(request: NextRequest) {
       },
       results: {
         ...results,
-        totalAmountUsd: results.totalAmountCents / 100,
+        totalQueuedUsd: results.totalQueuedCents / 100,
       },
     });
   } catch (error) {
@@ -329,7 +186,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Get pending payouts and summary
   const pendingPayouts = await prisma.creatorPayout.findMany({
     where: { status: "PENDING" },
     include: {
@@ -347,7 +203,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     minPayoutThreshold: MIN_PAYOUT_CENTS / 100,
     pendingPayouts: pendingPayouts.length,
-    lastAutomatedPayout: lastPayout?.paidAt?.toISOString() || null,
+    lastApprovedPayout: lastPayout?.paidAt?.toISOString() || null,
     pending: pendingPayouts.map((p) => ({
       id: p.id,
       creator: p.creator.artistName || p.creator.email,

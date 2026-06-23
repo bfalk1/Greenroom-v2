@@ -28,7 +28,7 @@ interface SearchUser {
   avatarUrl: string | null;
   credits: number;
   role: string;
-  payoutRate: number | null;
+  customPayoutRate: number | null;
   isWhitelisted: boolean;
 }
 
@@ -72,7 +72,7 @@ export function UserSearchPanel() {
 
   const handleSelectUser = (user: SearchUser) => {
     setSelectedUser(user);
-    setPayoutRateInput(user.payoutRate?.toString() || "");
+    setPayoutRateInput(user.customPayoutRate?.toString() || "");
     setArtistNameInput(user.artistName || "");
     setUsernameInput(user.username || "");
     setCreditAdjustment("");
@@ -157,7 +157,7 @@ export function UserSearchPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: selectedUser.id,
-          payoutRate: payoutRateInput === "" ? null : parseInt(payoutRateInput),
+          customPayoutRate: payoutRateInput === "" ? null : parseInt(payoutRateInput),
         }),
       });
 
@@ -174,10 +174,10 @@ export function UserSearchPanel() {
         results.map(u => u.id === updatedUser.id ? updatedUser : u)
       );
       
-      if (updatedUser.payoutRate === null) {
+      if (updatedUser.customPayoutRate === null) {
         toast.success("Payout rate reset to platform default");
       } else {
-        toast.success(`Payout rate set to ${updatedUser.payoutRate}%`);
+        toast.success(`Payout rate set to ${updatedUser.customPayoutRate}%`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update payout rate");
@@ -390,10 +390,10 @@ export function UserSearchPanel() {
                         <p className="text-sm text-[#a1a1a1]">Credits</p>
                         <p className="text-white font-bold">{user.credits}</p>
                       </div>
-                      {user.role === "CREATOR" && user.payoutRate !== null && (
+                      {user.role === "CREATOR" && user.customPayoutRate !== null && (
                         <div className="text-right">
                           <p className="text-sm text-[#a1a1a1]">Payout</p>
-                          <p className="text-[#39b54a] font-bold">${(user.payoutRate / 100).toFixed(2)}/cr</p>
+                          <p className="text-[#39b54a] font-bold">{user.customPayoutRate}%</p>
                         </div>
                       )}
                       <div className={`flex items-center gap-2 px-2 py-1 rounded ${
@@ -563,25 +563,25 @@ export function UserSearchPanel() {
                 )}
 
                 {/* Payout Rate (Creators only) */}
-                {(isCreator || selectedUser.payoutRate !== null) && (
+                {(isCreator || selectedUser.customPayoutRate !== null) && (
                   <div className="space-y-3 pt-4 border-t border-[#2a2a2a]">
                     <div className="flex items-center gap-2 text-[#a1a1a1]">
                       <Percent className="w-5 h-5 text-[#39b54a]" />
                       <span>
-                        Payout Rate (¢/credit)
-                        {selectedUser.payoutRate === null ? (
-                          <span className="ml-2 text-xs text-[#666]">(default: $0.03/credit)</span>
+                        Payout Rate (% of credit value)
+                        {selectedUser.customPayoutRate === null ? (
+                          <span className="ml-2 text-xs text-[#666]">(platform default)</span>
                         ) : (
-                          <span className="ml-2 text-xs text-[#39b54a]">(custom: ${(selectedUser.payoutRate / 100).toFixed(2)}/credit)</span>
+                          <span className="ml-2 text-xs text-[#39b54a]">(custom: {selectedUser.customPayoutRate}%)</span>
                         )}
                       </span>
                     </div>
                     <div className="flex gap-2">
                       <Input
                         type="number"
-                        min="1"
-                        max="50"
-                        placeholder="Default: 3 (= $0.03/credit)"
+                        min="0"
+                        max="100"
+                        placeholder="e.g. 70 (= 70%)"
                         value={payoutRateInput}
                         onChange={(e) => setPayoutRateInput(e.target.value)}
                         className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
@@ -595,7 +595,7 @@ export function UserSearchPanel() {
                       </Button>
                     </div>
                     <p className="text-xs text-[#a1a1a1]">
-                      Cents per credit (e.g., 3 = $0.03, 5 = $0.05). Leave empty for default $0.03/credit.
+                      Percentage of each credit&apos;s value the creator earns (e.g. 70 = 70%). Leave empty for the platform default.
                     </p>
                   </div>
                 )}
