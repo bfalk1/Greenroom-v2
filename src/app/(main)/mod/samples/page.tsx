@@ -16,10 +16,15 @@ import {
   Calendar,
   TrendingDown,
   Shield,
+  CheckSquare,
+  Square,
+  Pencil,
+  X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
+import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
 import { formatSampleType } from "@/lib/utils/sampleType";
 import { toast } from "sonner";
 
@@ -108,6 +113,9 @@ export default function ModSamplesPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const fetchData = useCallback(async (view = "pending", search = "") => {
     try {
@@ -173,6 +181,7 @@ export default function ModSamplesPage() {
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    setSelectedIds(new Set()); // selection is list-specific — don't carry it across tabs
     if (tab === "pending") {
       fetchData("pending", "");
     } else if (tab === "search") {
@@ -259,6 +268,69 @@ export default function ModSamplesPage() {
     }
   };
 
+  // ---- Bulk selection & actions ----
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = samples.length > 0 && samples.every((s) => selectedIds.has(s.id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (samples.every((s) => next.has(s.id))) {
+        samples.forEach((s) => next.delete(s.id));
+      } else {
+        samples.forEach((s) => next.add(s.id));
+      }
+      return next;
+    });
+  };
+
+  const runBulk = async (payload: {
+    action?: "approve" | "reject" | "delete";
+    metadata?: Record<string, unknown>;
+  }) => {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/mod/samples/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleIds: [...selectedIds], ...payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Bulk action failed");
+      toast.success(
+        data.message ||
+          `Updated ${data.updated} sample${data.updated === 1 ? "" : "s"}` +
+            (data.skipped ? `, skipped ${data.skipped}` : "")
+      );
+      setSelectedIds(new Set());
+      fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+      fetchLowestRated();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkReject = () => {
+    if (!confirm(`Reject ${selectedIds.size} selected sample(s)?`)) return;
+    runBulk({ action: "reject" });
+  };
+
+  const handleBulkDelete = () => {
+    if (!confirm(`Delete ${selectedIds.size} selected sample(s)? They'll be unpublished and set back to draft.`)) return;
+    runBulk({ action: "delete" });
+  };
+
   if (loading && samples.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
@@ -270,6 +342,55 @@ export default function ModSamplesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {selectedIds.size > 0 && (
+          <div className="sticky top-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-[#141414]/95 backdrop-blur border-b border-[#39b54a]/30 flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-white">{selectedIds.size} selected</span>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => setBulkEditOpen(true)}
+                disabled={bulkBusy}
+                className="bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white"
+              >
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => runBulk({ action: "approve" })}
+                disabled={bulkBusy}
+                className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-1" /> Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkReject}
+                disabled={bulkBusy}
+                className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+              >
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkDelete}
+                disabled={bulkBusy}
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> Delete
+              </Button>
+            </div>
+            {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />}
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-auto text-xs text-[#a1a1a1] hover:text-white flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Clear
+            </button>
+          </div>
+        )}
+
         <h1 className="text-3xl font-bold text-white mb-8">
           Moderation Dashboard
         </h1>
@@ -360,11 +481,35 @@ export default function ModSamplesPage() {
           {/* Pending Review Tab */}
           <TabsContent value="pending" className="space-y-6">
             {samples.length > 0 ? (
-              samples.map((sample) => {
+              <>
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 text-xs text-[#a1a1a1] hover:text-white"
+                >
+                  {allSelected ? (
+                    <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+                {samples.map((sample) => {
                 const panelSample = mapSampleForPanel(sample);
                 return (
+                  <div key={sample.id} className="flex items-start gap-3">
+                    <button
+                      onClick={() => toggleSelect(sample.id)}
+                      className="mt-4 flex-shrink-0"
+                      title={selectedIds.has(sample.id) ? "Deselect" : "Select"}
+                    >
+                      {selectedIds.has(sample.id) ? (
+                        <CheckSquare className="w-5 h-5 text-[#39b54a]" />
+                      ) : (
+                        <Square className="w-5 h-5 text-[#3a3a3a] hover:text-white" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
                   <SampleModerationPanel
-                    key={sample.id}
                     sample={panelSample}
                     creator={{
                       full_name:
@@ -404,8 +549,11 @@ export default function ModSamplesPage() {
                       </>
                     }
                   />
+                    </div>
+                  </div>
                 );
-              })
+              })}
+              </>
             ) : (
               <div className="text-center py-12">
                 <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
@@ -440,12 +588,34 @@ export default function ModSamplesPage() {
 
             {samples.length > 0 ? (
               <div className="space-y-4">
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 text-xs text-[#a1a1a1] hover:text-white"
+                >
+                  {allSelected ? (
+                    <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+                  ) : (
+                    <Square className="w-4 h-4" />
+                  )}
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
                 {samples.map((sample) => (
                   <div
                     key={sample.id}
                     className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4"
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => toggleSelect(sample.id)}
+                        className="flex-shrink-0"
+                        title={selectedIds.has(sample.id) ? "Deselect" : "Select"}
+                      >
+                        {selectedIds.has(sample.id) ? (
+                          <CheckSquare className="w-5 h-5 text-[#39b54a]" />
+                        ) : (
+                          <Square className="w-5 h-5 text-[#3a3a3a] hover:text-white" />
+                        )}
+                      </button>
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
                           <h3 className="text-white font-medium">{sample.name}</h3>
@@ -634,6 +804,14 @@ export default function ModSamplesPage() {
             }}
           />
         )}
+
+        {/* Bulk Edit Modal */}
+        <BulkEditSampleModal
+          open={bulkEditOpen}
+          count={selectedIds.size}
+          onClose={() => setBulkEditOpen(false)}
+          onApply={(changes) => runBulk({ metadata: changes })}
+        />
       </div>
     </div>
   );

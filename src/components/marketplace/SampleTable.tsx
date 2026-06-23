@@ -11,7 +11,7 @@ const GRID_CLASS_BY_VARIANT: Record<SampleTableVariant, string> = {
   library:
     "grid grid-cols-[auto_auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_auto_minmax(220px,1fr)_220px_90px_45px_45px_80px_50px]",
   creator:
-    "grid grid-cols-[auto_1fr_70px_80px] md:grid-cols-[auto_minmax(220px,1fr)_220px_80px_45px_45px_70px_80px_100px]",
+    "grid grid-cols-[auto_auto_1fr_70px_80px] md:grid-cols-[auto_auto_minmax(220px,1fr)_220px_80px_45px_45px_70px_80px_100px]",
 };
 
 export const SAMPLE_TABLE_WAVEFORM_CLASS =
@@ -110,6 +110,13 @@ export function SampleTableHeader({
   if (variant === "creator") {
     return (
       <div className={`${GRID_CLASS_BY_VARIANT.creator} gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]`}>
+        <button onClick={onToggleAll} className="flex-shrink-0" title={allSelected ? "Deselect all" : "Select all"}>
+          {allSelected ? (
+            <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+          ) : (
+            <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
+          )}
+        </button>
         <div className="w-10" />
         <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
         <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Wave</span>

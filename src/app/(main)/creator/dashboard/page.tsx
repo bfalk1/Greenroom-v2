@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2 } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2, CheckSquare, Square, X } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
 import {
   getSampleTableRowClass,
@@ -14,6 +15,7 @@ import {
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
+import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
 
 interface CreatorSample {
   id: string;
@@ -64,11 +66,15 @@ function CreatorSampleRow({
   onEdit,
   onDelete,
   onSubmitForReview,
+  selected,
+  onToggleSelect,
 }: {
   sample: CreatorSample;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onSubmitForReview: (id: string) => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlayingState, setIsPlayingState] = useState(false);
@@ -154,6 +160,22 @@ function CreatorSampleRow({
         isActive: isPlayingState,
       })}
     >
+      {/* Selection checkbox */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSelect(sample.id);
+        }}
+        className="flex-shrink-0"
+        title={selected ? "Deselect" : "Select"}
+      >
+        {selected ? (
+          <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+        ) : (
+          <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
+        )}
+      </button>
+
       {/* Artist Image + Play Button */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
         <img
@@ -293,6 +315,9 @@ export default function CreatorDashboardPage() {
   const [filteredSamples, setFilteredSamples] = useState<CreatorSample[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const fetchSamples = useCallback(async () => {
     try {
@@ -355,6 +380,55 @@ export default function CreatorDashboardPage() {
     }
   };
 
+  // ---- Bulk selection & actions ----
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected =
+    filteredSamples.length > 0 && filteredSamples.every((s) => selectedIds.has(s.id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (filteredSamples.every((s) => next.has(s.id))) {
+        filteredSamples.forEach((s) => next.delete(s.id));
+      } else {
+        filteredSamples.forEach((s) => next.add(s.id));
+      }
+      return next;
+    });
+  };
+
+  const runCreatorBulk = async (payload: {
+    action?: "submit";
+    metadata?: Record<string, unknown>;
+  }) => {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/creator/samples/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleIds: [...selectedIds], ...payload }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Bulk action failed");
+      toast.success(`Updated ${data.updated} sample${data.updated === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      fetchSamples();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (userLoading || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
@@ -392,6 +466,36 @@ export default function CreatorDashboardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Bulk action bar */}
+        {selectedIds.size > 0 && (
+          <div className="sticky top-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-[#141414]/95 backdrop-blur border-b border-[#39b54a]/30 flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-white">{selectedIds.size} selected</span>
+            <Button
+              size="sm"
+              onClick={() => setBulkEditOpen(true)}
+              disabled={bulkBusy}
+              className="bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white"
+            >
+              <Edit2 className="w-4 h-4 mr-1" /> Edit
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => runCreatorBulk({ action: "submit" })}
+              disabled={bulkBusy}
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+            >
+              <Eye className="w-4 h-4 mr-1" /> Submit for Review
+            </Button>
+            {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />}
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="ml-auto text-xs text-[#a1a1a1] hover:text-white flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Clear
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -467,7 +571,11 @@ export default function CreatorDashboardPage() {
         {filteredSamples.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
             {/* Header */}
-            <SampleTableHeader variant="creator" />
+            <SampleTableHeader
+              variant="creator"
+              onToggleAll={toggleSelectAll}
+              allSelected={allSelected}
+            />
 
             {/* Rows */}
             <div className="divide-y divide-[#2a2a2a]">
@@ -478,6 +586,8 @@ export default function CreatorDashboardPage() {
                   onEdit={(id) => router.push(`/creator/edit/${id}`)}
                   onDelete={handleDeleteSample}
                   onSubmitForReview={handleSubmitForReview}
+                  selected={selectedIds.has(sample.id)}
+                  onToggleSelect={toggleSelect}
                 />
               ))}
             </div>
@@ -500,6 +610,29 @@ export default function CreatorDashboardPage() {
             </Button>
           </div>
         )}
+
+        {/* Creator Terms link */}
+        <div className="mt-12 pt-6 border-t border-[#2a2a2a] text-center">
+          <p className="text-sm text-[#666]">
+            By uploading, you agree to the{" "}
+            <Link
+              href="/creator-terms"
+              className="text-[#39b54a] hover:text-[#2e9140] underline underline-offset-2 transition-colors"
+            >
+              Creator Terms of Use
+            </Link>
+            .
+          </p>
+        </div>
+
+        {/* Bulk Edit Modal */}
+        <BulkEditSampleModal
+          open={bulkEditOpen}
+          count={selectedIds.size}
+          onClose={() => setBulkEditOpen(false)}
+          onApply={(changes) => runCreatorBulk({ metadata: changes })}
+          maxCreditPrice={user?.is_whitelisted ? 50 : 5}
+        />
       </div>
     </div>
   );

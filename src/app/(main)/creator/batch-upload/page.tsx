@@ -2,14 +2,14 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Package, Play, Pause } from "lucide-react";
+import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Package, Play, Pause, CheckSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import JSZip from "jszip";
 import { KeySelector } from "@/components/ui/KeySelector";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
@@ -85,7 +85,6 @@ function parseFilename(filename: string): { name: string; key: string; bpm: stri
 export default function BatchUploadPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
-  const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,7 +93,15 @@ export default function BatchUploadPage() {
   const [defaultGenre, setDefaultGenre] = useState("Hip Hop");
   const [defaultInstrument, setDefaultInstrument] = useState("Drums");
   const [defaultSampleType, setDefaultSampleType] = useState<"LOOP" | "ONE_SHOT">("LOOP");
+  const [defaultKey, setDefaultKey] = useState("");
+  const [defaultBpm, setDefaultBpm] = useState("");
   const [defaultCreditPrice, setDefaultCreditPrice] = useState("1");
+  // Which fields the batch panel writes when applying. Per-file fields
+  // (key/bpm) are off by default; shared ones are on.
+  const [applyTargets, setApplyTargets] = useState<Set<string>>(
+    new Set(["genre", "instrumentType", "sampleType", "creditPrice"])
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [extractingZip, setExtractingZip] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -248,13 +255,51 @@ export default function BatchUploadPage() {
     setSamples(prev => prev.filter(s => s.id !== id));
   };
 
-  const applyDefaultsToAll = () => {
-    setSamples(prev => prev.map(s => ({
-      ...s,
-      genre: defaultGenre,
-      creditPrice: defaultCreditPrice,
-    })));
-    toast.success("Applied defaults to all samples");
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleApplyField = (field: string) => {
+    setApplyTargets(prev => {
+      const next = new Set(prev);
+      if (next.has(field)) next.delete(field);
+      else next.add(field);
+      return next;
+    });
+  };
+
+  // Apply the checked batch fields to either selected or all pending samples.
+  const applyBatch = (scope: "selected" | "all") => {
+    const targets = samples.filter(
+      s => s.status === "pending" && (scope === "all" || selectedIds.has(s.id))
+    );
+    if (targets.length === 0) {
+      toast.error(scope === "selected" ? "No pending samples selected" : "No pending samples");
+      return;
+    }
+    if (applyTargets.size === 0) {
+      toast.error("Pick at least one field to apply");
+      return;
+    }
+    const targetIds = new Set(targets.map(s => s.id));
+    setSamples(prev => prev.map(s => {
+      if (!targetIds.has(s.id)) return s;
+      return {
+        ...s,
+        ...(applyTargets.has("genre") ? { genre: defaultGenre } : {}),
+        ...(applyTargets.has("instrumentType") ? { instrumentType: defaultInstrument } : {}),
+        ...(applyTargets.has("sampleType") ? { sampleType: defaultSampleType } : {}),
+        ...(applyTargets.has("key") ? { key: defaultKey } : {}),
+        ...(applyTargets.has("bpm") ? { bpm: defaultBpm } : {}),
+        ...(applyTargets.has("creditPrice") ? { creditPrice: defaultCreditPrice } : {}),
+      };
+    }));
+    toast.success(`Applied to ${targets.length} sample${targets.length === 1 ? "" : "s"}`);
   };
 
   // Upload a single sample - used by the queue
@@ -271,15 +316,21 @@ export default function BatchUploadPage() {
         throw new Error("File is empty (0 bytes)");
       }
 
-      // Upload audio file
-      const audioPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.wav`;
-      const { error: uploadError } = await supabase.storage
-        .from("samples")
-        .upload(audioPath, sample.file, { cacheControl: "3600", upsert: false });
-      
-      if (uploadError) throw uploadError;
-      
-      const fileUrl = `samples/${audioPath}`;
+      // Upload audio file via server-side route (uses service role to bypass RLS)
+      const uploadForm = new FormData();
+      uploadForm.append("audioFile", sample.file);
+
+      const uploadRes = await fetch("/api/upload/sample", {
+        method: "POST",
+        body: uploadForm,
+      });
+
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({}));
+        throw new Error(err.error || "File upload failed");
+      }
+
+      const { fileUrl } = (await uploadRes.json()) as { fileUrl: string };
 
       // Generate waveform data from the audio file
       let waveformData: number[] | null = null;
@@ -403,6 +454,21 @@ export default function BatchUploadPage() {
 
   const pendingCount = samples.filter(s => s.status === "pending").length;
   const doneCount = samples.filter(s => s.status === "done").length;
+  const pendingSamples = samples.filter(s => s.status === "pending");
+  const selectedPendingCount = pendingSamples.filter(s => selectedIds.has(s.id)).length;
+  const allPendingSelected = pendingSamples.length > 0 && selectedPendingCount === pendingSamples.length;
+
+  const toggleSelectAllPending = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (pendingSamples.every(s => next.has(s.id))) {
+        pendingSamples.forEach(s => next.delete(s.id));
+      } else {
+        pendingSamples.forEach(s => next.add(s.id));
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -487,11 +553,16 @@ export default function BatchUploadPage() {
         {/* Batch Settings */}
         {samples.length > 0 && (
           <div className="bg-[#39b54a]/5 border border-[#39b54a]/30 rounded-lg p-4 mb-6">
-            <h3 className="text-[#39b54a] font-semibold mb-1">🎛️ Batch Settings — Apply to All Samples</h3>
-            <p className="text-[#a1a1a1] text-xs mb-4">Set defaults and apply to all samples at once, or edit each sample individually below.</p>
+            <h3 className="text-[#39b54a] font-semibold mb-1">🎛️ Batch Settings</h3>
+            <p className="text-[#a1a1a1] text-xs mb-4">
+              Check which fields to set, then apply them to the samples you&apos;ve selected (e.g. all your kicks) or to every pending sample.
+            </p>
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-xs text-[#a1a1a1] mb-1">Genre</label>
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("genre")} onCheckedChange={() => toggleApplyField("genre")} />
+                  Genre
+                </label>
                 <input
                   type="text"
                   list="genre-list"
@@ -505,7 +576,56 @@ export default function BatchUploadPage() {
                 </datalist>
               </div>
               <div>
-                <label className="block text-xs text-[#a1a1a1] mb-1">Credits</label>
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("instrumentType")} onCheckedChange={() => toggleApplyField("instrumentType")} />
+                  Instrument
+                </label>
+                <select
+                  value={defaultInstrument}
+                  onChange={(e) => setDefaultInstrument(e.target.value)}
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-2 text-white text-sm w-28"
+                >
+                  {INSTRUMENTS.map(i => <option key={i} value={i}>{i}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("sampleType")} onCheckedChange={() => toggleApplyField("sampleType")} />
+                  Type
+                </label>
+                <select
+                  value={defaultSampleType}
+                  onChange={(e) => setDefaultSampleType(e.target.value as "LOOP" | "ONE_SHOT")}
+                  className="bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-2 text-white text-sm w-28"
+                >
+                  <option value="LOOP">Loop</option>
+                  <option value="ONE_SHOT">One Shot</option>
+                </select>
+              </div>
+              <div className="w-28">
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("key")} onCheckedChange={() => toggleApplyField("key")} />
+                  Key
+                </label>
+                <KeySelector value={defaultKey} onChange={setDefaultKey} placeholder="Key" />
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("bpm")} onCheckedChange={() => toggleApplyField("bpm")} />
+                  BPM
+                </label>
+                <Input
+                  value={defaultBpm}
+                  onChange={(e) => setDefaultBpm(e.target.value)}
+                  placeholder="BPM"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-9 w-20"
+                />
+              </div>
+              <div>
+                <label className="flex items-center gap-1.5 text-xs text-[#a1a1a1] mb-1 cursor-pointer">
+                  <Checkbox checked={applyTargets.has("creditPrice")} onCheckedChange={() => toggleApplyField("creditPrice")} />
+                  Credits
+                </label>
                 <Input
                   type="number"
                   value={defaultCreditPrice}
@@ -514,11 +634,21 @@ export default function BatchUploadPage() {
                   min="1"
                 />
               </div>
+            </div>
+            <div className="flex flex-wrap gap-3 items-center mt-4">
               <Button
-                onClick={applyDefaultsToAll}
-                className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                onClick={() => applyBatch("selected")}
+                disabled={selectedPendingCount === 0}
+                className="bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-40"
               >
-                Apply to All Samples
+                Apply to Selected ({selectedPendingCount})
+              </Button>
+              <Button
+                onClick={() => applyBatch("all")}
+                variant="outline"
+                className="border-[#39b54a] text-[#39b54a] hover:bg-[#39b54a]/10"
+              >
+                Apply to All Pending ({pendingCount})
               </Button>
             </div>
           </div>
@@ -527,15 +657,31 @@ export default function BatchUploadPage() {
         {/* Samples List */}
         {samples.length > 0 && (
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden mb-6">
-            <div className="p-4 border-b border-[#2a2a2a] flex justify-between items-center">
+            <div className="p-4 border-b border-[#2a2a2a] flex justify-between items-center gap-4">
               <div>
                 <h3 className="text-white font-medium">
                   ✏️ Edit Individual Samples — {samples.length} total ({doneCount} uploaded, {pendingCount} pending)
                 </h3>
-                <p className="text-[#666] text-xs">Click any field to edit that sample&apos;s metadata</p>
+                {pendingCount > 0 ? (
+                  <button
+                    onClick={toggleSelectAllPending}
+                    className="flex items-center gap-1.5 text-xs text-[#a1a1a1] hover:text-white mt-1"
+                  >
+                    {allPendingSelected ? (
+                      <CheckSquare className="w-3.5 h-3.5 text-[#39b54a]" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5" />
+                    )}
+                    {selectedPendingCount > 0
+                      ? `${selectedPendingCount} selected`
+                      : "Select all pending"}
+                  </button>
+                ) : (
+                  <p className="text-[#666] text-xs">Click any field to edit that sample&apos;s metadata</p>
+                )}
               </div>
               <Button
-                onClick={() => setSamples([])}
+                onClick={() => { setSamples([]); setSelectedIds(new Set()); }}
                 variant="ghost"
                 size="sm"
                 className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
@@ -554,6 +700,22 @@ export default function BatchUploadPage() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
+                    {/* Selection checkbox (pending only) */}
+                    <div className="w-5 flex-shrink-0">
+                      {sample.status === "pending" && (
+                        <button
+                          onClick={() => toggleSelect(sample.id)}
+                          title={selectedIds.has(sample.id) ? "Deselect" : "Select"}
+                        >
+                          {selectedIds.has(sample.id) ? (
+                            <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+                          ) : (
+                            <Square className="w-4 h-4 text-[#3a3a3a] hover:text-white" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+
                     {/* Preview Button */}
                     <button
                       onClick={() => togglePreview(sample)}
