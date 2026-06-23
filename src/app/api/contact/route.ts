@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendContactEmail } from "@/lib/email";
+import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
 
 export async function POST(request: NextRequest) {
   try {
+    // Unauthenticated and sends an email per request — cap per IP to prevent
+    // inbox flooding / Resend quota & reputation abuse.
+    const rl = await rateLimit(`contact:${clientIp(request)}`, {
+      limit: 5,
+      windowSec: 60,
+    });
+    if (!rl.success) return tooManyRequests();
+
     const body = await request.json();
     const { name, email, message } = body as {
       name: string;

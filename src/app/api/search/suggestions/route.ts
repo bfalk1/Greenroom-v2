@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
 
 // GET /api/search/suggestions?q=<term> — lightweight autocomplete suggestions
 export async function GET(request: NextRequest) {
   try {
+    // Unauthenticated and runs several DB scans per call — cap per IP.
+    const rl = await rateLimit(`search:${clientIp(request)}`, {
+      limit: 30,
+      windowSec: 60,
+    });
+    if (!rl.success) return tooManyRequests();
+
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
 

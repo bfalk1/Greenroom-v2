@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Resend } from "resend";
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
+import { createClient } from "@/lib/supabase/server";
 
 // Add contact to Resend
 async function addToResendAudience(email: string) {
@@ -24,6 +26,13 @@ async function addToResendAudience(email: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Unauthenticated write + Resend call per request — cap per IP.
+    const rl = await rateLimit(`waitlist:${clientIp(request)}`, {
+      limit: 5,
+      windowSec: 60,
+    });
+    if (!rl.success) return tooManyRequests();
+
     const body = await request.json();
     const { email } = body;
 
@@ -68,22 +77,35 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - Admin endpoint to list waitlist entries
-export async function GET(request: NextRequest) {
-  // Simple auth check - you might want to add proper admin auth
-  const { searchParams } = new URL(request.url);
-  const adminKey = searchParams.get("key");
-  
-  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+// GET - Admin endpoint to list waitlist entries (PII). Gated by the same
+// session + role model as every other admin route — never a URL query-string
+// secret, which leaks via logs/Referer/history.
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { role: true },
+  });
+
+  if (!dbUser || (dbUser.role !== "ADMIN" && dbUser.role !== "MODERATOR")) {
+    return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
   const entries = await prisma.waitlistEntry.findMany({
     orderBy: { createdAt: "desc" },
+    take: 1000,
   });
 
-  return NextResponse.json({ 
+  return NextResponse.json({
     count: entries.length,
-    entries 
+    entries,
   });
 }
