@@ -67,11 +67,6 @@ export function Footer() {
                 </a>
               </li>
               <li>
-                <a href="/creator-terms" className="hover:text-white transition">
-                  Creator Terms
-                </a>
-              </li>
-              <li>
                 <a href="/license" className="hover:text-white transition">
                   Sample License
                 </a>
