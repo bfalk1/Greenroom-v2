@@ -66,6 +66,7 @@ export function Navbar() {
                   {hasActiveSub && user.role !== "CREATOR" && user.role !== "ADMIN" && user.role !== "MODERATOR" && navLink("/creator/apply", "Become a Creator")}
                   {user.role === "CREATOR" && navLink("/creator/dashboard", "Creator Studio")}
                   {user.role === "CREATOR" && navLink("/creator/earnings", "Earnings")}
+                  {user.role === "CREATOR" && navLink("/creator/leaderboard", "Leaderboard")}
                   {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                     navLink("/mod/samples", "Moderation")}
@@ -175,6 +176,11 @@ export function Navbar() {
                   {user.role === "CREATOR" && (
                     <Link href="/creator/earnings" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                       Earnings
+                    </Link>
+                  )}
+                  {user.role === "CREATOR" && (
+                    <Link href="/creator/leaderboard" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Leaderboard
                     </Link>
                   )}
                   {user.role === "CREATOR" && (
