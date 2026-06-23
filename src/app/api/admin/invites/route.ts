@@ -24,11 +24,11 @@ async function sendInviteEmail(invite: {
 
   const content = `
 ${emailHeading("Welcome to Greenroom")}
-${emailLede("This is your invite to our early access creator program — the world's first open sample marketplace.")}
+${emailLede("This is your invite to our early access creator program, an open marketplace for music samples.")}
 ${emailParagraph("As a Greenroom creator, you can:")}
 <ul style="margin:0 0 24px;padding:0 0 0 20px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:15px;line-height:1.8;">
 <li>Upload your samples on your own schedule</li>
-<li>Earn money from every download</li>
+<li>Get paid for every download</li>
 <li>View detailed download and earnings analytics</li>
 <li>Curate your artist page, and use it to promote your own music</li>
 </ul>
@@ -39,13 +39,13 @@ ${emailButton(signupUrl, "Discover Greenroom")}
     to: invite.email,
     from: INVITE_FROM_EMAIL,
     subject: `You're invited to Greenroom`,
-    text: `Welcome to Greenroom — the world's first open sample marketplace.
+    text: `Welcome to Greenroom, an open marketplace for music samples.
 
 This is your invite to our early access creator program.
 
 As a Greenroom creator, you can:
 - Upload your samples on your own schedule
-- Earn money from every download
+- Get paid for every download
 - View detailed download and earnings analytics
 - Curate your artist page, and use it to promote your own music
 

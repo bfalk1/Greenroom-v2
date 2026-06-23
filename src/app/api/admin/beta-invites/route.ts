@@ -6,7 +6,6 @@ import {
   wrapEmailHtml,
   emailHeading,
   emailLede,
-  emailParagraph,
   emailButton,
   emailStatCard,
   emailQuote,
@@ -33,7 +32,7 @@ async function sendBetaInviteEmail(invite: {
 
   const content = `
 ${emailHeading("You're invited to the beta")}
-${emailLede("You've been invited to beta test Greenroom — the world's first open sample marketplace.")}
+${emailLede("You've been invited to beta test Greenroom, an open marketplace for music samples.")}
 ${emailStatCard(String(invite.credits), "Credits to explore and download samples")}
 ${invite.message ? emailQuote(invite.message) : ""}
 ${emailButton(signupUrl, "Join the Beta")}
@@ -43,7 +42,7 @@ ${emailButton(signupUrl, "Join the Beta")}
     to: invite.email,
     from: INVITE_FROM_EMAIL,
     subject: "Your Greenroom beta invite",
-    text: `You've been invited to beta test Greenroom — the world's first open sample marketplace.
+    text: `You've been invited to beta test Greenroom, an open marketplace for music samples.
 
 You'll get ${invite.credits} credits to explore and download samples from our creator community.
 
@@ -54,7 +53,7 @@ You're receiving this because someone invited you to beta test Greenroom.
 
 © Greenroom`,
     html: wrapEmailHtml({
-      preheader: `You've been invited to beta test Greenroom — ${invite.credits} credits inside.`,
+      preheader: `You've been invited to beta test Greenroom.`,
       content,
       whyReceiving: "You're receiving this because someone invited you to beta test Greenroom.",
     }),
@@ -67,34 +66,31 @@ async function sendPremiumInviteEmail(invite: {
   signupUrl: string;
 }) {
   const content = `
-${emailHeading("You've been granted unlimited access")}
-${emailLede("A personal invitation to Greenroom — the world's first open sample marketplace. Your account has been pre-loaded with unrestricted access to the full creator catalog.")}
-${emailStatCard("Unlimited", "No caps. No throttling. No expiration.", EMAIL_COLORS.gold)}
+${emailHeading("You're invited to Greenroom")}
+${emailLede("A personal invitation to Greenroom, an open marketplace for music samples. Your account comes with full access to the creator catalog.")}
+${emailStatCard("Full access", "Browse and download from the whole catalog", EMAIL_COLORS.gold)}
 ${invite.message ? emailQuote(invite.message) : ""}
-${emailButton(invite.signupUrl, "Activate Access", "premium")}
-${emailParagraph("This invitation is personal and non-transferable.", EMAIL_COLORS.textMuted)}
+${emailButton(invite.signupUrl, "Accept invite", "premium")}
 `;
 
   await sendEmail({
     to: invite.email,
     from: INVITE_FROM_EMAIL,
-    subject: "Your Greenroom access is ready",
-    text: `You've been granted unlimited access to Greenroom — the world's first open sample marketplace.
+    subject: "Your personal invite to Greenroom",
+    text: `You're invited to Greenroom, an open marketplace for music samples.
 
-Your account has been pre-loaded with unlimited credits. Download anything. No caps. No throttling. Full creator catalog.
+Your account comes with full access to the creator catalog — browse and download anything you like.
 
-${invite.message ? `A note from the team: ${invite.message}\n\n` : ""}Activate your access here: ${invite.signupUrl}
-
-This invitation is personal and non-transferable.
+${invite.message ? `A note from the team: ${invite.message}\n\n` : ""}Accept your invite here: ${invite.signupUrl}
 
 ---
-You're receiving this because you were granted personal access to Greenroom.
+You're receiving this because you were invited to Greenroom.
 
 © Greenroom`,
     html: wrapEmailHtml({
-      preheader: "Your Greenroom access is ready.",
+      preheader: "Your personal invite to Greenroom.",
       content,
-      whyReceiving: "You're receiving this because you were granted personal access to Greenroom.",
+      whyReceiving: "You're receiving this because you were invited to Greenroom.",
       variant: "premium",
     }),
   });
