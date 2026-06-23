@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 // GET /api/ratings — Get user's ratings for both samples and presets
 export async function GET(_request: NextRequest) {
@@ -52,6 +53,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Light rate limit so ratings can't be scripted in bulk.
+    const limit = await rateLimit(`rating:${authUser.id}`, {
+      limit: 20,
+      windowSec: 60,
+    });
+    if (!limit.success) {
+      return tooManyRequests();
+    }
+
     const body = await request.json();
     const { sampleId, presetId, score } = body;
 
@@ -62,9 +72,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!score || score < 1 || score > 5) {
+    if (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 5) {
       return NextResponse.json(
-        { error: "score must be between 1 and 5" },
+        { error: "score must be a whole number between 1 and 5" },
         { status: 400 }
       );
     }
@@ -77,6 +87,27 @@ export async function POST(request: NextRequest) {
 
       if (!sample || sample.status !== "PUBLISHED" || !sample.isActive) {
         return NextResponse.json({ error: "Sample not found" }, { status: 404 });
+      }
+
+      // Creators cannot rate their own work.
+      if (sample.creatorId === authUser.id) {
+        return NextResponse.json(
+          { error: "You cannot rate your own sample" },
+          { status: 403 }
+        );
+      }
+
+      // Only buyers can rate. A Purchase is the prerequisite for any download,
+      // so this is the canonical ownership record (see /api/downloads).
+      const purchase = await prisma.purchase.findUnique({
+        where: { userId_sampleId: { userId: authUser.id, sampleId } },
+        select: { id: true },
+      });
+      if (!purchase) {
+        return NextResponse.json(
+          { error: "You can only rate samples you've purchased" },
+          { status: 403 }
+        );
       }
 
       const rating = await prisma.rating.upsert({
@@ -114,6 +145,26 @@ export async function POST(request: NextRequest) {
 
       if (!preset || preset.status !== "PUBLISHED" || !preset.isActive) {
         return NextResponse.json({ error: "Preset not found" }, { status: 404 });
+      }
+
+      // Creators cannot rate their own work.
+      if (preset.creatorId === authUser.id) {
+        return NextResponse.json(
+          { error: "You cannot rate your own preset" },
+          { status: 403 }
+        );
+      }
+
+      // Only buyers can rate (see sample branch above).
+      const purchase = await prisma.purchase.findUnique({
+        where: { userId_presetId: { userId: authUser.id, presetId } },
+        select: { id: true },
+      });
+      if (!purchase) {
+        return NextResponse.json(
+          { error: "You can only rate presets you've purchased" },
+          { status: 403 }
+        );
       }
 
       // Upsert rating for preset

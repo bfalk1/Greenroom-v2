@@ -1,9 +1,9 @@
 /**
  * Reconcile denormalized rating columns (ratingAvg / ratingCount) on Sample and
  * Preset rows so they reflect ONLY real ratings — i.e. actual rows in the
- * `ratings` table. Any fabricated values (e.g. from apply-random-ratings.ts,
- * which writes the columns without creating Rating rows) get cleared back to 0,
- * which the UI renders as "New".
+ * `ratings` table. Any fabricated values (e.g. from the since-removed
+ * apply-random-ratings.ts seed script, which wrote the columns without creating
+ * Rating rows) get cleared back to 0, which the UI renders as "New".
  *
  * This is the exact aggregation POST /api/ratings already performs per-item, so
  * after this runs the columns stay correct going forward.

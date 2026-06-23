@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
+import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -10,7 +11,19 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+// Refuse to seed a production environment by accident — seeding mints real,
+// email-confirmed auth users.
+function assertSafeToSeed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "1") {
+    console.error(
+      "Refusing to seed: NODE_ENV=production. Set ALLOW_PROD_SEED=1 to override."
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertSafeToSeed();
   console.log("🌱 Seeding database...");
 
   // Upsert subscription tiers
@@ -86,7 +99,9 @@ async function main() {
   let createdCount = 0;
 
   for (const c of creators) {
-    const password = c.username;
+    // Unguessable per-account password. Artists claim their account via the
+    // password-reset flow; nobody logs in with a seed-derived password.
+    const password = randomBytes(32).toString("hex");
     let authUserId: string;
     
     const existingUser = await prisma.user.findUnique({ where: { email: c.email } });
@@ -153,7 +168,7 @@ async function main() {
     });
     
     createdCount++;
-    console.log(`  ✅ Creator: ${c.artistName} (${c.email} / pass: ${password})`);
+    console.log(`  ✅ Creator: ${c.artistName} (${c.email})`);
   }
 
   console.log(`\n✅ Created ${createdCount} creators`);

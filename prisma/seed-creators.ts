@@ -1,7 +1,26 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
+import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
+
+// Refuse to seed a production environment by accident. Seeding mints real,
+// email-confirmed auth users; running it against prod would create accounts.
+function assertSafeToSeed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "1") {
+    console.error(
+      "Refusing to seed: NODE_ENV=production. Set ALLOW_PROD_SEED=1 to override."
+    );
+    process.exit(1);
+  }
+}
+
+// Each seeded account gets a unique, unguessable password. Nobody is meant to
+// log in with these directly — the real artist claims the account via the
+// password-reset ("forgot password") flow.
+function generatePassword(): string {
+  return randomBytes(32).toString("hex");
+}
 
 // Initialize Supabase Admin client
 const supabaseAdmin = createClient(
@@ -52,8 +71,6 @@ const creators = [
   { artistName: "Badlike" },
 ];
 
-const DEFAULT_PASSWORD = "green room";
-
 function generateUsername(artistName: string): string {
   return artistName
     .toLowerCase()
@@ -69,6 +86,7 @@ function generateEmail(artistName: string): string {
 }
 
 async function main() {
+  assertSafeToSeed();
   console.log("🎤 Seeding creator accounts...\n");
 
   const results: { artistName: string; email: string; status: string }[] = [];
@@ -82,7 +100,7 @@ async function main() {
       const { data: authData, error: authError } =
         await supabaseAdmin.auth.admin.createUser({
           email,
-          password: DEFAULT_PASSWORD,
+          password: generatePassword(),
           email_confirm: true, // Auto-confirm email
         });
 
@@ -174,7 +192,9 @@ async function main() {
   console.log(`Created: ${results.filter((r) => r.status.includes("Created")).length}`);
   console.log(`Updated: ${results.filter((r) => r.status.includes("updated")).length}`);
   console.log(`Errors: ${results.filter((r) => r.status.includes("Error")).length}`);
-  console.log("\n📧 All accounts use password: " + DEFAULT_PASSWORD);
+  console.log(
+    "\n📧 Accounts were created with random passwords. Artists claim their account via 'forgot password'."
+  );
   console.log("\n🎉 Done!");
 }
 
