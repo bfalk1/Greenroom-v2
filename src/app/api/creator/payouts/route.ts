@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { calculateCreatorEarningsCents } from "@/lib/payouts";
+import {
+  calculateCreatorEarningsCents,
+  getCreatorCreditsSpent,
+} from "@/lib/payouts";
+import { computeUnpaidCents, MIN_PAYOUT_CENTS } from "@/lib/payoutMath";
 
 // GET /api/creator/payouts — fetch payout history for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -97,22 +101,10 @@ export async function POST(_request: NextRequest) {
       );
     }
 
-    // Get all samples by this creator
-    const creatorSamples = await prisma.sample.findMany({
-      where: { creatorId: authUser.id },
-      select: { id: true },
-    });
+    // Total credits earned across the creator's WHOLE catalog (samples AND
+    // presets) — counting only samples previously left preset sales unpaid.
+    const totalCreditsEarned = await getCreatorCreditsSpent(authUser.id);
 
-    const sampleIds = creatorSamples.map((s) => s.id);
-
-    // Calculate total credits earned from purchases
-    const purchaseAgg = await prisma.purchase.aggregate({
-      where: { sampleId: { in: sampleIds } },
-      _sum: { creditsSpent: true },
-    });
-
-    const totalCreditsEarned = purchaseAgg._sum.creditsSpent || 0;
-    
     // Calculate earnings using creator's effective payout rate
     const totalEarningsCents = await calculateCreatorEarningsCents(
       authUser.id,
@@ -129,13 +121,12 @@ export async function POST(_request: NextRequest) {
     });
 
     const alreadyAccountedCents = payoutAgg._sum.amountUsdCents || 0;
-    const unpaidCents = totalEarningsCents - alreadyAccountedCents;
+    const unpaidCents = computeUnpaidCents(totalEarningsCents, alreadyAccountedCents);
 
-    // Minimum $0.01 to request (lowered for testing — TODO: raise to $5.00 / 500 cents for production)
-    if (unpaidCents < 1) {
+    if (unpaidCents < MIN_PAYOUT_CENTS) {
       return NextResponse.json(
         {
-          error: `No unpaid earnings to withdraw.`,
+          error: `You need at least $${(MIN_PAYOUT_CENTS / 100).toFixed(2)} in unpaid earnings to request a payout.`,
         },
         { status: 400 }
       );
@@ -150,8 +141,10 @@ export async function POST(_request: NextRequest) {
       _sum: { totalCreditsSpent: true },
     });
 
-    const unpaidCredits =
-      totalCreditsEarned - (alreadyAccountedCredits._sum.totalCreditsSpent || 0);
+    const unpaidCredits = Math.max(
+      0,
+      totalCreditsEarned - (alreadyAccountedCredits._sum.totalCreditsSpent || 0)
+    );
 
     // Determine period start: day after last payout end, or account creation date
     const lastPayout = await prisma.creatorPayout.findFirst({

@@ -108,14 +108,14 @@ model User {
   profileCompleted   Boolean   @default(false) @map("profile_completed")
   stripeCustomerId   String?   @map("stripe_customer_id")
   stripeConnectId    String?   @map("stripe_connect_id")
-  payoutRate         Int?      @map("payout_rate") // Creator-specific payout % (e.g., 70 = 70%). Falls back to platform default if null.
+  payoutRate         Int?      @map("payout_rate") // DEPRECATED — unused. Per-creator rate lives in customPayoutRate (cents/credit).
   isActive           Boolean   @default(true) @map("is_active")
   isFlagged          Boolean   @default(false) @map("is_flagged")
   flagReason         String?   @map("flag_reason")
   flaggedAt          DateTime? @map("flagged_at")
   flaggedBy          String?   @map("flagged_by") @db.Uuid
   isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
-  customPayoutRate   Int?      @map("custom_payout_rate")
+  customPayoutRate   Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
   termsAcceptedAt    DateTime? @map("terms_accepted_at")
   emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
   createdAt          DateTime  @default(now()) @map("created_at")
@@ -525,9 +525,9 @@ model StripeWebhookEvent {
 
 model PlatformSetting {
   id                String   @id @default("default")
-  // Creator payout rate (percentage of credit value, e.g., 70 = 70%)
-  creatorPayoutRate Int      @default(70) @map("creator_payout_rate")
-  // Credit value in USD cents (e.g., 10 = $0.10 per credit)
+  // Platform default creator payout rate in cents per credit (e.g., 7 = $0.07/credit)
+  creatorPayoutRate Int      @default(7) @map("creator_payout_rate")
+  // Credit value in USD cents (e.g., 10 = $0.10 per credit). Informational; no longer part of payout math.
   creditValueCents  Int      @default(10) @map("credit_value_cents")
   // Moderator whitelist (stored as JSON array of user IDs)
   moderatorIds      String[] @default([]) @map("moderator_ids") @db.Uuid

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_PAYOUT_CENTS_PER_CREDIT } from "@/lib/payoutMath";
 
 // GET /api/admin/settings — Get platform settings
 export async function GET() {
@@ -31,7 +32,7 @@ export async function GET() {
       settings = await prisma.platformSetting.create({
         data: {
           id: "default",
-          creatorPayoutRate: 70,
+          creatorPayoutRate: DEFAULT_PAYOUT_CENTS_PER_CREDIT,
           creditValueCents: 10,
           moderatorIds: [],
         },
@@ -102,9 +103,9 @@ export async function PATCH(request: NextRequest) {
     };
 
     if (creatorPayoutRate !== undefined) {
-      if (creatorPayoutRate < 0 || creatorPayoutRate > 100) {
+      if (creatorPayoutRate < 0 || creatorPayoutRate > 50) {
         return NextResponse.json(
-          { error: "Payout rate must be between 0 and 100" },
+          { error: "Payout rate must be between 0 and 50 cents per credit" },
           { status: 400 }
         );
       }
@@ -126,7 +127,7 @@ export async function PATCH(request: NextRequest) {
       update: updateData,
       create: {
         id: "default",
-        creatorPayoutRate: creatorPayoutRate ?? 70,
+        creatorPayoutRate: creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT,
         creditValueCents: creditValueCents ?? 10,
         moderatorIds: [],
         updatedBy: authUser.id,

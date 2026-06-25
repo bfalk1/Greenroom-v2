@@ -138,17 +138,17 @@ export async function PATCH(request: NextRequest) {
       creditsTarget = Math.max(0, (targetUser.creditBalance?.balance ?? 0) + adjustment);
     }
 
-    // Per-creator payout rate as a PERCENTAGE of credit value (e.g. 70 = 70%).
-    // This is the single field the payout engine reads (lib/payouts.ts); empty
-    // means fall back to the platform default (PlatformSetting.creatorPayoutRate).
+    // Per-creator payout rate in CENTS PER CREDIT (e.g. 7 = $0.07/credit). This
+    // is the single field the payout engine reads (lib/payouts.ts); empty means
+    // fall back to the platform default (PlatformSetting.creatorPayoutRate).
     if (customPayoutRate !== undefined) {
       if (customPayoutRate === null || customPayoutRate === "") {
         updateData.customPayoutRate = null; // Use platform default
       } else {
         const rate = parseInt(customPayoutRate);
-        if (isNaN(rate) || rate < 0 || rate > 100) {
+        if (isNaN(rate) || rate < 0 || rate > 50) {
           return NextResponse.json(
-            { error: "Payout rate must be 0-100 (percent), or empty for the platform default" },
+            { error: "Payout rate must be 0-50 (cents per credit), or empty for the platform default" },
             { status: 400 }
           );
         }

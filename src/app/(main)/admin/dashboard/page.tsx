@@ -189,7 +189,7 @@ export default function AdminDashboardPage() {
   
   // Settings state
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
-    creatorPayoutRate: 70,
+    creatorPayoutRate: 7,
     creditValueCents: 10,
   });
   const [moderators, setModerators] = useState<Moderator[]>([]);
@@ -1061,11 +1061,12 @@ export default function AdminDashboardPage() {
                     <Input
                       type="number"
                       min="0"
-                      value={platformSettings.creditValueCents}
+                      max="50"
+                      value={platformSettings.creatorPayoutRate}
                       onChange={(e) =>
                         setPlatformSettings((prev) => ({
                           ...prev,
-                          creditValueCents: parseInt(e.target.value) || 0,
+                          creatorPayoutRate: parseInt(e.target.value) || 0,
                         }))
                       }
                       className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white"
@@ -1073,7 +1074,7 @@ export default function AdminDashboardPage() {
                     <span className="text-[#a1a1a1]">¢ per credit</span>
                   </div>
                   <p className="text-xs text-[#a1a1a1] mt-2">
-                    Example: A 2-credit sample pays creator ${((platformSettings.creditValueCents * 2) / 100).toFixed(2)}
+                    Example: A 2-credit sale pays the creator ${((platformSettings.creatorPayoutRate * 2) / 100).toFixed(2)}
                   </p>
                 </div>
 

@@ -66,9 +66,9 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
     setSavingId(creatorId);
     try {
       const rate = editingRate === "" ? null : parseInt(editingRate);
-      
-      if (rate !== null && (isNaN(rate) || rate < 0 || rate > 100)) {
-        toast.error("Payout rate must be between 0 and 100");
+
+      if (rate !== null && (isNaN(rate) || rate < 0 || rate > 50)) {
+        toast.error("Payout rate must be between 0 and 50 cents per credit");
         return;
       }
 
@@ -133,9 +133,9 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
           <Percent className="w-5 h-5 text-[#39b54a]" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-white">Per-Creator Profit Split</h3>
+          <h3 className="text-lg font-semibold text-white">Per-Creator Payout Rate</h3>
           <p className="text-sm text-[#a1a1a1]">
-            Platform default: {platformDefaultRate}% to creator
+            Platform default: ${(platformDefaultRate / 100).toFixed(2)} per credit
           </p>
         </div>
       </div>
@@ -208,13 +208,13 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
                       <Input
                         type="number"
                         min="0"
-                        max="100"
+                        max="50"
                         value={editingRate}
                         onChange={(e) => setEditingRate(e.target.value)}
                         placeholder={String(platformDefaultRate)}
                         className="w-20 bg-[#0a0a0a] border-[#2a2a2a] text-white text-center"
                       />
-                      <span className="text-[#a1a1a1]">%</span>
+                      <span className="text-[#a1a1a1]">¢/credit</span>
                       <Button
                         onClick={() => handleSaveRate(creator.id)}
                         disabled={savingId === creator.id}
@@ -246,7 +246,7 @@ export function CreatorPayoutSettings({ platformDefaultRate }: CreatorPayoutSett
                     >
                       <DollarSign className="w-4 h-4 text-[#39b54a]" />
                       <span className="text-white font-medium">
-                        {creator.customPayoutRate ?? platformDefaultRate}%
+                        ${((creator.customPayoutRate ?? platformDefaultRate) / 100).toFixed(2)}/cr
                       </span>
                       {creator.customPayoutRate !== null && (
                         <span className="text-xs text-[#a1a1a1]">(custom)</span>

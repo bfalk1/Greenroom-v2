@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import {
+  resolveCentsPerCredit,
+  DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+} from "@/lib/payoutMath";
 
 // GET /api/admin/creators/[id] - Get creator details including custom payout rate
 export async function GET(
@@ -57,10 +61,17 @@ export async function GET(
       select: { creatorPayoutRate: true },
     });
 
+    const platformDefaultRate =
+      settings?.creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT;
+
     return NextResponse.json({
       creator,
-      platformDefaultRate: settings?.creatorPayoutRate || 70,
-      effectiveRate: creator.customPayoutRate ?? settings?.creatorPayoutRate ?? 70,
+      // Rates are CENTS PER CREDIT (e.g. 7 = $0.07/credit), not percentages.
+      platformDefaultRate,
+      effectiveRate: resolveCentsPerCredit(
+        creator.customPayoutRate,
+        platformDefaultRate
+      ),
     });
   } catch (error) {
     console.error("Error fetching creator:", error);
@@ -105,9 +116,9 @@ export async function PATCH(
         updateData.customPayoutRate = null;
       } else {
         const rate = parseInt(customPayoutRate);
-        if (isNaN(rate) || rate < 0 || rate > 100) {
+        if (isNaN(rate) || rate < 0 || rate > 50) {
           return NextResponse.json(
-            { error: "Payout rate must be between 0 and 100" },
+            { error: "Payout rate must be between 0 and 50 cents per credit" },
             { status: 400 }
           );
         }

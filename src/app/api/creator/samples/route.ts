@@ -84,7 +84,7 @@ export async function GET(_request: NextRequest) {
     const previewPaths = samples.map(s => extractStoragePath(s.previewUrl, "previews"));
     const validPreviewPaths = previewPaths.filter((p): p is string => p !== null);
 
-    let signedPreviewMap: Record<string, string> = {};
+    const signedPreviewMap: Record<string, string> = {};
     if (validPreviewPaths.length > 0) {
       const { data } = await serviceClient.storage
         .from("previews")
@@ -101,7 +101,7 @@ export async function GET(_request: NextRequest) {
     const coverPaths = samples.map(s => extractStoragePath(s.coverImageUrl, "covers"));
     const validCoverPaths = coverPaths.filter((p): p is string => p !== null);
 
-    let signedCoverMap: Record<string, string> = {};
+    const signedCoverMap: Record<string, string> = {};
     if (validCoverPaths.length > 0) {
       const { data } = await serviceClient.storage
         .from("covers")
