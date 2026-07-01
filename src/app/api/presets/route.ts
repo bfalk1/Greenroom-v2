@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
-import { isOwnedStorageRef, isSafeStorageRef } from "@/lib/storage";
+import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
+import { verifyStoredImage, removeObject } from "@/lib/storageValidate";
 
 // Display names for synth enums
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -385,6 +386,22 @@ export async function POST(request: NextRequest) {
     }
     if (!isSafeStorageRef(previewUrl, "previews")) {
       return NextResponse.json({ error: "Invalid preview reference" }, { status: 400 });
+    }
+
+    // The cover was uploaded directly to the PUBLIC covers bucket by the browser
+    // and never passed through a server route, so confirm it is an object this
+    // creator owns and re-validate its magic bytes — a renamed active-content
+    // file would otherwise be served publicly. Delete-on-fail.
+    if (coverImageUrl) {
+      const coverPath = ownedPublicObjectPath(coverImageUrl, "covers", authUser.id);
+      if (!coverPath) {
+        return NextResponse.json({ error: "Invalid cover reference" }, { status: 400 });
+      }
+      const coverCheck = await verifyStoredImage("covers", coverPath);
+      if (!coverCheck.ok) {
+        await removeObject("covers", coverPath);
+        return NextResponse.json({ error: coverCheck.error }, { status: 400 });
+      }
     }
 
     // Validate enum values

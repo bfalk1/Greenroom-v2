@@ -3,21 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
-import { isOwnedStorageRef, isSafeStorageRef } from "@/lib/storage";
+import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredWav, verifyStoredImage, removeObject } from "@/lib/storageValidate";
-
-// Extract the in-bucket path from a `covers` public URL, but only if it is
-// scoped to `ownerId` and otherwise safe. The client posts back the public URL
-// minted for its own upload; anything else (an external URL, another creator's
-// prefix, traversal) returns null and is rejected.
-function ownedCoverPath(coverImageUrl: string, ownerId: string): string | null {
-  const marker = "/object/public/covers/";
-  const i = coverImageUrl.indexOf(marker);
-  if (i === -1) return null;
-  const path = coverImageUrl.slice(i + marker.length).split("?")[0];
-  if (!isOwnedStorageRef(`covers/${path}`, "covers", ownerId)) return null;
-  return path;
-}
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -474,7 +461,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (coverImageUrl) {
-      const coverPath = ownedCoverPath(coverImageUrl, authUser.id);
+      const coverPath = ownedPublicObjectPath(coverImageUrl, "covers", authUser.id);
       if (!coverPath) {
         return NextResponse.json(
           { error: "Invalid cover reference" },

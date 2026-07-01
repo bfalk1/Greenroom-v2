@@ -12,6 +12,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { toast } from "sonner";
 import JSZip from "jszip";
+import { uploadPresetFiles } from "@/lib/uploadClient";
 
 const SYNTHS = [
   { value: "SERUM", label: "Serum" },
@@ -37,7 +38,7 @@ const CATEGORIES = [
   { value: "OTHER", label: "Other" },
 ];
 
-const PRESET_EXTENSIONS = [".fxp", ".vital", ".phaseplant", ".nmsv", ".aupreset", ".syx"];
+const PRESET_EXTENSIONS = [".serumpreset", ".fxp", ".vital", ".phaseplant", ".nmsv", ".aupreset", ".syx"];
 const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg", ".m4a"];
 
 interface PresetToUpload {
@@ -313,22 +314,12 @@ export default function BatchUploadPresetsPage() {
     try {
       if (preset.presetFile.size === 0) throw new Error("Preset file is empty");
 
-      // Upload files via server-side API route (uses service role key)
-      const uploadFormData = new FormData();
-      uploadFormData.append("presetFile", preset.presetFile);
-      uploadFormData.append("previewFile", preset.previewFile);
-
-      const uploadRes = await fetch("/api/upload/preset", {
-        method: "POST",
-        body: uploadFormData,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json();
-        throw new Error(err.error || "File upload failed");
-      }
-
-      const { fileUrl, previewUrl } = await uploadRes.json();
+      // Upload preset + preview DIRECTLY to Supabase via signed URLs (bypasses
+      // Vercel's 4.5MB function-body limit that 413'd the audio preview).
+      const { fileUrl, previewUrl } = await uploadPresetFiles(
+        preset.presetFile,
+        preset.previewFile
+      );
 
       // Create preset via API
       const res = await fetch("/api/presets", {

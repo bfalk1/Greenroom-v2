@@ -44,3 +44,26 @@ export function isOwnedStorageRef(
   if (!isSafeStorageRef(value, bucket)) return false;
   return (value as string).startsWith(`${bucket}/${ownerId}/`);
 }
+
+/**
+ * Extract the in-bucket path from a Supabase PUBLIC object URL, but only if it
+ * points into `bucket` under `ownerId`'s prefix and is otherwise safe; returns
+ * null for anything else (external URL, another tenant, traversal).
+ *
+ * Used when a client uploads directly to a public bucket via a signed URL and
+ * posts the resulting public URL back — the server must confirm the URL is one
+ * it minted for this owner before trusting/re-validating the object.
+ */
+export function ownedPublicObjectPath(
+  url: unknown,
+  bucket: string,
+  ownerId: string
+): string | null {
+  if (typeof url !== "string") return null;
+  const marker = `/object/public/${bucket}/`;
+  const i = url.indexOf(marker);
+  if (i === -1) return null;
+  const path = url.slice(i + marker.length).split("?")[0];
+  if (!isOwnedStorageRef(`${bucket}/${path}`, bucket, ownerId)) return null;
+  return path;
+}

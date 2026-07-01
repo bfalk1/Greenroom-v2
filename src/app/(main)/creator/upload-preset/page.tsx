@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { toast } from "sonner";
+import { uploadPresetFiles } from "@/lib/uploadClient";
 
 const SYNTHS = [
   { value: "SERUM", label: "Serum" },
@@ -37,7 +38,7 @@ const CATEGORIES = [
 const PRESET_EXTENSIONS: Record<string, string[]> = {
   SERUM: [".fxp"],
   ASTRA: [".fxp", ".zip"],
-  SERUM_2: [".fxp"],
+  SERUM_2: [".serumpreset", ".fxp"],
   PHASE_PLANT: [".phaseplant", ".zip"],
   SPLICE: [".zip"],
   VITAL: [".vital"],
@@ -46,7 +47,7 @@ const PRESET_EXTENSIONS: Record<string, string[]> = {
   BEAT_MAKER: [".zip"],
 };
 
-const ALL_EXTENSIONS = [".fxp", ".vital", ".phaseplant", ".nmsv", ".zip", ".aupreset", ".syx"];
+const ALL_EXTENSIONS = [".serumpreset", ".fxp", ".vital", ".phaseplant", ".nmsv", ".zip", ".aupreset", ".syx"];
 
 export default function CreatorUploadPresetPage() {
   const router = useRouter();
@@ -166,25 +167,11 @@ export default function CreatorUploadPresetPage() {
     setUploading(true);
 
     try {
-      // Upload all files via server-side API route (uses service role key)
-      const uploadFormData = new FormData();
-      uploadFormData.append("presetFile", presetFile);
-      uploadFormData.append("previewFile", previewFile);
-      if (coverFile) {
-        uploadFormData.append("coverFile", coverFile);
-      }
-
-      const uploadRes = await fetch("/api/upload/preset", {
-        method: "POST",
-        body: uploadFormData,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json();
-        throw new Error(err.error || "File upload failed");
-      }
-
-      const { fileUrl, previewUrl, coverImageUrl, fileSizeBytes } = await uploadRes.json();
+      // Upload preset + preview + cover DIRECTLY to Supabase via signed URLs.
+      // Posting the bytes through the API route hit Vercel's 4.5MB function-body
+      // limit and 413'd the audio preview / larger presets.
+      const { fileUrl, previewUrl, coverImageUrl, fileSizeBytes } =
+        await uploadPresetFiles(presetFile, previewFile, coverFile);
       setPresetUploaded(true);
       setPreviewUploaded(true);
       if (coverFile) setCoverUploaded(true);

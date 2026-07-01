@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Music, Upload, CheckCircle2, Clock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/lib/hooks/useUser";
+import { uploadApplicationZip } from "@/lib/uploadClient";
 
 interface Application {
   id: string;
@@ -95,26 +96,10 @@ export default function CreatorApplicationPage() {
     setFileUploadProgress(10);
 
     try {
-      // Upload via server-side route (uses service role to bypass RLS)
-      const uploadForm = new FormData();
-      uploadForm.append("zipFile", file);
-
+      // Upload the ZIP DIRECTLY to Supabase via a signed URL (bypasses Vercel's
+      // 4.5MB function-body limit that 413'd 50MB portfolio ZIPs).
       setFileUploadProgress(30);
-
-      const res = await fetch("/api/upload/application", {
-        method: "POST",
-        body: uploadForm,
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "File upload failed");
-      }
-
-      const { path, fileName } = (await res.json()) as {
-        path: string;
-        fileName: string;
-      };
+      const { path, fileName } = await uploadApplicationZip(file);
 
       setFileUploadProgress(100);
       setFormData((prev) => ({

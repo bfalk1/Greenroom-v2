@@ -63,3 +63,165 @@ export async function uploadSampleFiles(
 
   return { fileUrl: audio.fileUrl, coverImageUrl };
 }
+
+type PresetMintResponse = {
+  preset: { uploadPath: string; token: string; fileUrl: string; contentType: string };
+  preview: { uploadPath: string; token: string; previewUrl: string; contentType: string };
+  cover?: { uploadPath: string; token: string; contentType: string; publicUrl: string };
+};
+
+/**
+ * Upload a preset's file, its audio preview, and optional cover DIRECTLY to
+ * Supabase Storage via signed upload URLs (bypasses Vercel's 4.5MB function
+ * body limit). Returns the refs POST /api/presets expects.
+ */
+export async function uploadPresetFiles(
+  presetFile: File,
+  previewFile: File,
+  coverFile?: File | null
+): Promise<{
+  fileUrl: string;
+  previewUrl: string;
+  coverImageUrl: string | null;
+  fileSizeBytes: number;
+}> {
+  const mintRes = await fetch("/api/upload/preset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      preset: { filename: presetFile.name, size: presetFile.size },
+      preview: { filename: previewFile.name, size: previewFile.size },
+      cover: coverFile ? { filename: coverFile.name, size: coverFile.size } : null,
+    }),
+  });
+
+  if (!mintRes.ok) {
+    const err = await mintRes.json().catch(() => ({}));
+    throw new Error(err.error || "File upload failed");
+  }
+
+  const { preset, preview, cover } = (await mintRes.json()) as PresetMintResponse;
+  const supabase = createClient();
+
+  const presetUp = await supabase.storage
+    .from("presets")
+    .uploadToSignedUrl(preset.uploadPath, preset.token, presetFile, {
+      contentType: preset.contentType,
+    });
+  if (presetUp.error) throw new Error("Preset file upload failed");
+
+  const previewUp = await supabase.storage
+    .from("previews")
+    .uploadToSignedUrl(preview.uploadPath, preview.token, previewFile, {
+      contentType: preview.contentType,
+    });
+  if (previewUp.error) throw new Error("Audio preview upload failed");
+
+  let coverImageUrl: string | null = null;
+  if (coverFile && cover) {
+    const coverUp = await supabase.storage
+      .from("covers")
+      .uploadToSignedUrl(cover.uploadPath, cover.token, coverFile, {
+        contentType: cover.contentType,
+      });
+    if (coverUp.error) throw new Error("Cover image upload failed");
+    coverImageUrl = cover.publicUrl;
+  }
+
+  return {
+    fileUrl: preset.fileUrl,
+    previewUrl: preview.previewUrl,
+    coverImageUrl,
+    fileSizeBytes: presetFile.size,
+  };
+}
+
+/**
+ * Upload a creator-application ZIP DIRECTLY to Supabase Storage via a signed
+ * upload URL (bypasses Vercel's 4.5MB function body limit). Returns the same
+ * `{ path, fileName }` the old multipart route returned.
+ */
+export async function uploadApplicationZip(
+  zipFile: File
+): Promise<{ path: string; fileName: string }> {
+  const mintRes = await fetch("/api/upload/application", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: zipFile.name, size: zipFile.size }),
+  });
+
+  if (!mintRes.ok) {
+    const err = await mintRes.json().catch(() => ({}));
+    throw new Error(err.error || "File upload failed");
+  }
+
+  const { uploadPath, token, path, fileName } = (await mintRes.json()) as {
+    uploadPath: string;
+    token: string;
+    path: string;
+    fileName: string;
+  };
+
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from("applications")
+    .uploadToSignedUrl(uploadPath, token, zipFile, {
+      contentType: "application/zip",
+    });
+  if (error) throw new Error("File upload failed");
+
+  return { path, fileName };
+}
+
+/**
+ * Upload a public profile image (avatar/banner) DIRECTLY to Supabase Storage
+ * via a signed upload URL, then finalize (server re-validates the stored image
+ * and saves it to the profile). Two calls to the same endpoint: mint, then
+ * finalize. Bypasses Vercel's 4.5MB function body limit.
+ */
+async function uploadPublicImage(
+  endpoint: string,
+  bucket: string,
+  file: File
+): Promise<{ url: string }> {
+  const mintRes = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename: file.name, size: file.size }),
+  });
+  if (!mintRes.ok) {
+    const err = await mintRes.json().catch(() => ({}));
+    throw new Error(err.error || "Upload failed");
+  }
+  const { uploadPath, token, contentType } = (await mintRes.json()) as {
+    uploadPath: string;
+    token: string;
+    contentType: string;
+  };
+
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from(bucket)
+    .uploadToSignedUrl(uploadPath, token, file, { contentType });
+  if (error) throw new Error("Upload failed");
+
+  const finalizeRes = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ finalizePath: uploadPath }),
+  });
+  if (!finalizeRes.ok) {
+    const err = await finalizeRes.json().catch(() => ({}));
+    throw new Error(err.error || "Upload failed");
+  }
+  const { url } = (await finalizeRes.json()) as { url: string };
+  return { url };
+}
+
+export function uploadAvatar(file: File): Promise<{ url: string }> {
+  return uploadPublicImage("/api/upload/avatar", "avatars", file);
+}
+
+export function uploadBanner(file: File): Promise<{ url: string }> {
+  return uploadPublicImage("/api/upload/banner", "banners", file);
+}

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { uploadBanner } from "@/lib/uploadClient";
 
 interface BannerImageUploadProps {
   userId: string;
@@ -35,20 +36,7 @@ export function BannerImageUpload({
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/upload/banner", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Upload failed");
-      }
-
-      const { url } = await res.json();
+      const { url } = await uploadBanner(file);
       setPreview(url);
       onUploadSuccess?.(url);
       toast.success("Banner uploaded!");
