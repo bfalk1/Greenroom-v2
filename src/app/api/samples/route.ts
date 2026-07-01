@@ -4,6 +4,20 @@ import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef } from "@/lib/storage";
+import { verifyStoredWav, verifyStoredImage, removeObject } from "@/lib/storageValidate";
+
+// Extract the in-bucket path from a `covers` public URL, but only if it is
+// scoped to `ownerId` and otherwise safe. The client posts back the public URL
+// minted for its own upload; anything else (an external URL, another creator's
+// prefix, traversal) returns null and is rejected.
+function ownedCoverPath(coverImageUrl: string, ownerId: string): string | null {
+  const marker = "/object/public/covers/";
+  const i = coverImageUrl.indexOf(marker);
+  if (i === -1) return null;
+  const path = coverImageUrl.slice(i + marker.length).split("?")[0];
+  if (!isOwnedStorageRef(`covers/${path}`, "covers", ownerId)) return null;
+  return path;
+}
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -447,6 +461,33 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // The audio (and cover) bytes were uploaded directly to storage by the
+    // browser via a signed URL and never passed through this function, so
+    // re-validate the STORED object here — this is the authoritative content +
+    // size check. On failure, delete the orphaned object and reject.
+    const audioPath = fileUrl.slice("samples/".length);
+    const audioCheck = await verifyStoredWav("samples", audioPath);
+    if (!audioCheck.ok) {
+      await removeObject("samples", audioPath);
+      return NextResponse.json({ error: audioCheck.error }, { status: 400 });
+    }
+
+    if (coverImageUrl) {
+      const coverPath = ownedCoverPath(coverImageUrl, authUser.id);
+      if (!coverPath) {
+        return NextResponse.json(
+          { error: "Invalid cover reference" },
+          { status: 400 }
+        );
+      }
+      const coverCheck = await verifyStoredImage("covers", coverPath);
+      if (!coverCheck.ok) {
+        await removeObject("covers", coverPath);
+        return NextResponse.json({ error: coverCheck.error }, { status: 400 });
+      }
+    }
+
     let safePreviewUrl: string | null = null;
     if (previewUrl != null && previewUrl !== "") {
       if (

@@ -10,6 +10,7 @@ import { trackSampleUpload } from "@/lib/analytics";
 import { toast } from "sonner";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { KeySelector } from "@/components/ui/KeySelector";
+import { uploadSampleFiles } from "@/lib/uploadClient";
 
 const GENRES = [
   "Hip Hop",
@@ -332,25 +333,10 @@ export default function CreatorUploadPage() {
         console.error("Failed to generate waveform:", e);
       }
 
-      // Upload audio + cover via server-side route (uses service role to bypass RLS)
-      const uploadForm = new FormData();
-      uploadForm.append("audioFile", audioFile);
-      if (coverFile) uploadForm.append("coverFile", coverFile);
-
-      const uploadRes = await fetch("/api/upload/sample", {
-        method: "POST",
-        body: uploadForm,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.error || "File upload failed");
-      }
-
-      const { fileUrl, coverImageUrl } = (await uploadRes.json()) as {
-        fileUrl: string;
-        coverImageUrl: string | null;
-      };
+      // Upload audio + cover DIRECTLY to Supabase via signed URLs. Posting the
+      // bytes through the API route hit Vercel's 4.5MB function-body limit and
+      // 413'd any real WAV.
+      const { fileUrl, coverImageUrl } = await uploadSampleFiles(audioFile, coverFile);
       setAudioUploaded(true);
       if (coverFile) setCoverUploaded(true);
 

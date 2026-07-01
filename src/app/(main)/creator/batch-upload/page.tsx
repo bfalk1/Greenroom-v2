@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import JSZip from "jszip";
 import { KeySelector } from "@/components/ui/KeySelector";
 import { Checkbox } from "@/components/ui/checkbox";
+import { uploadSampleFiles } from "@/lib/uploadClient";
 
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
@@ -316,21 +317,9 @@ export default function BatchUploadPage() {
         throw new Error("File is empty (0 bytes)");
       }
 
-      // Upload audio file via server-side route (uses service role to bypass RLS)
-      const uploadForm = new FormData();
-      uploadForm.append("audioFile", sample.file);
-
-      const uploadRes = await fetch("/api/upload/sample", {
-        method: "POST",
-        body: uploadForm,
-      });
-
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({}));
-        throw new Error(err.error || "File upload failed");
-      }
-
-      const { fileUrl } = (await uploadRes.json()) as { fileUrl: string };
+      // Upload audio DIRECTLY to Supabase via a signed URL (bypasses Vercel's
+      // 4.5MB function-body limit that 413'd larger WAVs).
+      const { fileUrl } = await uploadSampleFiles(sample.file);
 
       // Generate waveform data from the audio file
       let waveformData: number[] | null = null;
