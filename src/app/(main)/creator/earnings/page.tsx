@@ -26,8 +26,8 @@ interface EarningsStats {
   thisMonthEarnings?: number;
 }
 
-// Minimum payout threshold
-const PAYOUT_THRESHOLD = 10.0;
+// Minimum payout threshold — keep in sync with MIN_PAYOUT_CENTS in lib/payoutMath.ts
+const PAYOUT_THRESHOLD = 50.0;
 
 interface Purchase {
   id: string;
@@ -133,7 +133,7 @@ export default function CreatorEarningsPage() {
   }
 
   const canRequestPayout =
-    stats && stats.unpaidEarnings - stats.pendingPayout > 0;
+    stats && stats.unpaidEarnings - stats.pendingPayout >= PAYOUT_THRESHOLD;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -224,7 +224,7 @@ export default function CreatorEarningsPage() {
                 Request Payout
               </h2>
               <p className="text-[#a1a1a1] text-sm">
-                {stats && stats.unpaidEarnings - stats.pendingPayout > 0 ? (
+                {canRequestPayout && stats ? (
                   <>
                     You have{" "}
                     <span className="text-[#39b54a] font-medium">
@@ -246,7 +246,7 @@ export default function CreatorEarningsPage() {
                   </>
                 ) : (
                   <>
-                    Minimum payout is $0.01 (testing mode). Current unpaid earnings:{" "}
+                    Minimum payout is ${PAYOUT_THRESHOLD.toFixed(2)}. Current unpaid earnings:{" "}
                     <span className="text-white font-medium">
                       ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
                     </span>

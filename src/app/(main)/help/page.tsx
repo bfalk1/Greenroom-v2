@@ -43,7 +43,7 @@ const topics = [
     title: "Becoming a Creator",
     items: [
       { q: "How do I become a creator?", a: "Apply through the 'Become a Creator' page. You'll need to submit your artist info and a portfolio of sample work for review." },
-      { q: "How do payouts work?", a: "Creators earn revenue based on credit usage. Once you reach the minimum threshold, request a payout from your earnings page and our team will review and send it manually." },
+      { q: "How do payouts work?", a: "Creators earn revenue based on credit usage. Once you reach the minimum threshold ($50), request a payout from your earnings page and our team will review and send it manually." },
     ],
   },
   {

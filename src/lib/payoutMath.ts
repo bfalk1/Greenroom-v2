@@ -18,7 +18,7 @@
 export const DEFAULT_PAYOUT_CENTS_PER_CREDIT = 7;
 
 /** Minimum balance (in cents) before a payout can be created/requested. */
-export const MIN_PAYOUT_CENTS = 500; // $5.00
+export const MIN_PAYOUT_CENTS = 5000; // $50.00
 
 /** Resolve the effective per-creator rate (cents/credit), falling back to the platform default. */
 export function resolveCentsPerCredit(
