@@ -410,7 +410,7 @@ export default function CreatorDashboardPage() {
   };
 
   const runCreatorBulk = async (payload: {
-    action?: "submit";
+    action?: "submit" | "delete";
     metadata?: Record<string, unknown>;
   }) => {
     if (selectedIds.size === 0) return;
@@ -423,7 +423,10 @@ export default function CreatorDashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Bulk action failed");
-      toast.success(`Updated ${data.updated} sample${data.updated === 1 ? "" : "s"}`);
+      const n = data.deleted ?? data.updated;
+      toast.success(
+        `${data.deleted != null ? "Deleted" : "Updated"} ${n} sample${n === 1 ? "" : "s"}`
+      );
       setSelectedIds(new Set());
       fetchSamples();
     } catch (error) {
@@ -431,6 +434,18 @@ export default function CreatorDashboardPage() {
     } finally {
       setBulkBusy(false);
     }
+  };
+
+  const handleBulkDelete = () => {
+    const n = selectedIds.size;
+    if (n === 0) return;
+    if (
+      !confirm(
+        `Delete ${n} selected sample${n === 1 ? "" : "s"}? This permanently removes them and their files, and cannot be undone.`
+      )
+    )
+      return;
+    runCreatorBulk({ action: "delete" });
   };
 
   if (userLoading || loading) {
@@ -489,6 +504,14 @@ export default function CreatorDashboardPage() {
               className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
             >
               <Eye className="w-4 h-4 mr-1" /> Submit for Review
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={bulkBusy}
+              className="bg-red-500/15 text-red-400 hover:bg-red-500/25"
+            >
+              <Trash2 className="w-4 h-4 mr-1" /> Delete
             </Button>
             {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />}
             <button
