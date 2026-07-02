@@ -4,14 +4,13 @@ import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Upload, X, ArrowLeft, Loader2, CheckCircle, AlertCircle,
-  Package, Play, Pause, Sliders, Music, Link2, Link2Off,
+  Play, Pause, Sliders, Music, Link2, Link2Off,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { toast } from "sonner";
-import JSZip from "jszip";
 import { uploadPresetFiles } from "@/lib/uploadClient";
 
 const SYNTHS = [
@@ -69,11 +68,9 @@ export default function BatchUploadPresetsPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const [presets, setPresets] = useState<PresetToUpload[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [extractingZip, setExtractingZip] = useState(false);
 
   // Batch defaults
   const [defaultSynth, setDefaultSynth] = useState("");
@@ -159,20 +156,43 @@ export default function BatchUploadPresetsPage() {
   };
 
   const handleFilesSelect = (files: FileList | null) => {
-    if (!files) return;
+    if (!files || files.length === 0) return;
 
-    const allFiles = Array.from(files);
-    const presetFiles = allFiles.filter((f) => {
+    // Sort each file into preset / audio / skipped, and tell the creator
+    // exactly which files were skipped and why instead of dropping silently.
+    const presetFiles: File[] = [];
+    const audioFiles: File[] = [];
+    const skipped: { name: string; reason: string }[] = [];
+
+    for (const f of Array.from(files)) {
       const ext = "." + f.name.split(".").pop()?.toLowerCase();
-      return PRESET_EXTENSIONS.includes(ext) && f.size <= 10 * 1024 * 1024;
-    });
-    const audioFiles = allFiles.filter((f) => {
-      const ext = "." + f.name.split(".").pop()?.toLowerCase();
-      return AUDIO_EXTENSIONS.includes(ext) && f.size <= 20 * 1024 * 1024;
-    });
+      if (f.name.startsWith("._")) {
+        // AppleDouble metadata files (e.g. extracted from a macOS zip) carry a
+        // real-looking extension but contain no usable data.
+        skipped.push({ name: f.name, reason: "macOS metadata file" });
+      } else if (f.size === 0) {
+        skipped.push({ name: f.name, reason: "empty file (0 bytes)" });
+      } else if (PRESET_EXTENSIONS.includes(ext)) {
+        if (f.size > 10 * 1024 * 1024) skipped.push({ name: f.name, reason: "preset over 10MB" });
+        else presetFiles.push(f);
+      } else if (AUDIO_EXTENSIONS.includes(ext)) {
+        if (f.size > 20 * 1024 * 1024) skipped.push({ name: f.name, reason: "audio over 20MB" });
+        else audioFiles.push(f);
+      } else {
+        skipped.push({ name: f.name, reason: "unsupported file type" });
+      }
+    }
+
+    if (skipped.length > 0) {
+      const shown = skipped.slice(0, 3).map((s) => `${s.name} (${s.reason})`).join(", ");
+      const more = skipped.length > 3 ? ` and ${skipped.length - 3} more` : "";
+      toast.error(`Skipped ${skipped.length} file${skipped.length === 1 ? "" : "s"}: ${shown}${more}`, {
+        duration: 8000,
+      });
+    }
 
     if (presetFiles.length === 0) {
-      toast.error("No valid preset files found (max 10MB each)");
+      if (skipped.length === 0) toast.error("No valid preset files found (max 10MB each)");
       return;
     }
 
@@ -191,59 +211,6 @@ export default function BatchUploadPresetsPage() {
       );
     } else {
       toast.success(`Added ${presetFiles.length} presets — drop matching WAV files to auto-pair audio previews`);
-    }
-  };
-
-  const handleZipSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      toast.error("Please select a ZIP file");
-      return;
-    }
-
-    setExtractingZip(true);
-    try {
-      const zip = await JSZip.loadAsync(file);
-      const presetFiles: File[] = [];
-      const audioFiles: File[] = [];
-
-      for (const [filename, zipEntry] of Object.entries(zip.files)) {
-        if (zipEntry.dir) continue;
-        const baseName = filename.split("/").pop() || filename;
-        const ext = "." + baseName.split(".").pop()?.toLowerCase();
-
-        if (PRESET_EXTENSIONS.includes(ext)) {
-          const blob = await zipEntry.async("blob");
-          if (blob.size <= 10 * 1024 * 1024) {
-            presetFiles.push(new File([blob], baseName, { type: "application/octet-stream" }));
-          }
-        } else if (AUDIO_EXTENSIONS.includes(ext)) {
-          const blob = await zipEntry.async("blob");
-          if (blob.size <= 20 * 1024 * 1024) {
-            const mimeType = ext === ".wav" ? "audio/wav" : ext === ".mp3" ? "audio/mpeg" : "audio/ogg";
-            audioFiles.push(new File([blob], baseName, { type: mimeType }));
-          }
-        }
-      }
-
-      if (presetFiles.length === 0) {
-        toast.error("No preset files found in ZIP");
-        return;
-      }
-
-      const newPresets = matchFiles(presetFiles, audioFiles);
-      const matchedCount = newPresets.filter((p) => p.matched).length;
-
-      setPresets((prev) => [...prev, ...newPresets]);
-      toast.success(
-        `Extracted ${presetFiles.length} presets from ZIP — ${matchedCount} matched with audio previews`
-      );
-    } catch (error) {
-      console.error("ZIP extraction error:", error);
-      toast.error("Failed to extract ZIP file");
-    } finally {
-      setExtractingZip(false);
     }
   };
 
@@ -449,12 +416,12 @@ export default function BatchUploadPresetsPage() {
             </div>
           </div>
           <p className="text-[#666] text-xs mt-3">
-            Select both preset files and audio files together, or upload a ZIP containing both. Unmatched presets can have audio attached manually.
+            Select both preset files and audio files together. Unmatched presets can have audio attached manually.
           </p>
         </div>
 
         {/* Upload Options */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className="mb-8">
           <div
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a]"
@@ -469,33 +436,13 @@ export default function BatchUploadPresetsPage() {
               type="file"
               accept={[...PRESET_EXTENSIONS, ...AUDIO_EXTENSIONS].join(",")}
               multiple
-              onChange={(e) => handleFilesSelect(e.target.files)}
+              onChange={(e) => {
+                // File refs are captured synchronously; clearing the input lets
+                // the same files be re-selected (e.g. retrying after a fix).
+                handleFilesSelect(e.target.files);
+                e.currentTarget.value = "";
+              }}
               className="hidden"
-            />
-          </div>
-
-          <div
-            onClick={() => !extractingZip && zipInputRef.current?.click()}
-            className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a] ${
-              extractingZip ? "opacity-50" : ""
-            }`}
-          >
-            {extractingZip ? (
-              <Loader2 className="w-10 h-10 text-[#39b54a] mx-auto mb-3 animate-spin" />
-            ) : (
-              <Package className="w-10 h-10 text-[#39b54a] mx-auto mb-3" />
-            )}
-            <p className="text-white font-medium mb-1">
-              {extractingZip ? "Extracting..." : "Upload Preset Pack (ZIP)"}
-            </p>
-            <p className="text-[#a1a1a1] text-sm">ZIP with preset files + matching audio previews</p>
-            <input
-              ref={zipInputRef}
-              type="file"
-              accept=".zip"
-              onChange={handleZipSelect}
-              className="hidden"
-              disabled={extractingZip}
             />
           </div>
         </div>
@@ -773,7 +720,7 @@ export default function BatchUploadPresetsPage() {
             <Upload className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">No presets selected</h3>
             <p className="text-[#a1a1a1]">
-              Select preset files + matching audio previews, or upload a ZIP containing both
+              Select preset files + matching audio previews to get started
             </p>
           </div>
         )}

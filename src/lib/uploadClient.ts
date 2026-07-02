@@ -1,5 +1,20 @@
 import { createClient } from "@/lib/supabase/client";
 
+/**
+ * Cheap client-side check that a File really is a RIFF/WAVE file (same magic
+ * bytes the server verifies after upload). Catches non-audio files that merely
+ * end in .wav — e.g. the `__MACOSX/._*.wav` AppleDouble metadata entries that
+ * macOS puts in zips — before any bytes are uploaded, so the user gets a clear
+ * per-file error instead of a server rejection after the fact.
+ */
+export async function looksLikeWav(file: File): Promise<boolean> {
+  if (file.size < 12) return false;
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const ascii = (from: number, to: number) =>
+    String.fromCharCode(...head.subarray(from, to));
+  return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WAVE";
+}
+
 type MintResponse = {
   audio: { uploadPath: string; token: string; fileUrl: string };
   cover?: { uploadPath: string; token: string; contentType: string; publicUrl: string };
@@ -22,6 +37,14 @@ export async function uploadSampleFiles(
   audioFile: File,
   coverFile?: File | null
 ): Promise<{ fileUrl: string; coverImageUrl: string | null }> {
+  // Fail fast on files that aren't real WAVs — the server would reject the
+  // stored object anyway, after the bytes were already uploaded.
+  if (!(await looksLikeWav(audioFile))) {
+    throw new Error(
+      `"${audioFile.name}" is not a valid WAV audio file (it may be corrupted or a metadata file)`
+    );
+  }
+
   // 1. Ask the server to mint signed upload slots (no bytes sent here).
   const mintRes = await fetch("/api/upload/sample", {
     method: "POST",
@@ -35,7 +58,7 @@ export async function uploadSampleFiles(
 
   if (!mintRes.ok) {
     const err = await mintRes.json().catch(() => ({}));
-    throw new Error(err.error || "File upload failed");
+    throw new Error(err.error || `Upload could not start (HTTP ${mintRes.status})`);
   }
 
   const { audio, cover } = (await mintRes.json()) as MintResponse;
@@ -47,7 +70,9 @@ export async function uploadSampleFiles(
     .uploadToSignedUrl(audio.uploadPath, audio.token, audioFile, {
       contentType: "audio/wav",
     });
-  if (audioError) throw new Error("File upload failed");
+  if (audioError) {
+    throw new Error(`Audio upload failed: ${audioError.message || "storage error"}`);
+  }
 
   // 3. PUT the cover (if any) straight to the covers bucket.
   let coverImageUrl: string | null = null;
@@ -57,7 +82,9 @@ export async function uploadSampleFiles(
       .uploadToSignedUrl(cover.uploadPath, cover.token, coverFile, {
         contentType: cover.contentType,
       });
-    if (coverError) throw new Error("Cover image upload failed");
+    if (coverError) {
+      throw new Error(`Cover image upload failed: ${coverError.message || "storage error"}`);
+    }
     coverImageUrl = cover.publicUrl;
   }
 
@@ -97,7 +124,7 @@ export async function uploadPresetFiles(
 
   if (!mintRes.ok) {
     const err = await mintRes.json().catch(() => ({}));
-    throw new Error(err.error || "File upload failed");
+    throw new Error(err.error || `Upload could not start (HTTP ${mintRes.status})`);
   }
 
   const { preset, preview, cover } = (await mintRes.json()) as PresetMintResponse;
@@ -108,14 +135,18 @@ export async function uploadPresetFiles(
     .uploadToSignedUrl(preset.uploadPath, preset.token, presetFile, {
       contentType: preset.contentType,
     });
-  if (presetUp.error) throw new Error("Preset file upload failed");
+  if (presetUp.error) {
+    throw new Error(`Preset file upload failed: ${presetUp.error.message || "storage error"}`);
+  }
 
   const previewUp = await supabase.storage
     .from("previews")
     .uploadToSignedUrl(preview.uploadPath, preview.token, previewFile, {
       contentType: preview.contentType,
     });
-  if (previewUp.error) throw new Error("Audio preview upload failed");
+  if (previewUp.error) {
+    throw new Error(`Audio preview upload failed: ${previewUp.error.message || "storage error"}`);
+  }
 
   let coverImageUrl: string | null = null;
   if (coverFile && cover) {
@@ -124,7 +155,9 @@ export async function uploadPresetFiles(
       .uploadToSignedUrl(cover.uploadPath, cover.token, coverFile, {
         contentType: cover.contentType,
       });
-    if (coverUp.error) throw new Error("Cover image upload failed");
+    if (coverUp.error) {
+      throw new Error(`Cover image upload failed: ${coverUp.error.message || "storage error"}`);
+    }
     coverImageUrl = cover.publicUrl;
   }
 
@@ -168,7 +201,9 @@ export async function uploadApplicationZip(
     .uploadToSignedUrl(uploadPath, token, zipFile, {
       contentType: "application/zip",
     });
-  if (error) throw new Error("File upload failed");
+  if (error) {
+    throw new Error(`File upload failed: ${error.message || "storage error"}`);
+  }
 
   return { path, fileName };
 }
@@ -203,7 +238,9 @@ async function uploadPublicImage(
   const { error } = await supabase.storage
     .from(bucket)
     .uploadToSignedUrl(uploadPath, token, file, { contentType });
-  if (error) throw new Error("Upload failed");
+  if (error) {
+    throw new Error(`Upload failed: ${error.message || "storage error"}`);
+  }
 
   const finalizeRes = await fetch(endpoint, {
     method: "POST",

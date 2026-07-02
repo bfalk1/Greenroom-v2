@@ -2,15 +2,14 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Package, Play, Pause, CheckSquare, Square } from "lucide-react";
+import { Upload, X, ArrowLeft, Music, Loader2, CheckCircle, AlertCircle, Play, Pause, CheckSquare, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
-import JSZip from "jszip";
 import { KeySelector } from "@/components/ui/KeySelector";
 import { Checkbox } from "@/components/ui/checkbox";
-import { uploadSampleFiles } from "@/lib/uploadClient";
+import { uploadSampleFiles, looksLikeWav } from "@/lib/uploadClient";
 
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
@@ -87,7 +86,6 @@ export default function BatchUploadPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const [samples, setSamples] = useState<SampleToUpload[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -103,7 +101,6 @@ export default function BatchUploadPage() {
     new Set(["genre", "instrumentType", "sampleType", "creditPrice"])
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [extractingZip, setExtractingZip] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
@@ -157,19 +154,46 @@ export default function BatchUploadPage() {
     setPlayingId(sample.id);
   };
 
-  const handleFilesSelect = (files: FileList | null) => {
-    if (!files) return;
-    
-    const wavFiles = Array.from(files).filter(f => 
-      f.name.toLowerCase().endsWith(".wav") && f.size <= 50 * 1024 * 1024
-    );
-    
-    if (wavFiles.length === 0) {
-      toast.error("No valid WAV files found (max 50MB each)");
+  const handleFilesSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    // Validate each file up front and tell the creator exactly which files
+    // were skipped and why, instead of silently dropping them.
+    const accepted: File[] = [];
+    const skipped: { name: string; reason: string }[] = [];
+
+    for (const f of Array.from(files)) {
+      if (f.name.startsWith("._")) {
+        // AppleDouble metadata files (e.g. extracted from a macOS zip) end in
+        // .wav but contain no audio — they would always fail server validation.
+        skipped.push({ name: f.name, reason: "macOS metadata file, not audio" });
+      } else if (!f.name.toLowerCase().endsWith(".wav")) {
+        skipped.push({ name: f.name, reason: "not a WAV file" });
+      } else if (f.size === 0) {
+        skipped.push({ name: f.name, reason: "empty file (0 bytes)" });
+      } else if (f.size > 50 * 1024 * 1024) {
+        skipped.push({ name: f.name, reason: "over 50MB" });
+      } else if (!(await looksLikeWav(f))) {
+        skipped.push({ name: f.name, reason: "not valid WAV audio (corrupted or misnamed)" });
+      } else {
+        accepted.push(f);
+      }
+    }
+
+    if (skipped.length > 0) {
+      const shown = skipped.slice(0, 3).map(s => `${s.name} (${s.reason})`).join(", ");
+      const more = skipped.length > 3 ? ` and ${skipped.length - 3} more` : "";
+      toast.error(`Skipped ${skipped.length} file${skipped.length === 1 ? "" : "s"}: ${shown}${more}`, {
+        duration: 8000,
+      });
+    }
+
+    if (accepted.length === 0) {
+      if (skipped.length === 0) toast.error("No files selected");
       return;
     }
-    
-    const newSamples: SampleToUpload[] = wavFiles.map(file => {
+
+    const newSamples: SampleToUpload[] = accepted.map(file => {
       const parsed = parseFilename(file.name);
       return {
         id: Math.random().toString(36).slice(2),
@@ -184,66 +208,9 @@ export default function BatchUploadPage() {
         status: "pending",
       };
     });
-    
-    setSamples(prev => [...prev, ...newSamples]);
-    toast.success(`Added ${wavFiles.length} samples`);
-  };
 
-  const handleZipSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (!file.name.toLowerCase().endsWith(".zip")) {
-      toast.error("Please select a ZIP file");
-      return;
-    }
-    
-    setExtractingZip(true);
-    try {
-      const zip = await JSZip.loadAsync(file);
-      const wavFiles: File[] = [];
-      
-      for (const [filename, zipEntry] of Object.entries(zip.files)) {
-        if (zipEntry.dir) continue;
-        if (!filename.toLowerCase().endsWith(".wav")) continue;
-        
-        const blob = await zipEntry.async("blob");
-        if (blob.size > 50 * 1024 * 1024) continue; // Skip files > 50MB
-        
-        const baseName = filename.split("/").pop() || filename;
-        const wavFile = new File([blob], baseName, { type: "audio/wav" });
-        wavFiles.push(wavFile);
-      }
-      
-      if (wavFiles.length === 0) {
-        toast.error("No WAV files found in ZIP");
-        return;
-      }
-      
-      const newSamples: SampleToUpload[] = wavFiles.map(file => {
-        const parsed = parseFilename(file.name);
-        return {
-          id: Math.random().toString(36).slice(2),
-          file,
-          name: parsed.name,
-          genre: defaultGenre,
-          instrumentType: defaultInstrument,
-          sampleType: defaultSampleType,
-          key: parsed.key,
-          bpm: parsed.bpm,
-          creditPrice: defaultCreditPrice,
-          status: "pending",
-        };
-      });
-      
-      setSamples(prev => [...prev, ...newSamples]);
-      toast.success(`Extracted ${wavFiles.length} samples from ZIP`);
-    } catch (error) {
-      console.error("ZIP extraction error:", error);
-      toast.error("Failed to extract ZIP file");
-    } finally {
-      setExtractingZip(false);
-    }
+    setSamples(prev => [...prev, ...newSamples]);
+    toast.success(`Added ${accepted.length} sample${accepted.length === 1 ? "" : "s"}`);
   };
 
   const updateSample = (id: string, field: keyof SampleToUpload, value: string) => {
@@ -495,46 +462,26 @@ export default function BatchUploadPage() {
         </div>
 
         {/* Upload Options */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          {/* Multiple WAV Files */}
+        <div className="mb-8">
           <div
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a]"
           >
             <Music className="w-10 h-10 text-[#39b54a] mx-auto mb-3" />
             <p className="text-white font-medium mb-1">Select WAV Files</p>
-            <p className="text-[#a1a1a1] text-sm">Choose multiple .wav files</p>
+            <p className="text-[#a1a1a1] text-sm">Choose multiple .wav files (max 50MB each)</p>
             <input
               ref={fileInputRef}
               type="file"
               accept=".wav"
               multiple
-              onChange={(e) => handleFilesSelect(e.target.files)}
+              onChange={(e) => {
+                // File refs are captured synchronously; clearing the input lets
+                // the same files be re-selected (e.g. retrying after a fix).
+                handleFilesSelect(e.target.files);
+                e.currentTarget.value = "";
+              }}
               className="hidden"
-            />
-          </div>
-
-          {/* ZIP File */}
-          <div
-            onClick={() => !extractingZip && zipInputRef.current?.click()}
-            className={`border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#39b54a]/50 transition cursor-pointer bg-[#1a1a1a] ${extractingZip ? "opacity-50" : ""}`}
-          >
-            {extractingZip ? (
-              <Loader2 className="w-10 h-10 text-[#39b54a] mx-auto mb-3 animate-spin" />
-            ) : (
-              <Package className="w-10 h-10 text-[#39b54a] mx-auto mb-3" />
-            )}
-            <p className="text-white font-medium mb-1">
-              {extractingZip ? "Extracting..." : "Upload Sample Pack (ZIP)"}
-            </p>
-            <p className="text-[#a1a1a1] text-sm">Extract WAV files from a ZIP</p>
-            <input
-              ref={zipInputRef}
-              type="file"
-              accept=".zip"
-              onChange={handleZipSelect}
-              className="hidden"
-              disabled={extractingZip}
             />
           </div>
         </div>
@@ -859,7 +806,7 @@ export default function BatchUploadPage() {
             <Upload className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">No samples selected</h3>
             <p className="text-[#a1a1a1]">
-              Select WAV files or upload a ZIP to get started
+              Select WAV files to get started
             </p>
           </div>
         )}
