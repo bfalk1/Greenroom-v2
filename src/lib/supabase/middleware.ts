@@ -81,7 +81,7 @@ export async function updateSession(request: NextRequest) {
   // startsWith): only the catalog list, a single sample, and its preview. Any
   // other /api/samples/** sub-route (e.g. following) is NOT public by default,
   // so a future sub-route can't silently ship unauthenticated.
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/vip", "/api/health"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
@@ -90,6 +90,7 @@ export async function updateSession(request: NextRequest) {
     publicPaths.includes(pathname) ||
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
+    pathname.startsWith("/api/vip-offer") ||
     pathname.startsWith("/api/webhooks") ||
     isPublicSamplePath ||
     pathname.startsWith("/api/genres") ||

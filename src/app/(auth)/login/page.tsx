@@ -31,6 +31,14 @@ export default function LoginPage() {
         return;
       }
 
+      // Honor a post-login destination if one was passed (e.g. the /vip offer
+      // sends not-yet-signed-in visitors here with ?redirect=/vip). Only accept
+      // internal absolute paths — must start with a single "/" followed by a
+      // non-slash, non-backslash char. This rejects "//host", "/\\host" and the
+      // like, which browsers can resolve to an off-site (protocol-relative) URL.
+      const requested = new URLSearchParams(window.location.search).get("redirect");
+      const safeRedirect = requested && /^\/[^/\\]/.test(requested) ? requested : null;
+
       // Check if profile is complete
       const res = await fetch("/api/user/me");
       if (res.ok) {
@@ -42,7 +50,7 @@ export default function LoginPage() {
       }
 
       trackLogin();
-      router.push("/marketplace");
+      router.push(safeRedirect ?? "/marketplace");
       router.refresh();
     } catch (err) {
       console.error("Login error:", err);

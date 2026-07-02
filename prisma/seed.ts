@@ -32,14 +32,14 @@ async function main() {
       name: "GA",
       displayName: "General Admission",
       creditsPerMonth: 100,
-      priceUsdCents: 1099,
+      priceUsdCents: 999,
       stripePriceId: "price_1Sx90A5k6Fwn7Cbz1uGYPTpZ",
     },
     {
       name: "VIP",
       displayName: "VIP",
       creditsPerMonth: 200,
-      priceUsdCents: 1899,
+      priceUsdCents: 1799,
       stripePriceId: "price_1Sx90Q5k6Fwn7CbzwN0qSyDO",
     },
     {

@@ -3,7 +3,7 @@ export const SUBSCRIPTION_TIERS = {
     name: "GA",
     displayName: "General Admission",
     creditsPerMonth: 100,
-    priceUsdCents: 1099,
+    priceUsdCents: 999,
     stripePriceId:
       process.env.STRIPE_GA_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID ?? "",
   },
@@ -11,7 +11,7 @@ export const SUBSCRIPTION_TIERS = {
     name: "VIP",
     displayName: "VIP",
     creditsPerMonth: 200,
-    priceUsdCents: 1899,
+    priceUsdCents: 1799,
     stripePriceId:
       process.env.STRIPE_VIP_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
   },
