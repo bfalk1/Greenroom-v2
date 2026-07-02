@@ -9,9 +9,6 @@ import {
   ShoppingCart,
   Loader2,
   Wallet,
-  ExternalLink,
-  CheckCircle2,
-  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
@@ -52,14 +49,6 @@ interface Payout {
   paidAt: string | null;
 }
 
-interface StripeConnectStatus {
-  connected: boolean;
-  chargesEnabled: boolean;
-  payoutsEnabled: boolean;
-  detailsSubmitted?: boolean;
-  accountId: string | null;
-}
-
 export default function CreatorEarningsPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
@@ -68,10 +57,6 @@ export default function CreatorEarningsPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
-  const [stripeStatus, setStripeStatus] = useState<StripeConnectStatus | null>(
-    null
-  );
-  const [connectingStripe, setConnectingStripe] = useState(false);
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -88,37 +73,6 @@ export default function CreatorEarningsPage() {
       setLoading(false);
     }
   }, []);
-
-  const fetchStripeStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/creator/stripe-connect");
-      if (!res.ok) throw new Error("Failed to check Stripe status");
-      const data = await res.json();
-      setStripeStatus(data);
-    } catch (error) {
-      console.error("Error checking Stripe status:", error);
-    }
-  }, []);
-
-  const handleConnectStripe = async () => {
-    setConnectingStripe(true);
-    try {
-      const res = await fetch("/api/creator/stripe-connect", {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to start Stripe onboarding");
-      }
-      // Redirect to Stripe onboarding
-      window.location.href = data.url;
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect Stripe"
-      );
-      setConnectingStripe(false);
-    }
-  };
 
   const handleRequestPayout = async () => {
     setRequestingPayout(true);
@@ -144,11 +98,10 @@ export default function CreatorEarningsPage() {
   useEffect(() => {
     if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
       fetchEarnings();
-      fetchStripeStatus();
     } else if (!userLoading) {
       setLoading(false);
     }
-  }, [user, userLoading, fetchEarnings, fetchStripeStatus]);
+  }, [user, userLoading, fetchEarnings]);
 
   if (userLoading || loading) {
     return (
@@ -179,14 +132,8 @@ export default function CreatorEarningsPage() {
     );
   }
 
-  const stripeReady =
-    stripeStatus?.connected && stripeStatus?.chargesEnabled;
-  const stripePartial =
-    stripeStatus?.connected && !stripeStatus?.chargesEnabled;
   const canRequestPayout =
-    stripeReady &&
-    stats &&
-    stats.unpaidEarnings - stats.pendingPayout > 0;
+    stats && stats.unpaidEarnings - stats.pendingPayout > 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -269,120 +216,57 @@ export default function CreatorEarningsPage() {
           </div>
         </div>
 
-        {/* Stripe Connect + Payout Request */}
+        {/* Payout Request */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
-          {!stripeStatus || !stripeStatus.connected ? (
-            /* Stripe not connected */
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-yellow-400" />
-                  Connect Stripe to Get Paid
-                </h2>
-                <p className="text-[#a1a1a1] text-sm">
-                  Set up your Stripe account to receive payouts directly to your
-                  bank. This only takes a few minutes.
-                </p>
-              </div>
-              <Button
-                onClick={handleConnectStripe}
-                disabled={connectingStripe}
-                className="bg-[#635bff] text-white hover:bg-[#5349e0] shrink-0"
-              >
-                {connectingStripe ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                )}
-                Connect Stripe
-              </Button>
-            </div>
-          ) : stripePartial ? (
-            /* Stripe connected but not fully set up */
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-yellow-400" />
-                  Finish Stripe Setup
-                </h2>
-                <p className="text-[#a1a1a1] text-sm">
-                  Your Stripe account is connected but not fully verified.
-                  Please complete the onboarding to enable payouts.
-                </p>
-              </div>
-              <Button
-                onClick={handleConnectStripe}
-                disabled={connectingStripe}
-                className="bg-[#635bff] text-white hover:bg-[#5349e0] shrink-0"
-              >
-                {connectingStripe ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                )}
-                Complete Setup
-              </Button>
-            </div>
-          ) : (
-            /* Stripe fully connected — show payout request */
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="w-4 h-4 text-[#39b54a]" />
-                <span className="text-sm text-[#39b54a] font-medium">
-                  Stripe connected
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-white mb-1">
-                    Request Payout
-                  </h2>
-                  <p className="text-[#a1a1a1] text-sm">
-                    {stats &&
-                    stats.unpaidEarnings - stats.pendingPayout > 0 ? (
-                      <>
-                        You have{" "}
-                        <span className="text-[#39b54a] font-medium">
-                          $
-                          {(
-                            stats.unpaidEarnings - stats.pendingPayout
-                          ).toFixed(2)}
-                        </span>{" "}
-                        available for payout.
-                      </>
-                    ) : stats && stats.pendingPayout > 0 ? (
-                      <>
-                        You have a pending payout of{" "}
-                        <span className="text-yellow-400 font-medium">
-                          ${stats.pendingPayout.toFixed(2)}
-                        </span>
-                        . Please wait for admin approval.
-                      </>
-                    ) : (
-                      <>
-                        Minimum payout is $0.01 (testing mode). Current unpaid earnings:{" "}
-                        <span className="text-white font-medium">
-                          ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
-                        </span>
-                      </>
-                    )}
-                  </p>
-                </div>
-                <Button
-                  onClick={handleRequestPayout}
-                  disabled={requestingPayout || !canRequestPayout}
-                  className="bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-                >
-                  {requestingPayout ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <DollarSign className="w-4 h-4 mr-2" />
-                  )}
-                  Request Payout
-                </Button>
-              </div>
+              <h2 className="text-lg font-semibold text-white mb-1">
+                Request Payout
+              </h2>
+              <p className="text-[#a1a1a1] text-sm">
+                {stats && stats.unpaidEarnings - stats.pendingPayout > 0 ? (
+                  <>
+                    You have{" "}
+                    <span className="text-[#39b54a] font-medium">
+                      $
+                      {(
+                        stats.unpaidEarnings - stats.pendingPayout
+                      ).toFixed(2)}
+                    </span>{" "}
+                    available for payout. Requests are reviewed and paid out
+                    manually by the Greenroom team.
+                  </>
+                ) : stats && stats.pendingPayout > 0 ? (
+                  <>
+                    You have a pending payout of{" "}
+                    <span className="text-yellow-400 font-medium">
+                      ${stats.pendingPayout.toFixed(2)}
+                    </span>
+                    . Please wait for admin approval.
+                  </>
+                ) : (
+                  <>
+                    Minimum payout is $0.01 (testing mode). Current unpaid earnings:{" "}
+                    <span className="text-white font-medium">
+                      ${stats?.unpaidEarnings.toFixed(2) ?? "0.00"}
+                    </span>
+                  </>
+                )}
+              </p>
             </div>
-          )}
+            <Button
+              onClick={handleRequestPayout}
+              disabled={requestingPayout || !canRequestPayout}
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            >
+              {requestingPayout ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <DollarSign className="w-4 h-4 mr-2" />
+              )}
+              Request Payout
+            </Button>
+          </div>
         </div>
 
         {/* Payouts History */}

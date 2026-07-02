@@ -71,21 +71,13 @@ export async function POST(_request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
-      select: { role: true, createdAt: true, stripeConnectId: true },
+      select: { role: true, createdAt: true },
     });
 
     if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
       return NextResponse.json(
         { error: "Creator access required" },
         { status: 403 }
-      );
-    }
-
-    // Require Stripe Connect before requesting payout
-    if (!dbUser.stripeConnectId) {
-      return NextResponse.json(
-        { error: "Please connect your Stripe account before requesting a payout." },
-        { status: 400 }
       );
     }
 

@@ -27,7 +27,7 @@ export default function PrivacyPage() {
 
           <p><strong className="text-white">2.2 Creator Information.</strong> If you are a Creator, we may collect:</p>
           <ul className="list-disc pl-6 space-y-1">
-            <li>Payment information via third-party providers (e.g., Stripe Connect)</li>
+            <li>Payment information via third-party providers (e.g., Stripe)</li>
             <li>Account and payout details</li>
           </ul>
 

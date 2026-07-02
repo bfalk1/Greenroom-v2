@@ -212,7 +212,7 @@ export async function sendPayoutNotification(
 ${emailHeading("Payout sent")}
 ${emailLede(`Hi ${safeName}, your ${periodStr} payout is on its way.`)}
 ${emailStatCard(amountStr, `Sent for ${periodStr}`)}
-${emailParagraph("Your payout has been sent to your connected Stripe account. Funds typically arrive within 2–3 business days.")}
+${emailParagraph("Your payout has been sent. Funds typically arrive within a few business days depending on your payment method.")}
 ${emailButton(`${EMAIL_SITE_URL}/creator/earnings`, "View earnings")}
 ${emailParagraph("Thanks for being part of Greenroom.", EMAIL_COLORS.textSecondary)}
 `;
@@ -222,9 +222,9 @@ ${emailParagraph("Thanks for being part of Greenroom.", EMAIL_COLORS.textSeconda
     subject: `Your Greenroom payout of ${amountStr} has been sent`,
     text: `Hi ${creatorName},
 
-Your Greenroom payout of ${amountStr} for ${periodStr} has been sent to your connected Stripe account.
+Your Greenroom payout of ${amountStr} for ${periodStr} has been sent.
 
-The funds should arrive in your bank account within 2-3 business days.
+The funds should arrive within a few business days depending on your payment method.
 
 View your earnings: ${EMAIL_SITE_URL}/creator/earnings
 
@@ -261,8 +261,8 @@ export async function sendPayoutFailedNotification(
 ${emailHeading("Payout issue")}
 ${emailLede(`Hi ${safeName}, we ran into a problem sending your payout of ${amountStr}.`)}
 ${reasonBlock}
-${emailParagraph("Please check your Stripe Connect settings to make sure your account is properly configured. We'll retry the payout automatically once resolved.")}
-${emailButton(`${EMAIL_SITE_URL}/creator/earnings`, "Check settings")}
+${emailParagraph("Our team will reach out to sort out the payment details. You can also reply to this email to get in touch.")}
+${emailButton(`${EMAIL_SITE_URL}/creator/earnings`, "View earnings")}
 ${emailParagraph(`Need help? Reply to this email or write to <a href="mailto:${ADMIN_EMAIL}" style="color:${EMAIL_COLORS.accent};">${ADMIN_EMAIL}</a>.`, EMAIL_COLORS.textSecondary)}
 `;
 
@@ -274,9 +274,9 @@ ${emailParagraph(`Need help? Reply to this email or write to <a href="mailto:${A
 
 We tried to send your Greenroom payout of ${amountStr} but ran into an issue.
 
-${reason ? `Reason: ${reason}\n\n` : ""}Please check your Stripe Connect settings to make sure your account is properly configured. We'll retry automatically once resolved.
+${reason ? `Reason: ${reason}\n\n` : ""}Our team will reach out to sort out the payment details. You can also reply to this email to get in touch.
 
-Check settings: ${EMAIL_SITE_URL}/creator/earnings
+View earnings: ${EMAIL_SITE_URL}/creator/earnings
 
 If you need help, reply to this email or write to ${ADMIN_EMAIL}.
 

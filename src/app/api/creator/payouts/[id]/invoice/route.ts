@@ -70,7 +70,6 @@ Total Credits Earned: ${payout.totalCreditsSpent}
 Payout Amount: $${(payout.amountUsdCents / 100).toFixed(2)} USD
 
 Status: ${payout.status}
-${payout.stripeTransferId ? `Stripe Transfer ID: ${payout.stripeTransferId}` : ""}
 ${payout.paidAt ? `Paid On: ${payout.paidAt.toLocaleDateString()}` : ""}
 
 --------------------------------------------------------------------------------

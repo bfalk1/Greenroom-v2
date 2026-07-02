@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
           orderBy: { createdAt: "desc" },
         });
 
-        csv = "Date,Creator Email,Artist Name,Credits Spent,Amount (cents),Status,Stripe Transfer ID\n";
+        csv = "Date,Creator Email,Artist Name,Credits Spent,Amount (cents),Status\n";
         payouts.forEach((p) => {
           csv += csvRow([
             p.createdAt.toISOString(),
@@ -196,7 +196,6 @@ export async function GET(request: NextRequest) {
             p.totalCreditsSpent,
             p.amountUsdCents,
             p.status,
-            p.stripeTransferId || "",
           ]);
         });
 

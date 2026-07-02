@@ -41,7 +41,6 @@ export async function GET(
         role: true,
         customPayoutRate: true,
         isWhitelisted: true,
-        stripeConnectId: true,
         createdAt: true,
         _count: {
           select: {

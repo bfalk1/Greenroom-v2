@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { stripe } from "@/lib/stripe/client";
 
 // GET /api/admin/payouts — list all payout requests, filterable by status
 export async function GET(request: NextRequest) {
@@ -49,7 +48,6 @@ export async function GET(request: NextRequest) {
             username: true,
             fullName: true,
             artistName: true,
-            stripeConnectId: true,
           },
         },
       },
@@ -68,14 +66,12 @@ export async function GET(request: NextRequest) {
             p.creator.fullName ||
             p.creator.username ||
             p.creator.email,
-          stripeConnected: !!p.creator.stripeConnectId,
         },
         periodStart: p.periodStart.toISOString(),
         periodEnd: p.periodEnd.toISOString(),
         totalCreditsSpent: p.totalCreditsSpent,
         amountUsd: p.amountUsdCents / 100,
         status: p.status,
-        stripeTransferId: p.stripeTransferId,
         paidAt: p.paidAt?.toISOString() || null,
         createdAt: p.createdAt.toISOString(),
       })),
@@ -89,7 +85,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// PATCH /api/admin/payouts — approve or reject a payout request
+// PATCH /api/admin/payouts — approve or reject a payout request.
+// Approval only marks the payout PAID — the actual money movement happens
+// manually outside the platform (bank transfer, PayPal, etc.).
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -130,157 +128,47 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const payout = await prisma.creatorPayout.findUnique({
-      where: { id: payoutId },
-      include: {
-        creator: {
-          select: { stripeConnectId: true, email: true },
-        },
-      },
+    // Guard the PENDING → PAID/FAILED transition inside the update itself so
+    // two admins acting concurrently can't both succeed.
+    const { count } = await prisma.creatorPayout.updateMany({
+      where: { id: payoutId, status: "PENDING" },
+      data:
+        action === "reject"
+          ? { status: "FAILED" }
+          : { status: "PAID", paidAt: new Date() },
     });
 
-    if (!payout) {
-      return NextResponse.json(
-        { error: "Payout not found" },
-        { status: 404 }
-      );
-    }
-
-    if (payout.status !== "PENDING") {
-      return NextResponse.json(
-        { error: `Payout is already ${payout.status}` },
-        { status: 400 }
-      );
-    }
-
-    // Rejection — no Stripe interaction needed
-    if (action === "reject") {
-      const updated = await prisma.creatorPayout.update({
+    if (count === 0) {
+      const existing = await prisma.creatorPayout.findUnique({
         where: { id: payoutId },
-        data: { status: "FAILED" },
+        select: { status: true },
       });
-
-      await prisma.auditLog.create({
-        data: {
-          actorId: authUser.id,
-          action: "PAYOUT_REJECTED",
-          targetType: "CreatorPayout",
-          targetId: payoutId,
-          metadata: {
-            creatorId: payout.creatorId,
-            amountUsdCents: payout.amountUsdCents,
-            note: body.note ?? null,
-          },
-        },
-      });
-
-      return NextResponse.json({
-        payout: {
-          id: updated.id,
-          status: updated.status,
-          paidAt: null,
-          stripeTransferId: null,
-        },
-      });
-    }
-
-    // Approval — send money via Stripe Transfer
-    if (!payout.creator.stripeConnectId) {
+      if (!existing) {
+        return NextResponse.json(
+          { error: "Payout not found" },
+          { status: 404 }
+        );
+      }
       return NextResponse.json(
-        {
-          error: `Creator (${payout.creator.email}) has not connected Stripe. They must complete Stripe Connect onboarding first.`,
-        },
+        { error: `Payout is already ${existing.status}` },
         { status: 400 }
       );
     }
 
-    // Verify the connected account can receive transfers
-    const account = await stripe.accounts.retrieve(
-      payout.creator.stripeConnectId
-    );
-
-    if (!account.charges_enabled) {
-      return NextResponse.json(
-        {
-          error: `Creator's Stripe account is not fully set up (charges not enabled). Ask them to complete onboarding.`,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Create the Stripe Transfer. The idempotencyKey (the payout id) guarantees
-    // Stripe creates at most ONE transfer for this payout even if the request
-    // is retried or two admins approve concurrently — no double-pay.
-    let transfer;
-    try {
-      transfer = await stripe.transfers.create(
-        {
-          amount: payout.amountUsdCents,
-          currency: "usd",
-          destination: payout.creator.stripeConnectId,
-          description: `Greenroom creator payout: ${payout.periodStart.toISOString().split("T")[0]} to ${payout.periodEnd.toISOString().split("T")[0]}`,
-          metadata: {
-            payoutId: payout.id,
-            creatorId: payout.creatorId,
-          },
-        },
-        { idempotencyKey: `payout-${payout.id}` }
-      );
-    } catch (stripeError) {
-      console.error("Stripe Transfer failed:", stripeError);
-
-      // Mark payout as FAILED
-      await prisma.creatorPayout.update({
-        where: { id: payoutId },
-        data: { status: "FAILED" },
-      });
-
-      await prisma.auditLog.create({
-        data: {
-          actorId: authUser.id,
-          action: "PAYOUT_FAILED",
-          targetType: "CreatorPayout",
-          targetId: payoutId,
-          metadata: {
-            creatorId: payout.creatorId,
-            amountUsdCents: payout.amountUsdCents,
-            error:
-              stripeError instanceof Error ? stripeError.message : "Unknown",
-          },
-        },
-      });
-
-      const message =
-        stripeError instanceof Error
-          ? stripeError.message
-          : "Unknown Stripe error";
-
-      return NextResponse.json(
-        { error: `Stripe transfer failed: ${message}` },
-        { status: 500 }
-      );
-    }
-
-    // Mark payout as PAID with transfer ID
-    const updated = await prisma.creatorPayout.update({
+    const updated = await prisma.creatorPayout.findUniqueOrThrow({
       where: { id: payoutId },
-      data: {
-        status: "PAID",
-        paidAt: new Date(),
-        stripeTransferId: transfer.id,
-      },
     });
 
     await prisma.auditLog.create({
       data: {
         actorId: authUser.id,
-        action: "PAYOUT_APPROVED",
+        action: action === "reject" ? "PAYOUT_REJECTED" : "PAYOUT_APPROVED",
         targetType: "CreatorPayout",
         targetId: payoutId,
         metadata: {
-          creatorId: payout.creatorId,
-          amountUsdCents: payout.amountUsdCents,
-          stripeTransferId: transfer.id,
+          creatorId: updated.creatorId,
+          amountUsdCents: updated.amountUsdCents,
+          note: body.note ?? null,
         },
       },
     });
@@ -290,7 +178,6 @@ export async function PATCH(request: NextRequest) {
         id: updated.id,
         status: updated.status,
         paidAt: updated.paidAt?.toISOString() || null,
-        stripeTransferId: updated.stripeTransferId,
       },
     });
   } catch (error) {

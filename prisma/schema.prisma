@@ -109,7 +109,6 @@ model User {
   subscriptionStatus String?   @map("subscription_status")
   profileCompleted   Boolean   @default(false) @map("profile_completed")
   stripeCustomerId   String?   @map("stripe_customer_id")
-  stripeConnectId    String?   @map("stripe_connect_id")
   payoutRate         Int?      @map("payout_rate") // DEPRECATED — unused. Per-creator rate lives in customPayoutRate (cents/credit).
   isActive           Boolean   @default(true) @map("is_active")
   isFlagged          Boolean   @default(false) @map("is_flagged")
@@ -473,7 +472,6 @@ model CreatorPayout {
   totalCreditsSpent Int          @map("total_credits_spent")
   amountUsdCents    Int          @map("amount_usd_cents")
   status            PayoutStatus @default(PENDING)
-  stripeTransferId  String?      @map("stripe_transfer_id")
   paidAt            DateTime?    @map("paid_at")
   createdAt         DateTime     @default(now()) @map("created_at")
 

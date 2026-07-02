@@ -97,7 +97,6 @@ interface PayoutCreator {
   email: string;
   username: string | null;
   name: string;
-  stripeConnected: boolean;
 }
 
 interface PayoutRequest {
@@ -109,7 +108,6 @@ interface PayoutRequest {
   totalCreditsSpent: number;
   amountUsd: number;
   status: string;
-  stripeTransferId: string | null;
   paidAt: string | null;
   createdAt: string;
 }
@@ -142,6 +140,14 @@ interface DraftSample {
 interface PlatformSettings {
   creatorPayoutRate: number;
   creditValueCents: number;
+}
+
+interface CustomRateCreator {
+  id: string;
+  email: string;
+  username: string | null;
+  artistName: string | null;
+  customPayoutRate: number;
 }
 
 interface Moderator {
@@ -192,6 +198,7 @@ export default function AdminDashboardPage() {
     creatorPayoutRate: 7,
     creditValueCents: 10,
   });
+  const [customRateCreators, setCustomRateCreators] = useState<CustomRateCreator[]>([]);
   const [moderators, setModerators] = useState<Moderator[]>([]);
   const [newModEmail, setNewModEmail] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
@@ -240,6 +247,7 @@ export default function AdminDashboardPage() {
       if (res.ok) {
         const data = await res.json();
         setPlatformSettings(data.settings);
+        setCustomRateCreators(data.customRateCreators ?? []);
       }
     } catch (error) {
       console.error("Failed to fetch settings:", error);
@@ -292,7 +300,8 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    fetchSettings();
+  }, [fetchData, fetchSettings]);
 
   const handleReview = async (
     appId: string,
@@ -426,6 +435,7 @@ export default function AdminDashboardPage() {
       }
 
       toast.success("Settings saved!");
+      await fetchSettings();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to save settings"
@@ -552,6 +562,9 @@ export default function AdminDashboardPage() {
               setActiveSection(next);
               if (next === "payouts") {
                 fetchPayouts("PENDING");
+              }
+              if (next === "tools") {
+                fetchSettings();
               }
             }}
           />
@@ -873,17 +886,6 @@ export default function AdminDashboardPage() {
                               }
                             )}
                           </p>
-                          <span
-                            className={`inline-flex items-center gap-1 mt-1 text-xs font-medium ${
-                              payout.creator.stripeConnected
-                                ? "text-[#635bff]"
-                                : "text-red-400"
-                            }`}
-                          >
-                            {payout.creator.stripeConnected
-                              ? "✓ Stripe connected"
-                              : "✗ No Stripe account"}
-                          </span>
                         </div>
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -942,39 +944,28 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      {(payout.paidAt || payout.stripeTransferId) && (
+                      {payout.paidAt && (
                         <div className="text-xs text-[#a1a1a1] mb-4 space-y-1">
-                          {payout.paidAt && (
-                            <p>
-                              Paid on{" "}
-                              {new Date(payout.paidAt).toLocaleDateString(
-                                "en-US",
-                                {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                }
-                              )}
-                            </p>
-                          )}
-                          {payout.stripeTransferId && (
-                            <p className="font-mono text-[#635bff]">
-                              Transfer: {payout.stripeTransferId}
-                            </p>
-                          )}
+                          <p>
+                            Paid on{" "}
+                            {new Date(payout.paidAt).toLocaleDateString(
+                              "en-US",
+                              {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              }
+                            )}
+                          </p>
                         </div>
                       )}
 
                       {payout.status === "PENDING" && (
                         <div className="border-t border-[#2a2a2a] pt-4">
-                          {!payout.creator.stripeConnected && (
-                            <p className="text-xs text-red-400 mb-3 flex items-center gap-1">
-                              <XCircle className="w-3 h-3" />
-                              Creator has not connected Stripe. Approval will
-                              trigger a transfer — it will fail without a
-                              connected account.
-                            </p>
-                          )}
+                          <p className="text-xs text-[#a1a1a1] mb-3">
+                            Approving marks this payout as paid — send the
+                            money manually before approving.
+                          </p>
                           <div className="flex gap-3">
                             <Button
                               onClick={() =>
@@ -988,7 +979,7 @@ export default function AdminDashboardPage() {
                               ) : (
                                 <CheckCircle2 className="w-4 h-4 mr-2" />
                               )}
-                              Approve & Send via Stripe
+                              Approve & Mark Paid
                             </Button>
                             <Button
                               onClick={() =>
@@ -1040,13 +1031,22 @@ export default function AdminDashboardPage() {
             <div className="space-y-6">
               {/* Payout Settings */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 bg-[#39b54a]/10 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-[#39b54a]" />
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-[#39b54a]/10 rounded-lg">
+                      <DollarSign className="w-5 h-5 text-[#39b54a]" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">Creator Payout Rate</h3>
+                      <p className="text-sm text-[#a1a1a1]">Flat rate paid to creators per credit</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">Creator Payout Rate</h3>
-                    <p className="text-sm text-[#a1a1a1]">Flat rate paid to creators per credit</p>
+                  <div className="text-right">
+                    <p className="text-xs text-[#a1a1a1] mb-1">Current global rate</p>
+                    <p className="text-2xl font-bold text-[#39b54a]">
+                      {platformSettings.creatorPayoutRate}¢
+                      <span className="text-sm font-normal text-[#a1a1a1]"> / credit</span>
+                    </p>
                   </div>
                 </div>
 
@@ -1090,6 +1090,52 @@ export default function AdminDashboardPage() {
                   )}
                   Save Payout Rate
                 </Button>
+
+                {/* Creators with a custom rate override */}
+                <div className="border-t border-[#2a2a2a] mt-6 pt-6">
+                  <h4 className="text-sm font-semibold text-white mb-1">
+                    Creators with custom rates
+                  </h4>
+                  <p className="text-xs text-[#666] mb-4">
+                    These creators keep their custom rate — changing the global
+                    rate above does not affect them. Manage overrides from the
+                    user search panel below.
+                  </p>
+                  {customRateCreators.length > 0 ? (
+                    <div className="space-y-2">
+                      {customRateCreators.map((creator) => (
+                        <div
+                          key={creator.id}
+                          className="flex items-center justify-between bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-white truncate">
+                              {creator.artistName ||
+                                creator.username ||
+                                creator.email}
+                            </p>
+                            <p className="text-xs text-[#a1a1a1] truncate">
+                              {creator.email}
+                              {creator.username && ` (@${creator.username})`}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0 ml-4">
+                            <p className="text-sm font-bold text-[#39b54a]">
+                              {creator.customPayoutRate}¢ / credit
+                            </p>
+                            <p className="text-xs text-[#666]">
+                              global: {platformSettings.creatorPayoutRate}¢
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[#a1a1a1]">
+                      All creators use the global rate.
+                    </p>
+                  )}
+                </div>
               </div>
 
               <InviteInfiniteUserPanel />
