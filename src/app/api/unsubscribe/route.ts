@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeEmail } from "@/lib/email";
 
 // Records an unsubscribe across every place an email can live, so future
 // marketing sends are suppressed. Safe to call for unknown emails.
 async function processUnsubscribe(rawEmail: string) {
-  const email = rawEmail.toLowerCase().trim();
+  const email = normalizeEmail(rawEmail);
 
   // Persist the opt-out on the user. updateMany is a no-op (not an error) if
   // no matching user exists, e.g. a waitlist-only recipient.

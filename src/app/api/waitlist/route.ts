@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeEmail } from "@/lib/email";
 
 // Add contact to Resend
 async function addToResendAudience(email: string) {
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = normalizeEmail(email);
 
     // Check if already on waitlist
     const existing = await prisma.waitlistEntry.findUnique({

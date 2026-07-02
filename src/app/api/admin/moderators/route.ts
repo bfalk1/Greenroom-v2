@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeEmail } from "@/lib/email";
 
 // GET /api/admin/moderators — List all moderators
 export async function GET() {
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
 
     // Find user by email
     const targetUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: normalizeEmail(email) },
     });
 
     if (!targetUser) {

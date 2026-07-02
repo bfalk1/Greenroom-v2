@@ -28,9 +28,11 @@ export async function GET() {
     });
 
     if (!user && authUser.email) {
-      // Check by email (handles seeded accounts where Prisma ID might differ)
-      user = await prisma.user.findUnique({
-        where: { email: authUser.email },
+      // Check by email (handles seeded accounts where Prisma ID might differ).
+      // Case-insensitive so a legacy mixed-case row still matches the lowercased
+      // auth email instead of falling through to a duplicate account below.
+      user = await prisma.user.findFirst({
+        where: { email: { equals: authUser.email, mode: "insensitive" } },
         include: {
           creditBalance: true,
           subscription: {
@@ -45,11 +47,13 @@ export async function GET() {
       // Check for pending invite first
       let role: "USER" | "CREATOR" = "USER";
       let artistName: string | undefined;
-      let pendingInvite: { email: string } | null = null;
+      let pendingInvite: { id: string } | null = null;
 
       if (authUser.email && emailConfirmed) {
-        const invite = await prisma.creatorInvite.findUnique({
-          where: { email: authUser.email },
+        // Case-insensitive so a mixed-case invite row still matches the lowercased
+        // auth email (see the lookup in the existing-user branch below).
+        const invite = await prisma.creatorInvite.findFirst({
+          where: { email: { equals: authUser.email, mode: "insensitive" } },
         });
         if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
           role = "CREATOR";
@@ -80,7 +84,7 @@ export async function GET() {
       // Now mark invite as used (user exists, FK will succeed)
       if (pendingInvite) {
         await prisma.creatorInvite.update({
-          where: { email: pendingInvite.email },
+          where: { id: pendingInvite.id },
           data: { usedAt: new Date(), usedByUserId: user.id },
         });
       }
@@ -88,15 +92,15 @@ export async function GET() {
       // Check for beta invite
       let betaCredits = 0;
       if (authUser.email && emailConfirmed) {
-        const betaInvite = await prisma.betaInvite.findUnique({
-          where: { email: authUser.email },
+        const betaInvite = await prisma.betaInvite.findFirst({
+          where: { email: { equals: authUser.email, mode: "insensitive" } },
         });
         if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
           betaCredits = betaInvite.credits;
 
           // Mark beta invite as used
           await prisma.betaInvite.update({
-            where: { email: authUser.email },
+            where: { id: betaInvite.id },
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
 
@@ -150,11 +154,13 @@ export async function GET() {
         });
       }
     } else if (user.role === "USER" && authUser.email && emailConfirmed) {
-      // Existing user - check if they have a pending invite to upgrade
-      const invite = await prisma.creatorInvite.findUnique({
-        where: { email: authUser.email },
+      // Existing user - check if they have a pending invite to upgrade.
+      // Case-insensitive so a mixed-case invite row still matches the lowercased
+      // auth email instead of silently leaving them a USER.
+      const invite = await prisma.creatorInvite.findFirst({
+        where: { email: { equals: authUser.email, mode: "insensitive" } },
       });
-      
+
       if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
         // Upgrade to CREATOR
         user = await prisma.user.update({
@@ -173,7 +179,7 @@ export async function GET() {
 
         // Mark invite as used
         await prisma.creatorInvite.update({
-          where: { email: authUser.email },
+          where: { id: invite.id },
           data: { usedAt: new Date(), usedByUserId: user.id },
         });
 
@@ -197,8 +203,8 @@ export async function GET() {
 
       // Check for pending beta invite for existing users
       if (authUser.email && emailConfirmed) {
-        const betaInvite = await prisma.betaInvite.findUnique({
-          where: { email: authUser.email },
+        const betaInvite = await prisma.betaInvite.findFirst({
+          where: { email: { equals: authUser.email, mode: "insensitive" } },
         });
         if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
           // Credits live in creditBalance only — see the upsert below.
@@ -229,7 +235,7 @@ export async function GET() {
           });
 
           await prisma.betaInvite.update({
-            where: { email: authUser.email },
+            where: { id: betaInvite.id },
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
         }

@@ -17,9 +17,11 @@ export async function GET(request: Request) {
       });
 
       if (!user && data.user.email) {
-        // Check by email (handles seeded accounts where Prisma ID might differ from auth ID)
-        user = await prisma.user.findUnique({
-          where: { email: data.user.email },
+        // Check by email (handles seeded accounts where Prisma ID might differ from
+        // auth ID). Case-insensitive so a legacy mixed-case row still matches the
+        // lowercased auth email instead of falling through to a duplicate account.
+        user = await prisma.user.findFirst({
+          where: { email: { equals: data.user.email, mode: "insensitive" } },
         });
       }
 
@@ -28,6 +30,10 @@ export async function GET(request: Request) {
       let hasBetaInvite = false;
       let betaCredits = 0;
       let inviteArtistName: string | null = null;
+      // Ids of the matched invite rows — used to key the "mark used" updates below
+      // off the actual row, so they hit even a mixed-case invite the lookup matched.
+      let creatorInviteId: string | null = null;
+      let betaInviteId: string | null = null;
 
       // Only honor invites once the email is verified. Otherwise anyone who
       // signs up with someone else's invited address would inherit the CREATOR
@@ -39,23 +45,28 @@ export async function GET(request: Request) {
 
       // Check for a valid creator invite (for both new and existing users)
       if (data.user.email && emailConfirmed) {
-        const invite = await prisma.creatorInvite.findUnique({
-          where: { email: data.user.email },
+        // Case-insensitive so an invite row stored with any uppercase letter
+        // (legacy rows the lowercase migration's collision guard skipped, or any
+        // future un-normalized write) still matches the lowercased auth email.
+        const invite = await prisma.creatorInvite.findFirst({
+          where: { email: { equals: data.user.email, mode: "insensitive" } },
         });
 
         if (invite && !invite.usedAt && invite.expiresAt > new Date()) {
           hasCreatorInvite = true;
           inviteArtistName = invite.artistName;
+          creatorInviteId = invite.id;
         }
 
         // Check for beta invite
-        const betaInvite = await prisma.betaInvite.findUnique({
-          where: { email: data.user.email },
+        const betaInvite = await prisma.betaInvite.findFirst({
+          where: { email: { equals: data.user.email, mode: "insensitive" } },
         });
 
         if (betaInvite && !betaInvite.usedAt && betaInvite.expiresAt > new Date()) {
           hasBetaInvite = true;
           betaCredits = betaInvite.credits;
+          betaInviteId = betaInvite.id;
         }
       }
 
@@ -100,7 +111,7 @@ export async function GET(request: Request) {
           });
 
           await prisma.betaInvite.update({
-            where: { email: data.user.email },
+            where: { id: betaInviteId! },
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
         }
@@ -116,9 +127,9 @@ export async function GET(request: Request) {
       }
 
       // If they had an invite, mark it as used and create a pre-approved application
-      if (hasCreatorInvite && data.user.email) {
+      if (hasCreatorInvite && creatorInviteId) {
         await prisma.creatorInvite.update({
-          where: { email: data.user.email },
+          where: { id: creatorInviteId },
           data: {
             usedAt: new Date(),
             usedByUserId: user.id,
@@ -170,7 +181,7 @@ export async function GET(request: Request) {
         });
 
         await prisma.betaInvite.update({
-          where: { email: data.user.email },
+          where: { id: betaInviteId! },
           data: { usedAt: new Date(), usedByUserId: user.id },
         });
       }

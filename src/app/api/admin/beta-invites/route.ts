@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL, normalizeEmail } from "@/lib/email";
 import {
   wrapEmailHtml,
   emailHeading,
@@ -132,7 +132,11 @@ export async function POST(request: NextRequest) {
     const admin = await requireAdmin();
     if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { email, message, credits } = await request.json();
+    const { email: rawEmail, message, credits } = await request.json();
+    // Normalize before any lookup or store — see normalizeEmail. A mixed-case beta
+    // invite would never match the lowercased auth email at sign-in, so the invitee
+    // would silently miss their credits and paywall bypass.
+    const email = typeof rawEmail === "string" ? normalizeEmail(rawEmail) : "";
 
     if (!email) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });

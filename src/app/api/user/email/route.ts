@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeEmail } from "@/lib/email";
 
 // PATCH /api/user/email — Change email with password verification
 export async function PATCH(request: NextRequest) {
@@ -14,14 +15,20 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { newEmail, currentPassword } = await request.json();
+    const { newEmail: rawNewEmail, currentPassword } = await request.json();
 
-    if (!newEmail || !currentPassword) {
+    if (!rawNewEmail || typeof rawNewEmail !== "string" || !currentPassword) {
       return NextResponse.json(
         { error: "New email and current password are required" },
         { status: 400 }
       );
     }
+
+    // Normalize to match how Supabase stores it (lowercased). Without this the
+    // duplicate-email guard below is a case-sensitive compare and can be bypassed
+    // with a case variant, and the value handed to Supabase would differ from the
+    // address we later reconcile from auth.
+    const newEmail = normalizeEmail(rawNewEmail);
 
     // Verify password using Supabase Auth REST API
     const verifyRes = await fetch(

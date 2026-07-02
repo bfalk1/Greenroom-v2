@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL } from "@/lib/email";
+import { sendEmail, EMAIL_SITE_URL, INVITE_FROM_EMAIL, normalizeEmail } from "@/lib/email";
 import {
   wrapEmailHtml,
   emailHeading,
@@ -116,7 +116,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, artistName, message } = body;
+    const { email: rawEmail, artistName, message } = body;
+    // Normalize before any lookup or store: invites are consumed by matching the
+    // (always-lowercased) Supabase auth email, so a mixed-case invite would never
+    // match and the invitee would be created as a plain USER. See normalizeEmail.
+    const email = typeof rawEmail === "string" ? normalizeEmail(rawEmail) : "";
     console.log("[Invites API] POST body:", { email, artistName });
 
     if (!email || !artistName) {
