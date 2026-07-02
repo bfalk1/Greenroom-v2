@@ -156,6 +156,15 @@ export async function PUT(
       );
     }
 
+    // A moderator takedown is terminal — the creator can't edit, reactivate, or
+    // resubmit a REMOVED sample (only an admin/moderator can restore it).
+    if (existing.status === "REMOVED") {
+      return NextResponse.json(
+        { error: "This sample was removed by a moderator and can no longer be edited." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     // Creators cannot publish their own samples - must go through moderation

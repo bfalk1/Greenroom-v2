@@ -30,10 +30,12 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = {};
 
-  if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED"].includes(statusFilter)) {
+  // Pending = presets awaiting a moderator decision (REVIEW). DRAFT (sent back)
+  // and REMOVED (taken down) are excluded so they don't flood the queue.
+  if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED", "REMOVED"].includes(statusFilter)) {
     where.status = statusFilter;
   } else {
-    where.status = { in: ["DRAFT", "REVIEW"] };
+    where.status = "REVIEW";
   }
 
   if (search) {
@@ -107,9 +109,11 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (action === "approve") {
+    // Reactivate on publish — reject sets isActive:false, so a sent-back preset
+    // that's re-approved must go live again.
     await prisma.preset.update({
       where: { id: presetId },
-      data: { status: "PUBLISHED" },
+      data: { status: "PUBLISHED", isActive: true },
     });
 
     await prisma.auditLog.create({
@@ -173,9 +177,11 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Preset not found" }, { status: 404 });
   }
 
+  // Terminal takedown: unpublish and mark REMOVED so it stays out of the
+  // moderation queue and the creator can't bring it back.
   await prisma.preset.update({
     where: { id: presetId },
-    data: { isActive: false, status: "DRAFT" },
+    data: { isActive: false, status: "REMOVED" },
   });
 
   await prisma.auditLog.create({

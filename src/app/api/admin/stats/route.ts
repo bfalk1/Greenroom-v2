@@ -41,7 +41,7 @@ export async function GET() {
     prisma.download.count(),
     prisma.creatorApplication.count({ where: { status: "PENDING" } }),
     prisma.sample.count({
-      where: { status: { in: ["DRAFT", "REVIEW"] } },
+      where: { status: "REVIEW" },
     }),
   ]);
 

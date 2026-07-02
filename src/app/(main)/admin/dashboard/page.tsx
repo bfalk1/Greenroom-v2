@@ -793,8 +793,8 @@ export default function AdminDashboardPage() {
                               sample.creator.username ||
                               "Unknown",
                           }}
-                          onModerate={() =>
-                            handleSampleModerate(sample.id, "approve")
+                          onModerate={(action) =>
+                            handleSampleModerate(sample.id, action)
                           }
                         />
                         <div className="absolute top-4 right-4 flex gap-2">

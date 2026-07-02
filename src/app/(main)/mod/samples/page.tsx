@@ -223,7 +223,7 @@ export default function ModSamplesPage() {
   };
 
   const handleDeleteSample = async (sampleId: string) => {
-    if (!confirm("Delete this sample? This action cannot be undone.")) return;
+    if (!confirm("Delete this sample? It will be unpublished and removed from the marketplace.")) return;
     
     try {
       const res = await fetch(`/api/mod/samples?sampleId=${sampleId}`, {
@@ -327,7 +327,7 @@ export default function ModSamplesPage() {
   };
 
   const handleBulkDelete = () => {
-    if (!confirm(`Delete ${selectedIds.size} selected sample(s)? They'll be unpublished and set back to draft.`)) return;
+    if (!confirm(`Delete ${selectedIds.size} selected sample(s)? They'll be unpublished and removed from the marketplace.`)) return;
     runBulk({ action: "delete" });
   };
 
@@ -518,8 +518,8 @@ export default function ModSamplesPage() {
                         sample.creator.username ||
                         "Unknown",
                     }}
-                    onModerate={() =>
-                      handleSampleModerate(sample.id, "approve")
+                    onModerate={(action) =>
+                      handleSampleModerate(sample.id, action)
                     }
                     actions={
                       <>
@@ -624,6 +624,8 @@ export default function ModSamplesPage() {
                               ? "bg-green-500/20 text-green-400"
                               : sample.status === "REVIEW"
                               ? "bg-yellow-500/20 text-yellow-400"
+                              : sample.status === "REMOVED"
+                              ? "bg-red-500/20 text-red-400"
                               : "bg-[#2a2a2a] text-[#a1a1a1]"
                           }`}>
                             {sample.status}

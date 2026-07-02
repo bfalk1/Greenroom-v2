@@ -91,6 +91,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Not your preset" }, { status: 403 });
     }
 
+    // A moderator takedown is terminal — only an admin/moderator can restore a
+    // REMOVED preset.
+    if (preset.status === "REMOVED") {
+      return NextResponse.json(
+        { error: "This preset was removed by a moderator and can no longer be edited." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const allowedFields = [
       "name", "description", "genre", "tags", "creditPrice",

@@ -23,7 +23,7 @@ interface SampleModerationPanelProps {
     preview_ready?: boolean;
   };
   creator?: { full_name: string };
-  onModerate: () => void;
+  onModerate: (action: "approve" | "reject") => void;
   actions?: React.ReactNode;
 }
 
@@ -38,24 +38,23 @@ export function SampleModerationPanel({
   const handleApprove = async () => {
     setSubmitting(true);
     try {
-      // TODO: Replace with Supabase/Prisma call
-      onModerate();
-    } catch {
-      alert("Failed to approve sample");
+      onModerate("approve");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleRemove = async () => {
-    if (!confirm("Remove this sample from marketplace?")) return;
+  const handleReject = async () => {
+    if (
+      !confirm(
+        "Reject this sample? It will be sent back to draft and won't appear in the marketplace."
+      )
+    )
+      return;
 
     setSubmitting(true);
     try {
-      // TODO: Replace with Supabase/Prisma call
-      onModerate();
-    } catch {
-      alert("Failed to remove sample");
+      onModerate("reject");
     } finally {
       setSubmitting(false);
     }
@@ -136,7 +135,7 @@ export function SampleModerationPanel({
       <div className="flex gap-3">
         <Button
           onClick={handleApprove}
-          disabled={submitting || sample.status === "published" || sample.preview_ready === false}
+          disabled={submitting || sample.status === "PUBLISHED" || sample.preview_ready === false}
           className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50"
           title={sample.preview_ready === false ? "Wait for preview to generate" : undefined}
         >
@@ -144,12 +143,12 @@ export function SampleModerationPanel({
           {sample.preview_ready === false ? "Waiting for Preview..." : "Approve"}
         </Button>
         <Button
-          onClick={handleRemove}
+          onClick={handleReject}
           disabled={submitting}
           className="flex-1 bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
         >
           <XCircle className="w-4 h-4 mr-2" />
-          Remove
+          Reject
         </Button>
       </div>
     </div>

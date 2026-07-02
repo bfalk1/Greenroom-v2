@@ -59,9 +59,11 @@ export async function POST(req: NextRequest) {
       const skipped = foundIds.length - ready.length;
 
       if (ready.length > 0) {
+        // Reactivate on publish — a sent-back (isActive:false) sample that's
+        // revised and re-approved must go live again.
         await prisma.sample.updateMany({
           where: { id: { in: ready } },
-          data: { status: "PUBLISHED" },
+          data: { status: "PUBLISHED", isActive: true },
         });
         await prisma.auditLog.createMany({
           data: ready.map((id) => ({
@@ -97,10 +99,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "delete") {
-      // Soft delete — mirror the single-sample DELETE behaviour.
+      // Terminal takedown — mirror the single-sample DELETE behaviour.
       await prisma.sample.updateMany({
         where: { id: { in: foundIds } },
-        data: { isActive: false, status: "DRAFT" },
+        data: { isActive: false, status: "REMOVED" },
       });
       await prisma.auditLog.createMany({
         data: foundIds.map((id) => ({

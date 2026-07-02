@@ -49,11 +49,13 @@ export async function GET(req: NextRequest) {
       ];
     }
   } else {
-    // Default: pending review
-    if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED"].includes(statusFilter)) {
+    // Default: pending review = samples awaiting a moderator decision (REVIEW).
+    // DRAFT (creator's unsubmitted/sent-back work) and REMOVED (taken down) are
+    // deliberately excluded so rejected/deleted samples don't flood the queue.
+    if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED", "REMOVED"].includes(statusFilter)) {
       where.status = statusFilter;
     } else {
-      where.status = { in: ["DRAFT", "REVIEW"] };
+      where.status = "REVIEW";
     }
     // Show all pending samples - frontend will indicate if preview is pending
   }
@@ -171,9 +173,11 @@ export async function PATCH(req: NextRequest) {
         }, { status: 400 });
       }
 
+      // Publish and (re)activate. isActive is reset here because reject sets it
+      // false — a sample sent back, revised, and re-approved must go live again.
       await prisma.sample.update({
         where: { id: sampleId },
-        data: { status: "PUBLISHED" },
+        data: { status: "PUBLISHED", isActive: true },
       });
 
       await prisma.auditLog.create({
@@ -292,10 +296,11 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Sample not found" }, { status: 404 });
   }
 
-  // Soft delete: mark as inactive and set back to draft
+  // Terminal takedown: unpublish and mark REMOVED. Distinct from reject/DRAFT so
+  // it stays out of the moderation queue and the creator can't resubmit it.
   await prisma.sample.update({
     where: { id: sampleId },
-    data: { isActive: false, status: "DRAFT" },
+    data: { isActive: false, status: "REMOVED" },
   });
 
   await prisma.auditLog.create({

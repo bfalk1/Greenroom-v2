@@ -265,10 +265,12 @@ function CreatorSampleRow({
               ? "bg-[#39b54a]/20 text-[#39b54a]"
               : sample.status === "REVIEW"
               ? "bg-yellow-500/20 text-yellow-400"
+              : sample.status === "REMOVED"
+              ? "bg-red-500/20 text-red-400"
               : "bg-[#2a2a2a] text-[#a1a1a1]"
           }`}
         >
-          {sample.status}
+          {sample.status === "REMOVED" ? "Removed by moderator" : sample.status}
         </span>
       </div>
 
@@ -285,15 +287,17 @@ function CreatorSampleRow({
             <Eye className="w-4 h-4" />
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-white hover:bg-[#2a2a2a]"
-          onClick={() => onEdit(sample.id)}
-          title="Edit"
-        >
-          <Edit2 className="w-4 h-4" />
-        </Button>
+        {sample.status !== "REMOVED" && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-white hover:bg-[#2a2a2a]"
+            onClick={() => onEdit(sample.id)}
+            title="Edit"
+          >
+            <Edit2 className="w-4 h-4" />
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

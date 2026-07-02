@@ -46,7 +46,7 @@ interface UploadSample {
   downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
-  status: "DRAFT" | "PUBLISHED" | "REVIEW";
+  status: "DRAFT" | "PUBLISHED" | "REVIEW" | "REMOVED";
   isActive: boolean;
   createdAt: string;
 }
@@ -92,6 +92,7 @@ function StatusBadge({ status }: { status: UploadSample["status"] }) {
     PUBLISHED: "bg-[#39b54a]/15 text-[#39b54a]",
     REVIEW: "bg-yellow-500/15 text-yellow-400",
     DRAFT: "bg-[#2a2a2a] text-[#a1a1a1]",
+    REMOVED: "bg-red-500/15 text-red-400",
   };
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${styles[status]}`}>

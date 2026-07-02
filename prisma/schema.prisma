@@ -39,6 +39,7 @@ enum SampleStatus {
   DRAFT
   PUBLISHED
   REVIEW
+  REMOVED // terminal moderator takedown: unpublished, hidden, creator cannot resurrect
 }
 
 enum ApplicationStatus {
@@ -81,6 +82,7 @@ enum PresetStatus {
   DRAFT
   PUBLISHED
   REVIEW
+  REMOVED // terminal moderator takedown: unpublished, hidden, creator cannot resurrect
 }
 
 // ─────────────────────────────────────────────
