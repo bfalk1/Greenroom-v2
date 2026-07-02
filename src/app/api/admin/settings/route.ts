@@ -40,19 +40,33 @@ export async function GET() {
     }
 
     // Get moderator details
-    const moderators = settings.moderatorIds.length > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: settings.moderatorIds } },
-          select: {
-            id: true,
-            email: true,
-            username: true,
-            artistName: true,
-            avatarUrl: true,
-            role: true,
-          },
-        })
-      : [];
+    const [moderators, customRateCreators] = await Promise.all([
+      settings.moderatorIds.length > 0
+        ? prisma.user.findMany({
+            where: { id: { in: settings.moderatorIds } },
+            select: {
+              id: true,
+              email: true,
+              username: true,
+              artistName: true,
+              avatarUrl: true,
+              role: true,
+            },
+          })
+        : Promise.resolve([]),
+      // Creators whose payout rate overrides the platform default
+      prisma.user.findMany({
+        where: { customPayoutRate: { not: null } },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          artistName: true,
+          customPayoutRate: true,
+        },
+        orderBy: { email: "asc" },
+      }),
+    ]);
 
     return NextResponse.json({
       settings: {
@@ -61,6 +75,7 @@ export async function GET() {
         moderatorIds: settings.moderatorIds,
       },
       moderators,
+      customRateCreators,
     });
   } catch (error) {
     console.error("GET /api/admin/settings error:", error);
