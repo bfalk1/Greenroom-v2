@@ -37,7 +37,7 @@ const CATEGORIES = [
   { value: "OTHER", label: "Other" },
 ];
 
-const PRESET_EXTENSIONS = [".serumpreset", ".fxp", ".vital", ".phaseplant", ".nmsv", ".aupreset", ".syx"];
+const PRESET_EXTENSIONS = [".fxp", ".serumpreset", ".serumpack", ".xml", ".phaseplant", ".bank", ".vital", ".vitalbank", ".fxb", ".nmsv", ".zip"];
 const AUDIO_EXTENSIONS = [".wav", ".mp3", ".ogg", ".m4a"];
 
 interface PresetToUpload {

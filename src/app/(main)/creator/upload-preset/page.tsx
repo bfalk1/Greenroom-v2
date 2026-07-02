@@ -34,20 +34,20 @@ const CATEGORIES = [
   { value: "OTHER", label: "Other" },
 ];
 
-// Accepted preset file extensions per synth
+// Accepted preset file extensions per synth (single presets + banks)
 const PRESET_EXTENSIONS: Record<string, string[]> = {
   SERUM: [".fxp"],
-  ASTRA: [".fxp", ".zip"],
-  SERUM_2: [".serumpreset", ".fxp"],
-  PHASE_PLANT: [".phaseplant", ".zip"],
-  SPLICE: [".zip"],
-  VITAL: [".vital"],
-  SYLENTH1: [".fxp"],
-  MASSIVE: [".nmsv", ".zip"],
+  ASTRA: [".xml"],
+  SERUM_2: [".fxp", ".serumpreset", ".serumpack"],
+  PHASE_PLANT: [".phaseplant", ".bank"],
+  SPLICE: [".xml", ".zip"], // Astra and Beatmaker are Splice's VSTs
+  VITAL: [".vital", ".vitalbank"],
+  SYLENTH1: [".fxp", ".fxb"],
+  MASSIVE: [".nmsv"],
   BEAT_MAKER: [".zip"],
 };
 
-const ALL_EXTENSIONS = [".serumpreset", ".fxp", ".vital", ".phaseplant", ".nmsv", ".zip", ".aupreset", ".syx"];
+const ALL_EXTENSIONS = [".fxp", ".serumpreset", ".serumpack", ".xml", ".phaseplant", ".bank", ".vital", ".vitalbank", ".fxb", ".nmsv", ".zip"];
 
 export default function CreatorUploadPresetPage() {
   const router = useRouter();
@@ -91,8 +91,9 @@ export default function CreatorUploadPresetPage() {
     if (!file) return;
 
     const ext = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALL_EXTENSIONS.includes(ext)) {
-      toast.error(`Invalid file type. Accepted: ${ALL_EXTENSIONS.join(", ")}`);
+    const allowed = PRESET_EXTENSIONS[formData.synthName] || ALL_EXTENSIONS;
+    if (!allowed.includes(ext)) {
+      toast.error(`Invalid file type. Accepted: ${allowed.join(", ")}`);
       return;
     }
 

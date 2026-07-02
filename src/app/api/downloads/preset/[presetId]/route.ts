@@ -6,11 +6,17 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 // File extension to MIME type mapping for preset files
 const PRESET_MIME_TYPES: Record<string, string> = {
   ".fxp": "application/octet-stream",
-  ".vital": "application/octet-stream",
+  ".serumpreset": "application/octet-stream",
+  ".serumpack": "application/octet-stream",
+  ".xml": "application/octet-stream",
   ".phaseplant": "application/octet-stream",
+  ".bank": "application/octet-stream",
+  ".vital": "application/octet-stream",
+  ".vitalbank": "application/octet-stream",
+  ".fxb": "application/octet-stream",
   ".nmsv": "application/octet-stream",
-  ".aupreset": "application/octet-stream",
   ".zip": "application/zip",
+  ".aupreset": "application/octet-stream",
   ".syx": "application/octet-stream",
 };
 

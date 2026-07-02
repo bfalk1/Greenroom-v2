@@ -26,6 +26,10 @@ interface UserContextType {
   user: AppUser | null;
   supabaseUser: SupabaseUser | null;
   loading: boolean;
+  // True when we have an authenticated Supabase session but couldn't load the
+  // app user from /api/user/me (server/network error). The UI should show an
+  // error/retry — NOT treat the person as a logged-out or plain USER.
+  error: boolean;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -34,6 +38,7 @@ const UserContext = createContext<UserContextType>({
   user: null,
   supabaseUser: null,
   loading: true,
+  error: false,
   logout: async () => {},
   refreshUser: async () => {},
 });
@@ -42,6 +47,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const supabase = createClient();
   const fetchingRef = React.useRef(false);
   const pendingRef = React.useRef<Promise<void> | null>(null);
@@ -68,37 +74,53 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         if (!authUser) {
           setUser(null);
           setSupabaseUser(null);
+          setError(false);
           setLoading(false);
           return;
         }
 
         setSupabaseUser(authUser);
 
-        const res = await fetch("/api/user/me");
-        if (res.ok) {
+        // Fetch our app user, retrying transient server/network failures. A 500
+        // here must NOT be swallowed into a fabricated "USER" — doing so silently
+        // strips admins/creators of their role (e.g. when the DB is unreachable).
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            res = await fetch("/api/user/me");
+          } catch {
+            res = null; // network error — fall through to retry
+          }
+          // 2xx or 401 are definitive answers; only retry on 5xx / network error.
+          if (res && (res.ok || res.status === 401)) break;
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          }
+        }
+
+        if (res && res.ok) {
           const data = await res.json();
           setUser(data.user);
+          setError(false);
           identifyUser(data.user);
+        } else if (res && res.status === 401) {
+          // Session is no longer valid server-side — treat as logged out.
+          setUser(null);
+          setSupabaseUser(null);
+          setError(false);
         } else {
-          setUser({
-            id: authUser.id,
-            email: authUser.email || "",
-            credits: 0,
-            subscription_status: "none",
-            is_creator: false,
-            role: "USER",
-            full_name: null,
-            username: null,
-            artist_name: null,
-            avatar_url: null,
-            banner_url: null,
-            profile_completed: false,
-            terms_accepted_at: null,
-          });
+          // Persistent server/network failure. Don't guess at a role — surface an
+          // error and keep whatever user we already had (don't downgrade a
+          // known-good admin/creator because one request failed).
+          console.error(
+            "Failed to load /api/user/me:",
+            res ? `status ${res.status}` : "network error"
+          );
+          setError(true);
         }
       } catch (error) {
         console.error("Error fetching user:", error);
-        setUser(null);
+        setError(true);
       } finally {
         setLoading(false);
         fetchingRef.current = false;
@@ -128,6 +150,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         resetAnalytics();
         setUser(null);
         setSupabaseUser(null);
+        setError(false);
         setLoading(false);
       }
     });
@@ -148,7 +171,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <UserContext.Provider
-      value={{ user, supabaseUser, loading, logout, refreshUser: fetchUser }}
+      value={{ user, supabaseUser, loading, error, logout, refreshUser: fetchUser }}
     >
       {children}
     </UserContext.Provider>

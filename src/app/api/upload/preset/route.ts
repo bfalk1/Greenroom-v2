@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const PRESET_EXTENSIONS = [".serumpreset", ".fxp", ".vital", ".phaseplant", ".nmsv", ".aupreset", ".syx", ".zip"];
+const PRESET_EXTENSIONS = [".fxp", ".serumpreset", ".serumpack", ".xml", ".phaseplant", ".bank", ".vital", ".vitalbank", ".fxb", ".nmsv", ".zip"];
 const AUDIO_CONTENT_TYPES: Record<string, string> = {
   ".wav": "audio/wav",
   ".mp3": "audio/mpeg",
