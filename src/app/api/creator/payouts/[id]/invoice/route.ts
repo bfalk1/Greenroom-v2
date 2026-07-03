@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { renderPayoutInvoiceHtml } from "@/lib/payoutInvoice";
 
-// GET /api/creator/payouts/[id]/invoice — Generate invoice for a payout
+// GET /api/creator/payouts/[id]/invoice — render the invoice for a payout.
+//
+// The invoice is *generated* when the payout is requested (invoice number and
+// processing fee are locked onto the row at that moment); this route only
+// renders those stored values as a printable HTML document, so what it shows
+// can never drift from what was requested.
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    
+
     const supabase = await createClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
 
@@ -25,6 +31,7 @@ export async function GET(
             email: true,
             username: true,
             artistName: true,
+            fullName: true,
           },
         },
       },
@@ -45,50 +52,37 @@ export async function GET(
       }
     }
 
-    // Generate simple text invoice (could be PDF in future)
-    const invoiceNumber = `GR-${payout.periodEnd.getFullYear()}${String(payout.periodEnd.getMonth() + 1).padStart(2, "0")}-${payout.id.slice(0, 8).toUpperCase()}`;
-    
-    const invoice = `
-================================================================================
-                              GREENROOM PAYOUT INVOICE
-================================================================================
+    // Rows created before invoice numbers existed keep the legacy derived id.
+    const invoiceNumber =
+      payout.invoiceNumber ??
+      `GR-${payout.periodEnd.getUTCFullYear()}${String(
+        payout.periodEnd.getUTCMonth() + 1
+      ).padStart(2, "0")}-${payout.id.slice(0, 8).toUpperCase()}`;
 
-Invoice Number: ${invoiceNumber}
-Date Issued: ${payout.paidAt?.toLocaleDateString() || new Date().toLocaleDateString()}
+    const html = renderPayoutInvoiceHtml({
+      invoiceNumber,
+      status: payout.status,
+      payeeName:
+        payout.creator.artistName ||
+        payout.creator.fullName ||
+        payout.creator.username ||
+        "Creator",
+      payeeEmail: payout.creator.email,
+      totalCreditsSpent: payout.totalCreditsSpent,
+      grossCents: payout.amountUsdCents,
+      processingFeeCents: payout.processingFeeCents,
+      issuedAt: payout.createdAt,
+      periodStart: payout.periodStart,
+      periodEnd: payout.periodEnd,
+      paidAt: payout.paidAt,
+    });
 
---------------------------------------------------------------------------------
-PAYEE INFORMATION
---------------------------------------------------------------------------------
-Name: ${payout.creator.artistName || payout.creator.username || "Creator"}
-Email: ${payout.creator.email}
-
---------------------------------------------------------------------------------
-PAYOUT DETAILS
---------------------------------------------------------------------------------
-Period: ${payout.periodStart.toLocaleDateString()} - ${payout.periodEnd.toLocaleDateString()}
-Total Credits Earned: ${payout.totalCreditsSpent}
-Payout Amount: $${(payout.amountUsdCents / 100).toFixed(2)} USD
-
-Status: ${payout.status}
-${payout.paidAt ? `Paid On: ${payout.paidAt.toLocaleDateString()}` : ""}
-
---------------------------------------------------------------------------------
-PLATFORM INFORMATION
---------------------------------------------------------------------------------
-Platform: Greenroom
-Website: https://greenroom.app
-Support: support@greenroom.app
-
-================================================================================
-                        Thank you for creating with Greenroom!
-================================================================================
-`;
-
-    return new NextResponse(invoice, {
+    return new NextResponse(html, {
       status: 200,
       headers: {
-        "Content-Type": "text/plain",
-        "Content-Disposition": `attachment; filename="${invoiceNumber}.txt"`,
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Disposition": `inline; filename="${invoiceNumber}.html"`,
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (error) {

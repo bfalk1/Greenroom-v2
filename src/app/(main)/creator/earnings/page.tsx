@@ -6,6 +6,7 @@ import {
   DollarSign,
   TrendingUp,
   Download,
+  FileText,
   ShoppingCart,
   Loader2,
   Wallet,
@@ -29,6 +30,24 @@ interface EarningsStats {
 // Minimum payout threshold — keep in sync with MIN_PAYOUT_CENTS in lib/payoutMath.ts
 const PAYOUT_THRESHOLD = 50.0;
 
+// Display-only mirror of computeProcessingFeeCents in lib/payoutMath.ts — the
+// server recomputes and locks the authoritative fee when the payout is created.
+function estimateFeeUsd(grossUsd: number, cfg: PayoutFeeConfig | null): number {
+  if (!cfg || grossUsd <= 0) return 0;
+  const grossCents = Math.round(grossUsd * 100);
+  const feeCents = Math.min(
+    grossCents,
+    Math.ceil((grossCents * cfg.payoutFeeBps) / 10000) + cfg.payoutFeeFixedCents
+  );
+  return feeCents / 100;
+}
+
+function formatFeeConfig(cfg: PayoutFeeConfig): string {
+  const pct = parseFloat((cfg.payoutFeeBps / 100).toFixed(2));
+  const fixed = (cfg.payoutFeeFixedCents / 100).toFixed(2);
+  return `${pct}% + $${fixed}`;
+}
+
 interface Purchase {
   id: string;
   sampleId: string;
@@ -45,8 +64,16 @@ interface Payout {
   periodEnd: string;
   totalCreditsSpent: number;
   amountUsd: number;
+  processingFeeUsd: number;
+  netAmountUsd: number;
+  invoiceNumber: string | null;
   status: string;
   paidAt: string | null;
+}
+
+interface PayoutFeeConfig {
+  payoutFeeBps: number;
+  payoutFeeFixedCents: number;
 }
 
 export default function CreatorEarningsPage() {
@@ -55,6 +82,7 @@ export default function CreatorEarningsPage() {
   const [stats, setStats] = useState<EarningsStats | null>(null);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [feeConfig, setFeeConfig] = useState<PayoutFeeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
 
@@ -66,6 +94,12 @@ export default function CreatorEarningsPage() {
       setStats(data.stats);
       setPurchases(data.purchases);
       setPayouts(data.payouts);
+      if (data.payoutInfo) {
+        setFeeConfig({
+          payoutFeeBps: data.payoutInfo.payoutFeeBps ?? 0,
+          payoutFeeFixedCents: data.payoutInfo.payoutFeeFixedCents ?? 0,
+        });
+      }
     } catch (error) {
       console.error("Error fetching earnings:", error);
       toast.error("Failed to load earnings data");
@@ -82,8 +116,14 @@ export default function CreatorEarningsPage() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to request payout");
       }
+      const inv = data.payout?.invoiceNumber;
+      const net = data.payout?.netAmountUsd;
       toast.success(
-        "Payout request submitted! An admin will review it shortly."
+        `Payout request submitted!${inv ? ` Invoice ${inv} generated.` : ""}${
+          typeof net === "number"
+            ? ` You'll receive $${net.toFixed(2)} after processing fees.`
+            : ""
+        } An admin will review it shortly.`
       );
       await fetchEarnings();
     } catch (error) {
@@ -235,6 +275,28 @@ export default function CreatorEarningsPage() {
                     </span>{" "}
                     available for payout. Requests are reviewed and paid out
                     manually by the Greenroom team.
+                    {feeConfig &&
+                      (feeConfig.payoutFeeBps > 0 ||
+                        feeConfig.payoutFeeFixedCents > 0) && (
+                        <>
+                          {" "}
+                          A payment processing fee of{" "}
+                          {formatFeeConfig(feeConfig)} is deducted — you&apos;ll
+                          receive about{" "}
+                          <span className="text-white font-medium">
+                            $
+                            {(
+                              stats.unpaidEarnings -
+                              stats.pendingPayout -
+                              estimateFeeUsd(
+                                stats.unpaidEarnings - stats.pendingPayout,
+                                feeConfig
+                              )
+                            ).toFixed(2)}
+                          </span>
+                          . An invoice is generated with your request.
+                        </>
+                      )}
                   </>
                 ) : stats && stats.pendingPayout > 0 ? (
                   <>
@@ -291,6 +353,12 @@ export default function CreatorEarningsPage() {
                       Amount
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      Fee
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
+                      You Receive
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
@@ -314,8 +382,16 @@ export default function CreatorEarningsPage() {
                       <td className="px-6 py-4 text-white text-sm">
                         {payout.totalCreditsSpent}
                       </td>
-                      <td className="px-6 py-4 text-white text-sm font-medium">
+                      <td className="px-6 py-4 text-white text-sm">
                         ${payout.amountUsd.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
+                        {payout.processingFeeUsd > 0
+                          ? `−$${payout.processingFeeUsd.toFixed(2)}`
+                          : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-[#39b54a] text-sm font-medium">
+                        ${payout.netAmountUsd.toFixed(2)}
                       </td>
                       <td className="px-6 py-4">
                         <span
@@ -338,11 +414,13 @@ export default function CreatorEarningsPage() {
                       <td className="px-6 py-4 text-right">
                         <a
                           href={`/api/creator/payouts/${payout.id}/invoice`}
-                          download
-                          className="text-[#39b54a] hover:text-[#2e9140] text-sm flex items-center justify-end gap-1"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={payout.invoiceNumber ?? "View invoice"}
+                          className="text-[#39b54a] hover:text-[#2e9140] text-sm inline-flex items-center justify-end gap-1"
                         >
-                          <Download className="w-4 h-4" />
-                          Download
+                          <FileText className="w-4 h-4" />
+                          {payout.invoiceNumber ?? "View"}
                         </a>
                       </td>
                     </tr>

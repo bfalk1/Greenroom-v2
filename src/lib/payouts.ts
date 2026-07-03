@@ -2,7 +2,10 @@ import { prisma } from "@/lib/prisma";
 import {
   computePayoutCents,
   resolveCentsPerCredit,
+  formatInvoiceNumber,
   DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+  DEFAULT_PAYOUT_FEE_BPS,
+  DEFAULT_PAYOUT_FEE_FIXED_CENTS,
 } from "@/lib/payoutMath";
 
 /**
@@ -97,6 +100,41 @@ export async function getCreatorCreditsSpent(
   });
 
   return purchases.reduce((sum, p) => sum + p.creditsSpent, 0);
+}
+
+export type PayoutFeeConfig = {
+  /** Percent part of the processing fee, in basis points (290 = 2.90%). */
+  feeBps: number;
+  /** Fixed part of the processing fee, in cents. */
+  feeFixedCents: number;
+};
+
+/**
+ * Platform-wide payout processing fee (covered by the creator). Every payout
+ * creation path must fetch this and lock the computed fee onto the payout row,
+ * so a later config change never alters an already-issued invoice.
+ */
+export async function getPayoutFeeConfig(): Promise<PayoutFeeConfig> {
+  const settings = await prisma.platformSetting.findFirst({
+    select: { payoutFeeBps: true, payoutFeeFixedCents: true },
+  });
+  return {
+    feeBps: settings?.payoutFeeBps ?? DEFAULT_PAYOUT_FEE_BPS,
+    feeFixedCents: settings?.payoutFeeFixedCents ?? DEFAULT_PAYOUT_FEE_FIXED_CENTS,
+  };
+}
+
+/**
+ * Next invoice number for a payout, race-safe via the payout_invoice_seq
+ * Postgres sequence (created in migration 20260702000001).
+ */
+export async function nextPayoutInvoiceNumber(
+  issueDate: Date = new Date()
+): Promise<string> {
+  const rows = await prisma.$queryRaw<{ seq: bigint }[]>`
+    SELECT nextval('payout_invoice_seq') AS seq
+  `;
+  return formatInvoiceNumber(rows[0].seq, issueDate);
 }
 
 /**

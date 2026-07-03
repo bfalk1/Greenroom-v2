@@ -3,8 +3,14 @@ import { prisma } from "@/lib/prisma";
 import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
+  getPayoutFeeConfig,
+  nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
-import { computeUnpaidCents, MIN_PAYOUT_CENTS } from "@/lib/payoutMath";
+import {
+  computeUnpaidCents,
+  computeProcessingFeeCents,
+  MIN_PAYOUT_CENTS,
+} from "@/lib/payoutMath";
 import { sendPayoutSummaryToAdmin } from "@/lib/email";
 
 // This iterates every active creator; give it room beyond the default limit.
@@ -65,6 +71,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`Found ${creators.length} active creators`);
 
+    // Processing fee config is platform-wide; fetch once for the whole run.
+    const feeConfig = await getPayoutFeeConfig();
+
     for (const creator of creators) {
       results.processed++;
 
@@ -113,6 +122,12 @@ export async function POST(request: NextRequest) {
             periodEnd,
             totalCreditsSpent: unpaidCredits,
             amountUsdCents: unpaidCents,
+            processingFeeCents: computeProcessingFeeCents(
+              unpaidCents,
+              feeConfig.feeBps,
+              feeConfig.feeFixedCents
+            ),
+            invoiceNumber: await nextPayoutInvoiceNumber(),
             status: "PENDING",
           },
         });

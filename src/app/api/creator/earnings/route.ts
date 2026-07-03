@@ -5,7 +5,9 @@ import {
   calculateCreatorEarningsCents,
   getCreatorEarningsInfo,
   getCreatorCreditsSpent,
+  getPayoutFeeConfig,
 } from "@/lib/payouts";
+import { computeNetPayoutCents } from "@/lib/payoutMath";
 
 // GET /api/creator/earnings — fetch earnings data for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -101,8 +103,11 @@ export async function GET(_request: NextRequest) {
       thisMonthCredits
     );
 
-    // Get payout rate info for display
-    const earningsInfo = await getCreatorEarningsInfo(authUser.id);
+    // Get payout rate + processing fee info for display
+    const [earningsInfo, feeConfig] = await Promise.all([
+      getCreatorEarningsInfo(authUser.id),
+      getPayoutFeeConfig(),
+    ]);
 
     const mappedPurchases = purchases.map((p) => ({
       id: p.id,
@@ -128,6 +133,9 @@ export async function GET(_request: NextRequest) {
         centsPerCredit: earningsInfo.centsPerCredit,
         perCreditDisplay: earningsInfo.perCreditDisplay,
         isCustomRate: earningsInfo.isCustomRate,
+        // Processing fee (covered by the creator, deducted from each payout)
+        payoutFeeBps: feeConfig.feeBps,
+        payoutFeeFixedCents: feeConfig.feeFixedCents,
       },
       purchases: mappedPurchases,
       payouts: payouts.map((p) => ({
@@ -136,6 +144,10 @@ export async function GET(_request: NextRequest) {
         periodEnd: p.periodEnd.toISOString(),
         totalCreditsSpent: p.totalCreditsSpent,
         amountUsd: p.amountUsdCents / 100,
+        processingFeeUsd: p.processingFeeCents / 100,
+        netAmountUsd:
+          computeNetPayoutCents(p.amountUsdCents, p.processingFeeCents) / 100,
+        invoiceNumber: p.invoiceNumber,
         status: p.status,
         paidAt: p.paidAt?.toISOString() || null,
       })),

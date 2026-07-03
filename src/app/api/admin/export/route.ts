@@ -187,14 +187,18 @@ export async function GET(request: NextRequest) {
           orderBy: { createdAt: "desc" },
         });
 
-        csv = "Date,Creator Email,Artist Name,Credits Spent,Amount (cents),Status\n";
+        csv =
+          "Date,Invoice Number,Creator Email,Artist Name,Credits Spent,Gross (cents),Processing Fee (cents),Net (cents),Status\n";
         payouts.forEach((p) => {
           csv += csvRow([
             p.createdAt.toISOString(),
+            p.invoiceNumber || "",
             p.creator.email || "",
             p.creator.artistName || p.creator.username,
             p.totalCreditsSpent,
             p.amountUsdCents,
+            p.processingFeeCents,
+            Math.max(0, p.amountUsdCents - p.processingFeeCents),
             p.status,
           ]);
         });

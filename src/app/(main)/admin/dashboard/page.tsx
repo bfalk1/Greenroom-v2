@@ -107,6 +107,9 @@ interface PayoutRequest {
   periodEnd: string;
   totalCreditsSpent: number;
   amountUsd: number;
+  processingFeeUsd: number;
+  netAmountUsd: number;
+  invoiceNumber: string | null;
   status: string;
   paidAt: string | null;
   createdAt: string;
@@ -140,6 +143,8 @@ interface DraftSample {
 interface PlatformSettings {
   creatorPayoutRate: number;
   creditValueCents: number;
+  payoutFeeBps: number;
+  payoutFeeFixedCents: number;
 }
 
 interface CustomRateCreator {
@@ -197,6 +202,8 @@ export default function AdminDashboardPage() {
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
     creatorPayoutRate: 7,
     creditValueCents: 10,
+    payoutFeeBps: 290,
+    payoutFeeFixedCents: 30,
   });
   const [customRateCreators, setCustomRateCreators] = useState<CustomRateCreator[]>([]);
   const [moderators, setModerators] = useState<Moderator[]>([]);
@@ -356,11 +363,14 @@ export default function AdminDashboardPage() {
 
   const handlePayoutAction = async (
     payoutId: string,
-    action: "approve" | "reject"
+    action: "approve" | "reject",
+    netAmountUsd?: number
   ) => {
     const confirmed = window.confirm(
       action === "approve"
-        ? "Approve this payout? Make sure you've sent the payment."
+        ? `Approve this payout? Make sure you've sent the net amount${
+            netAmountUsd != null ? ` of $${netAmountUsd.toFixed(2)}` : ""
+          }.`
         : "Reject this payout request?"
     );
     if (!confirmed) return;
@@ -909,11 +919,29 @@ export default function AdminDashboardPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                         <div>
-                          <p className="text-xs text-[#a1a1a1] mb-1">Amount</p>
-                          <p className="text-lg font-bold text-[#39b54a]">
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Gross Earnings
+                          </p>
+                          <p className="text-lg font-bold text-white">
                             ${payout.amountUsd.toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Processing Fee
+                          </p>
+                          <p className="text-lg font-bold text-[#a1a1a1]">
+                            −${payout.processingFeeUsd.toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#a1a1a1] mb-1">
+                            Net to Send
+                          </p>
+                          <p className="text-lg font-bold text-[#39b54a]">
+                            ${payout.netAmountUsd.toFixed(2)}
                           </p>
                         </div>
                         <div>
@@ -925,23 +953,27 @@ export default function AdminDashboardPage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-[#a1a1a1] mb-1">
-                            Period Start
-                          </p>
+                          <p className="text-xs text-[#a1a1a1] mb-1">Period</p>
                           <p className="text-sm text-white">
-                            {new Date(
-                              payout.periodStart
-                            ).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-[#a1a1a1] mb-1">
-                            Period End
-                          </p>
-                          <p className="text-sm text-white">
+                            {new Date(payout.periodStart).toLocaleDateString()}{" "}
+                            –{" "}
                             {new Date(payout.periodEnd).toLocaleDateString()}
                           </p>
                         </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <a
+                          href={`/api/creator/payouts/${payout.id}/invoice`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-sm text-[#39b54a] hover:text-[#2e9140]"
+                        >
+                          <FileText className="w-4 h-4" />
+                          {payout.invoiceNumber
+                            ? `Invoice ${payout.invoiceNumber}`
+                            : "View invoice"}
+                        </a>
                       </div>
 
                       {payout.paidAt && (
@@ -963,13 +995,19 @@ export default function AdminDashboardPage() {
                       {payout.status === "PENDING" && (
                         <div className="border-t border-[#2a2a2a] pt-4">
                           <p className="text-xs text-[#a1a1a1] mb-3">
-                            Approving marks this payout as paid — send the
-                            money manually before approving.
+                            Approving marks this payout as paid — send the net
+                            amount (${payout.netAmountUsd.toFixed(2)}) manually
+                            before approving. The processing fee is covered by
+                            the creator.
                           </p>
                           <div className="flex gap-3">
                             <Button
                               onClick={() =>
-                                handlePayoutAction(payout.id, "approve")
+                                handlePayoutAction(
+                                  payout.id,
+                                  "approve",
+                                  payout.netAmountUsd
+                                )
                               }
                               disabled={processingPayoutId === payout.id}
                               className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
@@ -1078,6 +1116,72 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
 
+                <div className="mb-6 border-t border-[#2a2a2a] pt-6">
+                  <label className="block text-sm font-medium text-white mb-2">
+                    Payout Processing Fee
+                  </label>
+                  <p className="text-xs text-[#666] mb-2">
+                    Deducted from each payout and covered by the creator —
+                    locked in when the payout is requested. Set to match what
+                    the payment provider charges to send the money.
+                  </p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="20"
+                      step="0.1"
+                      value={platformSettings.payoutFeeBps / 100}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        setPlatformSettings((prev) => ({
+                          ...prev,
+                          payoutFeeBps: Number.isNaN(v)
+                            ? 0
+                            : Math.round(v * 100),
+                        }));
+                      }}
+                      className="w-24 bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                    />
+                    <span className="text-[#a1a1a1]">% +</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="500"
+                      value={platformSettings.payoutFeeFixedCents}
+                      onChange={(e) =>
+                        setPlatformSettings((prev) => ({
+                          ...prev,
+                          payoutFeeFixedCents: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      className="w-24 bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                    />
+                    <span className="text-[#a1a1a1]">¢ fixed</span>
+                  </div>
+                  <p className="text-xs text-[#a1a1a1] mt-2">
+                    Example: on a $50.00 payout the fee is $
+                    {(
+                      Math.min(
+                        5000,
+                        Math.ceil((5000 * platformSettings.payoutFeeBps) / 10000) +
+                          platformSettings.payoutFeeFixedCents
+                      ) / 100
+                    ).toFixed(2)}{" "}
+                    — the creator receives $
+                    {(
+                      (5000 -
+                        Math.min(
+                          5000,
+                          Math.ceil(
+                            (5000 * platformSettings.payoutFeeBps) / 10000
+                          ) + platformSettings.payoutFeeFixedCents
+                        )) /
+                      100
+                    ).toFixed(2)}
+                  </p>
+                </div>
+
                 <Button
                   onClick={handleSaveSettings}
                   disabled={savingSettings}
@@ -1088,7 +1192,7 @@ export default function AdminDashboardPage() {
                   ) : (
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                   )}
-                  Save Payout Rate
+                  Save Payout Settings
                 </Button>
 
                 {/* Creators with a custom rate override */}

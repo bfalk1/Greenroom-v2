@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { DEFAULT_PAYOUT_CENTS_PER_CREDIT } from "@/lib/payoutMath";
+import {
+  DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+  DEFAULT_PAYOUT_FEE_BPS,
+  DEFAULT_PAYOUT_FEE_FIXED_CENTS,
+} from "@/lib/payoutMath";
 
 // GET /api/admin/settings — Get platform settings
 export async function GET() {
@@ -72,6 +76,8 @@ export async function GET() {
       settings: {
         creatorPayoutRate: settings.creatorPayoutRate,
         creditValueCents: settings.creditValueCents,
+        payoutFeeBps: settings.payoutFeeBps,
+        payoutFeeFixedCents: settings.payoutFeeFixedCents,
         moderatorIds: settings.moderatorIds,
       },
       moderators,
@@ -107,11 +113,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { creatorPayoutRate, creditValueCents } = body;
+    const { creatorPayoutRate, creditValueCents, payoutFeeBps, payoutFeeFixedCents } =
+      body;
 
     const updateData: {
       creatorPayoutRate?: number;
       creditValueCents?: number;
+      payoutFeeBps?: number;
+      payoutFeeFixedCents?: number;
       updatedBy: string;
     } = {
       updatedBy: authUser.id,
@@ -137,6 +146,30 @@ export async function PATCH(request: NextRequest) {
       updateData.creditValueCents = creditValueCents;
     }
 
+    if (payoutFeeBps !== undefined) {
+      if (!Number.isInteger(payoutFeeBps) || payoutFeeBps < 0 || payoutFeeBps > 2000) {
+        return NextResponse.json(
+          { error: "Processing fee percent must be between 0% and 20%" },
+          { status: 400 }
+        );
+      }
+      updateData.payoutFeeBps = payoutFeeBps;
+    }
+
+    if (payoutFeeFixedCents !== undefined) {
+      if (
+        !Number.isInteger(payoutFeeFixedCents) ||
+        payoutFeeFixedCents < 0 ||
+        payoutFeeFixedCents > 500
+      ) {
+        return NextResponse.json(
+          { error: "Fixed processing fee must be between 0¢ and 500¢" },
+          { status: 400 }
+        );
+      }
+      updateData.payoutFeeFixedCents = payoutFeeFixedCents;
+    }
+
     const settings = await prisma.platformSetting.upsert({
       where: { id: "default" },
       update: updateData,
@@ -144,6 +177,8 @@ export async function PATCH(request: NextRequest) {
         id: "default",
         creatorPayoutRate: creatorPayoutRate ?? DEFAULT_PAYOUT_CENTS_PER_CREDIT,
         creditValueCents: creditValueCents ?? 10,
+        payoutFeeBps: payoutFeeBps ?? DEFAULT_PAYOUT_FEE_BPS,
+        payoutFeeFixedCents: payoutFeeFixedCents ?? DEFAULT_PAYOUT_FEE_FIXED_CENTS,
         moderatorIds: [],
         updatedBy: authUser.id,
       },
@@ -153,6 +188,8 @@ export async function PATCH(request: NextRequest) {
       settings: {
         creatorPayoutRate: settings.creatorPayoutRate,
         creditValueCents: settings.creditValueCents,
+        payoutFeeBps: settings.payoutFeeBps,
+        payoutFeeFixedCents: settings.payoutFeeFixedCents,
       },
     });
   } catch (error) {

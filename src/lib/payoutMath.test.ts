@@ -4,7 +4,12 @@ import {
   computePayoutCents,
   resolveCentsPerCredit,
   computeUnpaidCents,
+  computeProcessingFeeCents,
+  computeNetPayoutCents,
+  formatInvoiceNumber,
   DEFAULT_PAYOUT_CENTS_PER_CREDIT,
+  DEFAULT_PAYOUT_FEE_BPS,
+  DEFAULT_PAYOUT_FEE_FIXED_CENTS,
 } from "./payoutMath";
 
 test("default economics: 7¢ per credit", () => {
@@ -65,4 +70,57 @@ test("computeUnpaidCents subtracts what's already accounted, clamped at 0", () =
   // Non-finite inputs are treated as 0.
   assert.equal(computeUnpaidCents(NaN, 100), 0);
   assert.equal(computeUnpaidCents(500, NaN), 500);
+});
+
+test("default processing fee: 2.9% + 30¢, covered by the creator", () => {
+  // $50.00 gross → ceil(5000 × 290 / 10000) = 145¢ + 30¢ = 175¢ ($1.75).
+  assert.equal(
+    computeProcessingFeeCents(5000, DEFAULT_PAYOUT_FEE_BPS, DEFAULT_PAYOUT_FEE_FIXED_CENTS),
+    175
+  );
+  // Net = $48.25 — the amount the admin actually sends.
+  assert.equal(computeNetPayoutCents(5000, 175), 4825);
+  // $100.00 gross → 290¢ + 30¢ = $3.20 fee.
+  assert.equal(
+    computeProcessingFeeCents(10000, DEFAULT_PAYOUT_FEE_BPS, DEFAULT_PAYOUT_FEE_FIXED_CENTS),
+    320
+  );
+});
+
+test("percent part of the fee rounds UP (platform never undercollects)", () => {
+  // 1% of 101¢ = 1.01¢ → ceil → 2¢ (+ no fixed part).
+  assert.equal(computeProcessingFeeCents(101, 100, 0), 2);
+  // Exact multiples don't over-round: 1% of 100¢ = exactly 1¢.
+  assert.equal(computeProcessingFeeCents(100, 100, 0), 1);
+});
+
+test("fee is clamped to gross — net can never go negative", () => {
+  // 20¢ gross with a 30¢ fixed fee → fee capped at 20¢, net 0.
+  assert.equal(computeProcessingFeeCents(20, 0, 30), 20);
+  assert.equal(computeNetPayoutCents(20, 20), 0);
+});
+
+test("zero / invalid fee config means no fee", () => {
+  assert.equal(computeProcessingFeeCents(5000, 0, 0), 0);
+  assert.equal(computeProcessingFeeCents(5000, -100, -5), 0);
+  assert.equal(computeProcessingFeeCents(5000, NaN, NaN), 0);
+  // No gross → no fee, regardless of config.
+  assert.equal(computeProcessingFeeCents(0, 290, 30), 0);
+  assert.equal(computeProcessingFeeCents(-100, 290, 30), 0);
+  // Net handles junk inputs too.
+  assert.equal(computeNetPayoutCents(NaN, 10), 0);
+  assert.equal(computeNetPayoutCents(500, NaN), 500);
+});
+
+test("invoice numbers: GR-<year>-<6-digit seq>, never truncated", () => {
+  const d = new Date(Date.UTC(2026, 2, 15));
+  assert.equal(formatInvoiceNumber(42, d), "GR-2026-000042");
+  assert.equal(formatInvoiceNumber(BigInt(7), d), "GR-2026-000007");
+  // Sequences past 999999 keep all digits.
+  assert.equal(formatInvoiceNumber(1234567, d), "GR-2026-1234567");
+  // Year comes from UTC so servers in any timezone agree.
+  assert.equal(
+    formatInvoiceNumber(1, new Date(Date.UTC(2025, 11, 31, 23, 59))),
+    "GR-2025-000001"
+  );
 });

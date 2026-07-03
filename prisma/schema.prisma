@@ -470,7 +470,13 @@ model CreatorPayout {
   periodStart       DateTime     @map("period_start") @db.Date
   periodEnd         DateTime     @map("period_end") @db.Date
   totalCreditsSpent Int          @map("total_credits_spent")
+  // GROSS earnings — this is what's deducted from the creator's unpaid balance.
+  // The amount actually sent is amountUsdCents − processingFeeCents (net).
   amountUsdCents    Int          @map("amount_usd_cents")
+  // Payment processing fee (covered by the creator), locked in at request time.
+  processingFeeCents Int         @default(0) @map("processing_fee_cents")
+  // Invoice number assigned when the payout is created (from payout_invoice_seq).
+  invoiceNumber     String?      @unique @map("invoice_number")
   status            PayoutStatus @default(PENDING)
   paidAt            DateTime?    @map("paid_at")
   createdAt         DateTime     @default(now()) @map("created_at")
@@ -529,6 +535,10 @@ model PlatformSetting {
   creatorPayoutRate Int      @default(7) @map("creator_payout_rate")
   // Credit value in USD cents (e.g., 10 = $0.10 per credit). Informational; no longer part of payout math.
   creditValueCents  Int      @default(10) @map("credit_value_cents")
+  // Payout processing fee, covered by the creator: a percent part in basis
+  // points (290 = 2.90%) plus a fixed part in cents (30 = $0.30).
+  payoutFeeBps        Int    @default(290) @map("payout_fee_bps")
+  payoutFeeFixedCents Int    @default(30) @map("payout_fee_fixed_cents")
   // Moderator whitelist (stored as JSON array of user IDs)
   moderatorIds      String[] @default([]) @map("moderator_ids") @db.Uuid
   updatedAt         DateTime @updatedAt @map("updated_at")

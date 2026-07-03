@@ -4,8 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
+  getPayoutFeeConfig,
+  nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
-import { computeUnpaidCents, MIN_PAYOUT_CENTS } from "@/lib/payoutMath";
+import {
+  computeUnpaidCents,
+  computeProcessingFeeCents,
+  computeNetPayoutCents,
+  MIN_PAYOUT_CENTS,
+} from "@/lib/payoutMath";
 
 // GET /api/creator/payouts — fetch payout history for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -43,6 +50,10 @@ export async function GET(_request: NextRequest) {
         periodEnd: p.periodEnd.toISOString(),
         totalCreditsSpent: p.totalCreditsSpent,
         amountUsd: p.amountUsdCents / 100,
+        processingFeeUsd: p.processingFeeCents / 100,
+        netAmountUsd:
+          computeNetPayoutCents(p.amountUsdCents, p.processingFeeCents) / 100,
+        invoiceNumber: p.invoiceNumber,
         status: p.status,
         paidAt: p.paidAt?.toISOString() || null,
         createdAt: p.createdAt.toISOString(),
@@ -154,6 +165,16 @@ export async function POST(_request: NextRequest) {
 
     const periodEnd = new Date();
 
+    // Processing fee (covered by the creator) locked in at request time, and
+    // an invoice number so the request immediately has a referenceable invoice.
+    const feeConfig = await getPayoutFeeConfig();
+    const processingFeeCents = computeProcessingFeeCents(
+      unpaidCents,
+      feeConfig.feeBps,
+      feeConfig.feeFixedCents
+    );
+    const invoiceNumber = await nextPayoutInvoiceNumber();
+
     // Create the payout record
     const payout = await prisma.creatorPayout.create({
       data: {
@@ -162,6 +183,8 @@ export async function POST(_request: NextRequest) {
         periodEnd,
         totalCreditsSpent: unpaidCredits,
         amountUsdCents: unpaidCents,
+        processingFeeCents,
+        invoiceNumber,
         status: "PENDING",
       },
     });
@@ -173,6 +196,11 @@ export async function POST(_request: NextRequest) {
         periodEnd: payout.periodEnd.toISOString(),
         totalCreditsSpent: payout.totalCreditsSpent,
         amountUsd: payout.amountUsdCents / 100,
+        processingFeeUsd: payout.processingFeeCents / 100,
+        netAmountUsd:
+          computeNetPayoutCents(payout.amountUsdCents, payout.processingFeeCents) /
+          100,
+        invoiceNumber: payout.invoiceNumber,
         status: payout.status,
         paidAt: null,
         createdAt: payout.createdAt.toISOString(),

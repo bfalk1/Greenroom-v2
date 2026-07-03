@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { computeNetPayoutCents } from "@/lib/payoutMath";
 
 // GET /api/admin/payouts — list all payout requests, filterable by status
 export async function GET(request: NextRequest) {
@@ -71,6 +72,10 @@ export async function GET(request: NextRequest) {
         periodEnd: p.periodEnd.toISOString(),
         totalCreditsSpent: p.totalCreditsSpent,
         amountUsd: p.amountUsdCents / 100,
+        processingFeeUsd: p.processingFeeCents / 100,
+        netAmountUsd:
+          computeNetPayoutCents(p.amountUsdCents, p.processingFeeCents) / 100,
+        invoiceNumber: p.invoiceNumber,
         status: p.status,
         paidAt: p.paidAt?.toISOString() || null,
         createdAt: p.createdAt.toISOString(),
@@ -168,6 +173,12 @@ export async function PATCH(request: NextRequest) {
         metadata: {
           creatorId: updated.creatorId,
           amountUsdCents: updated.amountUsdCents,
+          processingFeeCents: updated.processingFeeCents,
+          netAmountCents: computeNetPayoutCents(
+            updated.amountUsdCents,
+            updated.processingFeeCents
+          ),
+          invoiceNumber: updated.invoiceNumber,
           note: body.note ?? null,
         },
       },
