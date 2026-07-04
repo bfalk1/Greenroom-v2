@@ -31,7 +31,7 @@ export default function PrivacyPage() {
             <li>Account and payout details</li>
           </ul>
 
-          <p><strong className="text-white">2.3 Payment Information.</strong> Payments are processed through third-party providers such as Stripe (and potentially PayPal in the future). Greenroom does not store full payment card details.</p>
+          <p><strong className="text-white">2.3 Payment Information.</strong> Payments are processed through third-party providers such as Stripe and PayPal. Greenroom does not store full payment card details.</p>
 
           <p><strong className="text-white">2.4 Usage &amp; Device Data.</strong> We automatically collect:</p>
           <ul className="list-disc pl-6 space-y-1">

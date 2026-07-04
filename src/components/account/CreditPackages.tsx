@@ -1,21 +1,77 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Zap, Loader2 } from "lucide-react";
 import { PUBLIC_CREDIT_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { toast } from "sonner";
 
+// PayPal is optional — the button only renders once the env flag is set.
+// NEXT_PUBLIC_* vars are inlined at build time: redeploy after changing it,
+// in the same deploy that sets the PAYPAL_* server vars.
+const paypalEnabled = process.env.NEXT_PUBLIC_PAYPAL_ENABLED === "true";
+
+// Checkout redirects land back on /account with an outcome param.
+const CHECKOUT_OUTCOMES: Record<
+  string,
+  { kind: "success" | "info" | "error"; message: string }
+> = {
+  credits_purchased: {
+    kind: "success",
+    message: "Payment received — your credits have been added.",
+  },
+  credits_pending: {
+    kind: "info",
+    message:
+      "Payment received — your credits will appear once PayPal finishes clearing the payment (eChecks can take a few days).",
+  },
+  credits_canceled: {
+    kind: "info",
+    message: "Checkout canceled — you haven't been charged.",
+  },
+  credits_error: {
+    kind: "error",
+    message:
+      "Something went wrong completing your purchase. If you were charged, contact support and we'll sort it out.",
+  },
+};
+
 export function CreditPackages() {
   const [loading, setLoading] = useState<string | null>(null);
 
-  const handleBuy = async (priceId: string) => {
-    setLoading(priceId);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+
+    for (const [param, outcome] of Object.entries(CHECKOUT_OUTCOMES)) {
+      if (params.get(param) !== "true") continue;
+
+      if (outcome.kind === "success") toast.success(outcome.message);
+      else if (outcome.kind === "error") toast.error(outcome.message);
+      else toast.info(outcome.message);
+
+      // Strip the param so a refresh doesn't repeat the toast.
+      params.delete(param);
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}`
+      );
+      break;
+    }
+  }, []);
+
+  const startCheckout = async (
+    loadingKey: string,
+    endpoint: string,
+    body: Record<string, unknown>
+  ) => {
+    setLoading(loadingKey);
     try {
-      const res = await fetch("/api/credits/purchase", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -34,6 +90,14 @@ export function CreditPackages() {
       setLoading(null);
     }
   };
+
+  const handleBuy = (priceId: string) =>
+    startCheckout(priceId, "/api/credits/purchase", { priceId });
+
+  const handleBuyPaypal = (credits: number) =>
+    startCheckout(`paypal-${credits}`, "/api/credits/purchase-paypal", {
+      credits,
+    });
 
   return (
     <div>
@@ -97,6 +161,20 @@ export function CreditPackages() {
                 "Buy Now"
               )}
             </Button>
+
+            {paypalEnabled && (
+              <Button
+                onClick={() => handleBuyPaypal(pack.credits)}
+                disabled={loading !== null}
+                className="w-full mt-2 bg-transparent border border-[#2a2a2a] text-[#a1a1a1] hover:bg-[#1a1a1a] hover:text-white font-semibold"
+              >
+                {loading === `paypal-${pack.credits}` ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Pay with PayPal"
+                )}
+              </Button>
+            )}
           </div>
         ))}
       </div>

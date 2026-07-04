@@ -297,8 +297,9 @@ function PricingContent() {
                 What payment methods do you accept?
               </h3>
               <p className="text-[#a1a1a1]">
-                We accept all major credit cards via Stripe. Payments are secure
-                and processed instantly.
+                We accept all major credit cards via Stripe, and PayPal for
+                credit pack purchases. Payments are secure and processed
+                instantly.
               </p>
             </div>
           </div>

@@ -142,6 +142,7 @@ model User {
   usedInvite           CreatorInvite?       @relation("InviteUsedBy")
   betaInvitesSent      BetaInvite[]         @relation("BetaInvitedBy")
   betaInviteUsed       BetaInvite?          @relation("BetaInviteUsedBy")
+  paypalOrders         PaypalOrder[]
 
   @@map("users")
 }
@@ -523,6 +524,31 @@ model StripeWebhookEvent {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("stripe_webhook_events")
+}
+
+// ─────────────────────────────────────────────
+// PAYPAL ORDERS (one-time credit pack checkout)
+// ─────────────────────────────────────────────
+
+// One row per PayPal checkout attempt, created before redirecting the user to
+// PayPal. Credits are granted in the same transaction that flips status from
+// CREATED to COMPLETED — the status guard makes the grant apply exactly once
+// even when the return redirect and the webhook both try to settle the order.
+model PaypalOrder {
+  id             String   @id // PayPal order id
+  userId         String   @map("user_id") @db.Uuid
+  credits        Int
+  amountUsdCents Int      @map("amount_usd_cents")
+  status         String   @default("CREATED") // CREATED | COMPLETED | REFUNDED | DENIED
+  captureId      String?  @map("capture_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([captureId])
+  @@map("paypal_orders")
 }
 
 // ─────────────────────────────────────────────
