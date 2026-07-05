@@ -91,6 +91,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
+    // PayPal redirects the buyer here after approval. Deliberately public:
+    // the grant is keyed to the stored order row (not the session), so a
+    // missing/dropped cookie must not strand a paid order.
+    pathname === "/api/credits/purchase-paypal/return" ||
     isPublicSamplePath ||
     pathname.startsWith("/api/genres") ||
     pathname.startsWith("/api/search") ||
