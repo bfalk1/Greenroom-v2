@@ -80,6 +80,22 @@ export default function AccountPage() {
     newEmail: "",
   });
   const [emailSaving, setEmailSaving] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordFormData, setPasswordFormData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+
+  const closePasswordModal = () => {
+    setPasswordModalOpen(false);
+    setPasswordFormData({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  };
 
   // Set form data when user loads
   useEffect(() => {
@@ -263,6 +279,51 @@ export default function AccountPage() {
       toast.error("Failed to update email");
     } finally {
       setEmailSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    if (
+      !passwordFormData.currentPassword ||
+      !passwordFormData.newPassword ||
+      !passwordFormData.confirmPassword
+    ) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+    if (passwordFormData.newPassword !== passwordFormData.confirmPassword) {
+      toast.error("New passwords don't match");
+      return;
+    }
+    if (passwordFormData.newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const res = await fetch("/api/user/password", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwordFormData.currentPassword,
+          newPassword: passwordFormData.newPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success("Password updated successfully!");
+        closePasswordModal();
+      } else {
+        toast.error(data.error || "Failed to update password");
+      }
+    } catch (error) {
+      console.error("Error changing password:", error);
+      toast.error("Failed to update password");
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -537,6 +598,28 @@ export default function AccountPage() {
 
             <div>
               <label className="block text-sm font-medium text-white mb-2">
+                Password
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  value="••••••••"
+                  disabled
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-[#a1a1a1] cursor-not-allowed flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPasswordModalOpen(true)}
+                  className="border-[#2a2a2a] hover:bg-[#2a2a2a] text-white px-3"
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-white mb-2">
                 Full Name
               </label>
               <Input
@@ -712,6 +795,109 @@ export default function AccountPage() {
                     </>
                   ) : (
                     "Update Email"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Change Modal */}
+      {passwordModalOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold text-white">
+                Change Password
+              </h3>
+              <button
+                onClick={closePasswordModal}
+                className="text-[#a1a1a1] hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  Current Password
+                </label>
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordFormData.currentPassword}
+                  onChange={(e) =>
+                    setPasswordFormData({
+                      ...passwordFormData,
+                      currentPassword: e.target.value,
+                    })
+                  }
+                  placeholder="Enter your current password"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  New Password
+                </label>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordFormData.newPassword}
+                  onChange={(e) =>
+                    setPasswordFormData({
+                      ...passwordFormData,
+                      newPassword: e.target.value,
+                    })
+                  }
+                  placeholder="At least 6 characters"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  Confirm New Password
+                </label>
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordFormData.confirmPassword}
+                  onChange={(e) =>
+                    setPasswordFormData({
+                      ...passwordFormData,
+                      confirmPassword: e.target.value,
+                    })
+                  }
+                  placeholder="Re-enter your new password"
+                  className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={closePasswordModal}
+                  className="flex-1 border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handlePasswordChange}
+                  disabled={passwordSaving}
+                  className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold"
+                >
+                  {passwordSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Update Password"
                   )}
                 </Button>
               </div>

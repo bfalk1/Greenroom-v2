@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
+import { verifyCurrentPassword } from "@/lib/verifyPassword";
 
 // PATCH /api/user/email — Change email with password verification
 export async function PATCH(request: NextRequest) {
@@ -30,23 +31,8 @@ export async function PATCH(request: NextRequest) {
     // address we later reconcile from auth.
     const newEmail = normalizeEmail(rawNewEmail);
 
-    // Verify password using Supabase Auth REST API
-    const verifyRes = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        },
-        body: JSON.stringify({
-          email: authUser.email,
-          password: currentPassword,
-        }),
-      }
-    );
-
-    if (!verifyRes.ok) {
+    const verified = await verifyCurrentPassword(authUser.email!, currentPassword);
+    if (!verified) {
       return NextResponse.json(
         { error: "Incorrect password" },
         { status: 401 }

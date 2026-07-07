@@ -50,7 +50,7 @@ const topics = [
     icon: Shield,
     title: "Account & Security",
     items: [
-      { q: "How do I change my password?", a: "You can reset your password from the login page using the 'Forgot Password' link." },
+      { q: "How do I change my password?", a: "Go to your Account page and click the pencil icon next to Password. You'll need to enter your current password to confirm the change." },
       { q: "How do I delete my account?", a: "Contact us at support@greenroom.app and we'll process your account deletion request." },
     ],
   },
