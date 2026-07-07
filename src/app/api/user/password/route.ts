@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { verifyCurrentPassword } from "@/lib/verifyPassword";
+import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 // PATCH /api/user/password — Change password with current-password verification
 export async function PATCH(request: NextRequest) {
@@ -12,6 +13,16 @@ export async function PATCH(request: NextRequest) {
 
     if (!authUser || !authUser.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // verifyCurrentPassword below is a password-grant check — rate limit it so
+    // an authenticated attacker can't brute-force the current password.
+    const limit = await rateLimit(`password-change:${authUser.id}`, {
+      limit: 5,
+      windowSec: 60,
+    });
+    if (!limit.success) {
+      return tooManyRequests();
     }
 
     const { currentPassword, newPassword } = await request.json();

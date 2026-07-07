@@ -305,13 +305,20 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const {
       full_name,
-      username,
+      username: rawUsername,
       bio,
       social_links,
       avatar_url,
       banner_url,
       terms_accepted_at,
     } = body;
+
+    // An empty/whitespace-only username clears it. Never write "" — username
+    // is @unique, so the second user to blank theirs would hit P2002.
+    const username =
+      typeof rawUsername === "string" && rawUsername.trim() === ""
+        ? null
+        : rawUsername;
 
     // Validate username if provided
     if (username) {

@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Play, Pause, Volume2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
 // Only one AudioPlayer may play at a time; starting one pauses the previous.
@@ -23,8 +24,12 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
   const [currentTime, setCurrentTime] = useState(0);
   const [trackDuration, setTrackDuration] = useState(duration);
   const [volume, setVolume] = useState(1);
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Refs (not state) so the mount-once media event handlers below always see
+  // current values.
+  const signedUrlRef = useRef<string | null>(null);
+  const wantsPlayRef = useRef(false); // user pressed play (vs. preload)
+  const retriedRef = useRef(false); // one expired-URL retry per play attempt
 
   const getSignedUrl = async () => {
     if (sampleId) {
@@ -32,8 +37,10 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
         ? `/api/mod/samples/${sampleId}/audio`
         : `/api/samples/${sampleId}/preview`;
       const res = await fetch(endpoint);
-      const data = await res.json();
-      if (data.url) return data.url;
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) return data.url;
+      }
     }
     if (fileUrl?.startsWith("http")) return fileUrl;
     return null;
@@ -41,10 +48,10 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
 
   // Preload audio on mount if requested
   useEffect(() => {
-    if (preload && (sampleId || fileUrl) && !signedUrl) {
+    if (preload && (sampleId || fileUrl) && !signedUrlRef.current) {
       getSignedUrl().then(url => {
         if (url) {
-          setSignedUrl(url);
+          signedUrlRef.current = url;
           if (audioRef.current) {
             audioRef.current.src = url;
             audioRef.current.preload = "auto";
@@ -72,20 +79,58 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
     };
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
+    // Playback actually started, so the current URL works — allow a future
+    // expired-URL retry.
+    const handlePlaying = () => {
+      retriedRef.current = false;
+    };
+    const handleError = () => {
+      // Ignore errors outside a play attempt (e.g. preload failures).
+      if (!wantsPlayRef.current) return;
+      // Signed URLs expire after ~1h; if a previously fetched URL errors on a
+      // later play attempt, re-fetch it once and retry. `playing` resets the
+      // budget, so a genuinely broken source can't loop.
+      if (sampleId && signedUrlRef.current && !retriedRef.current) {
+        retriedRef.current = true;
+        setIsLoading(true);
+        getSignedUrl()
+          .then(async (url) => {
+            if (!url) throw new Error("No audio URL");
+            signedUrlRef.current = url;
+            audio.src = url;
+            audio.load();
+            await audio.play();
+          })
+          .catch((err) => {
+            console.error("Failed to retry audio playback:", err);
+            setIsPlaying(false);
+            toast.error("Failed to play audio", { id: "audio-play-error" });
+          })
+          .finally(() => setIsLoading(false));
+        return;
+      }
+      setIsLoading(false);
+      setIsPlaying(false);
+      toast.error("Failed to play audio", { id: "audio-play-error" });
+    };
 
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("loadedmetadata", handleDuration);
     audio.addEventListener("durationchange", handleDuration);
     audio.addEventListener("play", handlePlay);
+    audio.addEventListener("playing", handlePlaying);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
     return () => {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("loadedmetadata", handleDuration);
       audio.removeEventListener("durationchange", handleDuration);
       audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("playing", handlePlaying);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
       // Detached audio elements keep playing in some browsers — stop explicitly.
       audio.pause();
       if (activeAudio === audio) activeAudio = null;
@@ -94,30 +139,31 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
 
   const togglePlay = async () => {
     if (!sampleId && !fileUrl) {
-      alert("Audio file not available");
+      toast.error("Audio file not available");
       return;
     }
 
     // If we don't have a signed URL yet, fetch it
-    if (!signedUrl) {
+    if (!signedUrlRef.current) {
       setIsLoading(true);
       try {
         const url = await getSignedUrl();
         if (!url) {
-          alert("Failed to load audio");
+          toast.error("Failed to load audio");
           setIsLoading(false);
           return;
         }
-        setSignedUrl(url);
+        signedUrlRef.current = url;
         // Wait for audio to be ready
         if (audioRef.current) {
+          wantsPlayRef.current = true;
           audioRef.current.src = url;
           audioRef.current.load();
           await audioRef.current.play();
         }
       } catch (err) {
         console.error("Failed to play:", err);
-        alert("Failed to play audio");
+        toast.error("Failed to play audio", { id: "audio-play-error" });
       } finally {
         setIsLoading(false);
       }
@@ -127,9 +173,13 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
     // Already have URL, just toggle play/pause
     if (audioRef.current) {
       if (isPlaying) {
+        wantsPlayRef.current = false;
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        wantsPlayRef.current = true;
+        // A rejection here (e.g. the cached URL expired) fires the audio
+        // 'error' handler, which re-fetches the URL and retries once.
+        audioRef.current.play().catch(() => {});
       }
     }
   };

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
 import { verifyCurrentPassword } from "@/lib/verifyPassword";
+import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 
 // PATCH /api/user/email — Change email with password verification
 export async function PATCH(request: NextRequest) {
@@ -14,6 +15,16 @@ export async function PATCH(request: NextRequest) {
 
     if (!authUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // verifyCurrentPassword below is a password-grant check — rate limit it so
+    // an authenticated attacker can't brute-force the current password.
+    const limit = await rateLimit(`email-change:${authUser.id}`, {
+      limit: 5,
+      windowSec: 60,
+    });
+    if (!limit.success) {
+      return tooManyRequests();
     }
 
     const { newEmail: rawNewEmail, currentPassword } = await request.json();
