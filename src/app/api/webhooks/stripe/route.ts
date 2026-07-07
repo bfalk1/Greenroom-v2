@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
+import { cancelPaypalSubscription } from "@/lib/paypal/subscriptions";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -90,6 +91,23 @@ async function handleCheckoutCompleted(
   }
 
   const { periodStart, periodEnd } = getPeriodDates(subscription);
+
+  // Taking the row over from PayPal (returning subscriber checking out via
+  // Stripe): stop PayPal billing first, or the buyer is double-billed every
+  // cycle. Best effort — cancelPaypalSubscription treats already-cancelled
+  // as success, and a failure must not block the Stripe grant.
+  const existing = await prisma.subscription.findUnique({ where: { userId } });
+  if (existing?.provider === "paypal" && existing.paypalSubscriptionId) {
+    await cancelPaypalSubscription(
+      existing.paypalSubscriptionId,
+      "Superseded by a new subscription"
+    ).catch((err) =>
+      console.error(
+        `Failed to cancel PayPal subscription ${existing.paypalSubscriptionId} superseded by Stripe checkout (user ${userId}) — cancel manually:`,
+        err
+      )
+    );
+  }
 
   // Create or update subscription. Status lives on users.subscription_status
   // (single source of truth) — Subscription only stores tier/period/Stripe IDs.

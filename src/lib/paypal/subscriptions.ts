@@ -177,7 +177,7 @@ export async function revisePaypalSubscription(params: {
 /** Completed payment transactions for a subscription, newest data included. */
 export async function listPaypalSubscriptionTransactions(
   subscriptionId: string
-): Promise<{ id: string; status: string }[]> {
+): Promise<{ id: string; status: string; time?: string }[]> {
   // The API requires a time window; span the subscription's possible life.
   const start = new Date(Date.now() - 1000 * 60 * 60 * 24 * 90).toISOString();
   const end = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString();
@@ -193,10 +193,27 @@ export async function listPaypalSubscriptionTransactions(
   }
 
   const data = (await res.json()) as {
-    transactions?: { id: string; status: string }[];
+    transactions?: { id: string; status: string; time?: string }[];
   };
 
   return data.transactions ?? [];
+}
+
+/**
+ * Fully refund a subscription payment (subscription transactions are v1
+ * sales, so this is the v1 sale refund endpoint — the credit-pack path uses
+ * v2 captures and never comes through here). Empty body = full refund.
+ */
+export async function refundPaypalSale(saleId: string): Promise<void> {
+  const res = await paypalFetch(`/v1/payments/sale/${saleId}/refund`, {
+    method: "POST",
+    body: {},
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`PayPal refund sale failed (${res.status}): ${body}`);
+  }
 }
 
 // PayPal states we mirror locally. APPROVAL_PENDING/APPROVED have no billing
@@ -208,8 +225,11 @@ const MIRRORED_STATUSES = ["ACTIVE", "SUSPENDED", "CANCELLED", "EXPIRED"];
  * Pull the subscription's current state from PayPal and mirror it locally:
  * upsert the Subscription row (provider=paypal) and keep tier and period
  * dates in sync for any billed state. Only an ACTIVE subscription flips the
- * user to active / clears cancelAtPeriodEnd; CANCELLED/EXPIRED/SUSPENDED set
- * cancelAtPeriodEnd so the daily cron ends access at period end.
+ * user to active / clears cancelAtPeriodEnd; CANCELLED/EXPIRED set
+ * cancelAtPeriodEnd so the daily cron ends access at period end. SUSPENDED
+ * is dunning, not cancellation — it leaves cancelAtPeriodEnd alone so the
+ * user can still cancel and a successful PayPal retry resumes billing (the
+ * cron's past_due grace window ends access if retries never succeed).
  *
  * Used by the return route, the ACTIVATED/UPDATED webhooks, and the SALE
  * handler when events arrive before the row exists. Returns null when the
@@ -277,19 +297,47 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
         subscriptionId,
         "Superseded by an existing subscription"
       );
+      // ACTIVE means a cycle was already captured, and no credits were (or
+      // will be) granted for it — refund the buyer. Best effort: a failure
+      // here must not block the sync, but it means money was kept for
+      // nothing, so log loudly for a manual refund.
+      const sales = await listPaypalSubscriptionTransactions(subscriptionId);
+      const latestSale = sales
+        .filter((t) => t.status === "COMPLETED")
+        .sort((a, b) => (b.time ?? "").localeCompare(a.time ?? ""))[0];
+      if (latestSale) {
+        await refundPaypalSale(latestSale.id).catch((err) =>
+          console.error(
+            `Failed to refund PayPal sale ${latestSale.id} of superseded subscription ${subscriptionId} (user ${userId}) — refund manually:`,
+            err
+          )
+        );
+      } else {
+        console.error(
+          `No completed sale found for superseded PayPal subscription ${subscriptionId} (user ${userId}) — check for an unrefunded payment manually`
+        );
+      }
     }
     return null;
   }
 
-  // Two live PayPal subscriptions for one user (double-checkout race or a
-  // stale approve link): the newest wins the row; cancel the old one.
+  // Two PayPal subscriptions for one user (double-checkout race or a stale
+  // approve link): only an ACTIVE newcomer wins the row (and the old one is
+  // canceled). A non-active one — e.g. a late CANCELLED-sub event replayed
+  // after the user resubscribed — must never overwrite the row that the
+  // other subscription now owns.
   if (
     existing &&
     existing.provider === "paypal" &&
     existing.paypalSubscriptionId &&
-    existing.paypalSubscriptionId !== subscriptionId &&
-    remote.status === "ACTIVE"
+    existing.paypalSubscriptionId !== subscriptionId
   ) {
+    if (remote.status !== "ACTIVE") {
+      console.log(
+        `PayPal subscription ${subscriptionId} (${remote.status}) for user ${userId} — row owned by ${existing.paypalSubscriptionId}, not syncing`
+      );
+      return null;
+    }
     console.error(
       `User ${userId} has a second PayPal subscription ${subscriptionId} — canceling the previous one ${existing.paypalSubscriptionId}`
     );
@@ -302,6 +350,11 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
   }
 
   const isActive = remote.status === "ACTIVE";
+  // CANCELLED/EXPIRED are genuine cancellations; SUSPENDED is dunning and
+  // must leave cancelAtPeriodEnd unchanged (undefined = untouched on update).
+  const isCancelled =
+    remote.status === "CANCELLED" || remote.status === "EXPIRED";
+  const cancelAtPeriodEnd = isActive ? false : isCancelled ? true : undefined;
   const periodEnd =
     remote.periodEnd ??
     new Date(remote.periodStart.getTime() + 1000 * 60 * 60 * 24 * 31);
@@ -315,7 +368,7 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
       stripeSubscriptionId: null,
       currentPeriodStart: remote.periodStart,
       currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: !isActive,
+      cancelAtPeriodEnd,
     },
     create: {
       userId,
@@ -324,7 +377,7 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
       paypalSubscriptionId: subscriptionId,
       currentPeriodStart: remote.periodStart,
       currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: !isActive,
+      cancelAtPeriodEnd: isCancelled,
     },
   });
 

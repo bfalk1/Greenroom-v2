@@ -35,10 +35,13 @@ async function runSweep(request: NextRequest) {
       where: {
         provider: "paypal",
         OR: [
+          // Genuine cancellations end at period end. past_due is excluded:
+          // dunning users belong to the grace branch below, so a PayPal
+          // retry that succeeds after period end can still restore them.
           {
             cancelAtPeriodEnd: true,
             currentPeriodEnd: { lt: now },
-            user: { subscriptionStatus: { not: "canceled" } },
+            user: { subscriptionStatus: { notIn: ["canceled", "past_due"] } },
           },
           {
             currentPeriodEnd: { lt: new Date(now.getTime() - PAST_DUE_GRACE_MS) },

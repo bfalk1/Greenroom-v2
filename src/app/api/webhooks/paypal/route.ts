@@ -293,19 +293,15 @@ export async function POST(request: Request) {
         });
         if (!sub) break;
 
-        // past_due still passes the paywall — flag the row so the cron ends
-        // access at period end unless a successful retry (SALE.COMPLETED →
-        // sync ACTIVE) clears the flag first.
-        await prisma.$transaction([
-          prisma.user.update({
-            where: { id: sub.userId },
-            data: { subscriptionStatus: "past_due" },
-          }),
-          prisma.subscription.update({
-            where: { id: sub.id },
-            data: { cancelAtPeriodEnd: true },
-          }),
-        ]);
+        // Dunning, not cancellation — cancelAtPeriodEnd stays untouched so
+        // the user can still cancel and a successful PayPal retry
+        // (SALE.COMPLETED → sync ACTIVE) resumes billing. past_due still
+        // passes the paywall; the cron's grace window ends access if the
+        // retries never succeed.
+        await prisma.user.update({
+          where: { id: sub.userId },
+          data: { subscriptionStatus: "past_due" },
+        });
         break;
       }
 
@@ -341,14 +337,16 @@ export async function POST(request: Request) {
           break;
         }
 
-        // Claw back the granted cycle, keyed by refund id (dedups event
-        // redeliveries and REFUNDED/REVERSED overlap for the same refund).
+        // Claw back the granted cycle, keyed by SALE id: the clawback always
+        // debits the full cycle, so a second partial refund (or a chargeback
+        // after a partial refund) on the same sale must no-op, not double-
+        // debit. Also dedups redeliveries and REFUNDED/REVERSED overlap.
         // Partial refunds claw back the full cycle — refund whole cycles, or
         // adjust manually via admin. Balance may go negative if spent.
         try {
           await prisma.$transaction([
             prisma.paypalWebhookEvent.create({
-              data: { id: `refund:${refundId}`, type: event.event_type },
+              data: { id: `refund-sale:${saleId}`, type: event.event_type },
             }),
             prisma.creditBalance.upsert({
               where: { userId: grant.userId },
@@ -372,7 +370,9 @@ export async function POST(request: Request) {
             "code" in error &&
             (error as { code?: string }).code === "P2002"
           ) {
-            console.log(`Duplicate PayPal refund ignored: ${refundId}`);
+            console.log(
+              `PayPal refund ${refundId} ignored — sale ${saleId} already clawed back`
+            );
             break;
           }
           throw error;

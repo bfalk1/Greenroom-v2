@@ -41,10 +41,9 @@ export async function POST() {
       );
     }
 
-    if (subscription.cancelAtPeriodEnd) {
-      return NextResponse.json({ ok: true, alreadyCanceled: true });
-    }
-
+    // No cancelAtPeriodEnd early-return: always tell PayPal (it treats an
+    // already-cancelled sub as success), so a past_due user cancelling mid-
+    // dunning genuinely stops PayPal's payment retries.
     await cancelPaypalSubscription(
       subscription.paypalSubscriptionId,
       "Customer canceled from account page"
