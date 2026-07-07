@@ -146,7 +146,15 @@ export default function CreatorEarningsPage() {
       const res = await fetch(`/api/creator/payouts/${payoutId}/receipt`);
       if (!res.ok) throw new Error("Failed to get receipt URL");
       const data = await res.json();
-      window.open(data.url, "_blank", "noopener,noreferrer");
+      // An anchor click avoids Safari's popup blocker (window.open after an
+      // await is silently swallowed).
+      const a = document.createElement("a");
+      a.href = data.url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch {
       toast.error("Failed to open receipt");
     } finally {

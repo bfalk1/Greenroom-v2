@@ -149,7 +149,8 @@ export default function CreatorPayoutSettings() {
     creatorId: string,
     rate: number | null
   ) => {
-    const previous = creators;
+    const previousRate =
+      creators.find((c) => c.id === creatorId)?.customPayoutRate ?? null;
     // Optimistic update; reverted on failure
     setCreators((prev) =>
       prev.map((c) =>
@@ -174,7 +175,13 @@ export default function CreatorPayoutSettings() {
           : "Payout rate updated"
       );
     } catch (error) {
-      setCreators(previous);
+      // Revert only the affected row — a full snapshot restore would clobber
+      // rows loaded or edited while the PATCH was in flight
+      setCreators((prev) =>
+        prev.map((c) =>
+          c.id === creatorId ? { ...c, customPayoutRate: previousRate } : c
+        )
+      );
       toast.error(
         error instanceof Error && error.message
           ? error.message
