@@ -3,7 +3,7 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
     name: "General Admission",
     tierName: "GA",
     credits: 100,
-    price: 10.99,
+    price: 9.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID ?? "",
     features: [
       "Unused credits roll over",
@@ -16,7 +16,7 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
     name: "VIP",
     tierName: "VIP",
     credits: 200,
-    price: 18.99,
+    price: 17.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
     features: [
       "Unused credits roll over",
