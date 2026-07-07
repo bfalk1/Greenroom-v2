@@ -112,6 +112,8 @@ interface PayoutRequest {
   invoiceNumber: string | null;
   status: string;
   paidAt: string | null;
+  hasReceipt: boolean;
+  receiptUploadedAt: string | null;
   createdAt: string;
 }
 
@@ -190,6 +192,7 @@ export default function AdminDashboardPage() {
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([]);
   const [payoutFilter, setPayoutFilter] = useState<string>("PENDING");
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
+  const [uploadingReceiptId, setUploadingReceiptId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [editingSample, setEditingSample] = useState<ReturnType<
@@ -400,6 +403,67 @@ export default function AdminDashboardPage() {
       );
     } finally {
       setProcessingPayoutId(null);
+    }
+  };
+
+  // Two-phase receipt upload: mint a signed URL, PUT the bytes straight to the
+  // private payout-receipts bucket, then finalize (server re-validates the
+  // stored bytes and persists the path). Mirrors the avatar upload flow.
+  const handleReceiptUpload = async (payoutId: string, file: File) => {
+    setUploadingReceiptId(payoutId);
+    try {
+      const mintRes = await fetch(`/api/admin/payouts/${payoutId}/receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, size: file.size }),
+      });
+      if (!mintRes.ok) {
+        const err = await mintRes.json().catch(() => ({}));
+        throw new Error(err.error || "Upload could not start");
+      }
+      const { uploadPath, token, contentType } = (await mintRes.json()) as {
+        uploadPath: string;
+        token: string;
+        contentType: string;
+      };
+
+      const supabase = createBrowserClient();
+      const { error } = await supabase.storage
+        .from("payout-receipts")
+        .uploadToSignedUrl(uploadPath, token, file, { contentType });
+      if (error) {
+        throw new Error(error.message || "Upload failed");
+      }
+
+      const finalizeRes = await fetch(`/api/admin/payouts/${payoutId}/receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ finalizePath: uploadPath }),
+      });
+      if (!finalizeRes.ok) {
+        const err = await finalizeRes.json().catch(() => ({}));
+        throw new Error(err.error || "Upload failed");
+      }
+
+      toast.success("Receipt uploaded!");
+      await fetchPayouts();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to upload receipt"
+      );
+    } finally {
+      setUploadingReceiptId(null);
+    }
+  };
+
+  const handleViewReceipt = async (payoutId: string) => {
+    try {
+      const res = await fetch(`/api/creator/payouts/${payoutId}/receipt`);
+      if (!res.ok) throw new Error("Failed to get receipt URL");
+      const data = await res.json();
+      window.open(data.url, "_blank");
+    } catch {
+      toast.error("Failed to open receipt");
     }
   };
 
@@ -962,7 +1026,7 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
-                      <div className="mb-4">
+                      <div className="mb-4 flex flex-wrap items-center gap-4">
                         <a
                           href={`/api/creator/payouts/${payout.id}/invoice`}
                           target="_blank"
@@ -974,6 +1038,54 @@ export default function AdminDashboardPage() {
                             ? `Invoice ${payout.invoiceNumber}`
                             : "View invoice"}
                         </a>
+                        {payout.hasReceipt && (
+                          <button
+                            onClick={() => handleViewReceipt(payout.id)}
+                            title={
+                              payout.receiptUploadedAt
+                                ? `Uploaded ${new Date(
+                                    payout.receiptUploadedAt
+                                  ).toLocaleDateString()}`
+                                : "View receipt"
+                            }
+                            className="inline-flex items-center gap-1.5 text-sm text-[#39b54a] hover:text-[#2e9140]"
+                          >
+                            <Receipt className="w-4 h-4" />
+                            View receipt
+                          </button>
+                        )}
+                        {(payout.status === "PENDING" ||
+                          payout.status === "PAID") && (
+                          <label
+                            className={`inline-flex items-center gap-1.5 text-sm ${
+                              uploadingReceiptId === payout.id
+                                ? "text-[#666] cursor-default"
+                                : "text-[#a1a1a1] hover:text-white cursor-pointer"
+                            }`}
+                          >
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                              className="hidden"
+                              disabled={uploadingReceiptId === payout.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = "";
+                                if (file) handleReceiptUpload(payout.id, file);
+                              }}
+                            />
+                            {uploadingReceiptId === payout.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Upload className="w-4 h-4" />
+                            )}
+                            {uploadingReceiptId === payout.id
+                              ? "Uploading receipt…"
+                              : payout.hasReceipt
+                              ? "Replace receipt"
+                              : "Attach receipt (PDF/JPG/PNG, optional)"}
+                          </label>
+                        )}
                       </div>
 
                       {payout.paidAt && (

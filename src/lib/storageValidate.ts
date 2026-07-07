@@ -22,6 +22,7 @@ import { isWavBuffer, validateRasterImage } from "@/lib/upload";
 
 const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
+const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
 function admin(): SupabaseClient {
   return createClient(
@@ -130,4 +131,43 @@ export async function verifyStoredImage(
   if (!check.ok) return { ok: false, error: check.error };
   if (r.size > maxBytes) return { ok: false, error: "Image file is too large" };
   return { ok: true };
+}
+
+/** "%PDF-" header — the only stable magic bytes a PDF starts with. */
+export function isPdfBuffer(buffer: Buffer): boolean {
+  return buffer.length >= 5 && buffer.toString("ascii", 0, 5) === "%PDF-";
+}
+
+/** Confirm a stored payout receipt is a real PDF/PNG/JPEG (matching its
+ *  extension) within the receipt size limit. */
+export async function verifyStoredReceipt(
+  bucket: string,
+  path: string,
+  maxBytes: number = MAX_RECEIPT_BYTES
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const r = await readHead(bucket, path, 12);
+  if (!r) return { ok: false, error: "Uploaded receipt could not be verified" };
+  if (r.size === 0) return { ok: false, error: "Receipt file is empty" };
+  if (r.size > maxBytes) return { ok: false, error: "Receipt must be under 10MB" };
+
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  const isJpeg =
+    r.head.length >= 3 &&
+    r.head[0] === 0xff &&
+    r.head[1] === 0xd8 &&
+    r.head[2] === 0xff;
+  const isPng =
+    r.head.length >= 4 &&
+    r.head[0] === 0x89 &&
+    r.head[1] === 0x50 &&
+    r.head[2] === 0x4e &&
+    r.head[3] === 0x47;
+
+  if (ext === "pdf" && isPdfBuffer(r.head)) return { ok: true };
+  if ((ext === "jpg" || ext === "jpeg") && isJpeg) return { ok: true };
+  if (ext === "png" && isPng) return { ok: true };
+  return {
+    ok: false,
+    error: "Receipt must be a PDF, PNG, or JPG whose contents match its extension",
+  };
 }

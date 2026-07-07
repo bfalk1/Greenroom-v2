@@ -7,6 +7,7 @@ import {
   TrendingUp,
   Download,
   FileText,
+  Receipt,
   ShoppingCart,
   Loader2,
   Wallet,
@@ -69,6 +70,7 @@ interface Payout {
   invoiceNumber: string | null;
   status: string;
   paidAt: string | null;
+  hasReceipt: boolean;
 }
 
 interface PayoutFeeConfig {
@@ -85,6 +87,9 @@ export default function CreatorEarningsPage() {
   const [feeConfig, setFeeConfig] = useState<PayoutFeeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
+  const [fetchingReceiptId, setFetchingReceiptId] = useState<string | null>(
+    null
+  );
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -132,6 +137,20 @@ export default function CreatorEarningsPage() {
       );
     } finally {
       setRequestingPayout(false);
+    }
+  };
+
+  const handleViewReceipt = async (payoutId: string) => {
+    setFetchingReceiptId(payoutId);
+    try {
+      const res = await fetch(`/api/creator/payouts/${payoutId}/receipt`);
+      if (!res.ok) throw new Error("Failed to get receipt URL");
+      const data = await res.json();
+      window.open(data.url, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Failed to open receipt");
+    } finally {
+      setFetchingReceiptId(null);
     }
   };
 
@@ -412,16 +431,33 @@ export default function CreatorEarningsPage() {
                           : "—"}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <a
-                          href={`/api/creator/payouts/${payout.id}/invoice`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={payout.invoiceNumber ?? "View invoice"}
-                          className="text-[#39b54a] hover:text-[#2e9140] text-sm inline-flex items-center justify-end gap-1"
-                        >
-                          <FileText className="w-4 h-4" />
-                          {payout.invoiceNumber ?? "View"}
-                        </a>
+                        <div className="inline-flex items-center justify-end gap-3">
+                          <a
+                            href={`/api/creator/payouts/${payout.id}/invoice`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={payout.invoiceNumber ?? "View invoice"}
+                            className="text-[#39b54a] hover:text-[#2e9140] text-sm inline-flex items-center gap-1"
+                          >
+                            <FileText className="w-4 h-4" />
+                            {payout.invoiceNumber ?? "View"}
+                          </a>
+                          {payout.hasReceipt && (
+                            <button
+                              onClick={() => handleViewReceipt(payout.id)}
+                              disabled={fetchingReceiptId === payout.id}
+                              title="View payment receipt"
+                              className="text-[#39b54a] hover:text-[#2e9140] text-sm inline-flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {fetchingReceiptId === payout.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Receipt className="w-4 h-4" />
+                              )}
+                              Receipt
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

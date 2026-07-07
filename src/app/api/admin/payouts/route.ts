@@ -78,6 +78,8 @@ export async function GET(request: NextRequest) {
         invoiceNumber: p.invoiceNumber,
         status: p.status,
         paidAt: p.paidAt?.toISOString() || null,
+        hasReceipt: !!p.receiptPath,
+        receiptUploadedAt: p.receiptUploadedAt?.toISOString() || null,
         createdAt: p.createdAt.toISOString(),
       })),
     });
