@@ -4,6 +4,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { Play, Pause, Volume2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Only one AudioPlayer may play at a time; starting one pauses the previous.
+let activeAudio: HTMLAudioElement | null = null;
+
 interface AudioPlayerProps {
   fileUrl?: string;
   sampleId?: string;
@@ -11,19 +14,21 @@ interface AudioPlayerProps {
   useFullAudio?: boolean; // For mod/admin - use full file instead of preview
   preload?: boolean; // Preload audio on mount
   hideVolume?: boolean; // Hide volume slider
+  compact?: boolean; // Slim single-row variant for list items
 }
 
-export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false, preload = false, hideVolume = false }: AudioPlayerProps) {
+export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = false, preload = false, hideVolume = false, compact = false }: AudioPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [trackDuration, setTrackDuration] = useState(duration);
   const [volume, setVolume] = useState(1);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const getSignedUrl = async () => {
     if (sampleId) {
-      const endpoint = useFullAudio 
+      const endpoint = useFullAudio
         ? `/api/mod/samples/${sampleId}/audio`
         : `/api/samples/${sampleId}/preview`;
       const res = await fetch(endpoint);
@@ -55,13 +60,35 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
     if (!audio) return;
 
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const handleDuration = () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        setTrackDuration(audio.duration);
+      }
+    };
+    const handlePlay = () => {
+      if (activeAudio && activeAudio !== audio) activeAudio.pause();
+      activeAudio = audio;
+      setIsPlaying(true);
+    };
+    const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
 
     audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("loadedmetadata", handleDuration);
+    audio.addEventListener("durationchange", handleDuration);
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
     audio.addEventListener("ended", handleEnded);
     return () => {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("loadedmetadata", handleDuration);
+      audio.removeEventListener("durationchange", handleDuration);
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("ended", handleEnded);
+      // Detached audio elements keep playing in some browsers — stop explicitly.
+      audio.pause();
+      if (activeAudio === audio) activeAudio = null;
     };
   }, []);
 
@@ -87,7 +114,6 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
           audioRef.current.src = url;
           audioRef.current.load();
           await audioRef.current.play();
-          setIsPlaying(true);
         }
       } catch (err) {
         console.error("Failed to play:", err);
@@ -105,7 +131,6 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
       } else {
         audioRef.current.play();
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -131,6 +156,41 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-3">
+        <audio ref={audioRef} />
+        <Button
+          onClick={togglePlay}
+          disabled={isLoading}
+          className="w-8 h-8 p-0 rounded-full bg-[#39b54a] text-black hover:bg-[#2e9140] flex items-center justify-center flex-shrink-0"
+        >
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="w-4 h-4 fill-current" />
+          ) : (
+            <Play className="w-4 h-4 fill-current ml-0.5" />
+          )}
+        </Button>
+        <span className="text-xs text-[#a1a1a1] w-10 text-right">
+          {formatTime(currentTime)}
+        </span>
+        <input
+          type="range"
+          min="0"
+          max={trackDuration || 100}
+          value={currentTime}
+          onChange={handleProgressChange}
+          className="flex-1 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
+        />
+        <span className="text-xs text-[#a1a1a1] w-10">
+          {formatTime(trackDuration)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#1a1a1a] rounded-lg p-6 border border-[#2a2a2a]">
@@ -158,13 +218,13 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
           <input
             type="range"
             min="0"
-            max={duration || 100}
+            max={trackDuration || 100}
             value={currentTime}
             onChange={handleProgressChange}
             className="flex-1 h-1 bg-[#2a2a2a] rounded-full cursor-pointer"
           />
           <span className="text-xs text-[#a1a1a1] w-10">
-            {formatTime(duration)}
+            {formatTime(trackDuration)}
           </span>
         </div>
       </div>

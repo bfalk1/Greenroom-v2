@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
@@ -103,12 +104,18 @@ function mapSampleForPanel(s: APISample): PanelSample {
   };
 }
 
+const PAGE_SIZE = 50;
+// The API caps limit at 200; post-action refreshes reuse it to keep the loaded window.
+const MAX_LIMIT = 200;
+
 export default function ModSamplesPage() {
   const [samples, setSamples] = useState<APISample[]>([]);
+  const [total, setTotal] = useState(0);
   const [lowestRatedSamples, setLowestRatedSamples] = useState<APISample[]>([]);
   const [editingSample, setEditingSample] = useState<PanelSample | null>(null);
   const [activeTab, setActiveTab] = useState("pending");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
@@ -117,50 +124,63 @@ export default function ModSamplesPage() {
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  const fetchData = useCallback(async (view = "pending", search = "") => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      params.set("view", view);
-      if (search) params.set("search", search);
+  const fetchData = useCallback(
+    async (
+      view = "pending",
+      search = "",
+      opts: { offset?: number; append?: boolean; limit?: number } = {}
+    ) => {
+      const { offset = 0, append = false, limit = PAGE_SIZE } = opts;
+      try {
+        if (append) setLoadingMore(true);
+        else setLoading(true);
+        const params = new URLSearchParams();
+        params.set("view", view);
+        if (search) params.set("search", search);
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
 
-      const [statsRes, samplesRes] = await Promise.all([
-        fetch("/api/admin/stats"),
-        fetch(`/api/mod/samples?${params.toString()}`),
-      ]);
+        const [statsRes, samplesRes] = await Promise.all([
+          append ? Promise.resolve(null) : fetch("/api/admin/stats"),
+          fetch(`/api/mod/samples?${params.toString()}`),
+        ]);
 
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        setStats({
-          totalSamples: data.totalSamples,
-          publishedSamples: data.publishedSamples,
-          totalCreators: data.totalCreators,
-          totalPurchases: data.totalPurchases,
-          pendingSamples: data.pendingSamples,
-          samplesThisMonth: 0,
-          samplesThisYear: 0,
-        });
-      }
-      
-      if (samplesRes.ok) {
-        const data = await samplesRes.json();
-        setSamples(data.samples);
-        if (data.stats) {
-          setStats(prev => prev ? {
-            ...prev,
-            samplesThisMonth: data.stats.samplesThisMonth,
-            samplesThisYear: data.stats.samplesThisYear,
-            totalSamples: data.stats.totalSamples,
-          } : null);
+        if (statsRes?.ok) {
+          const data = await statsRes.json();
+          setStats({
+            totalSamples: data.totalSamples,
+            publishedSamples: data.publishedSamples,
+            totalCreators: data.totalCreators,
+            totalPurchases: data.totalPurchases,
+            pendingSamples: data.pendingSamples,
+            samplesThisMonth: 0,
+            samplesThisYear: 0,
+          });
         }
+
+        if (samplesRes.ok) {
+          const data = await samplesRes.json();
+          setSamples(prev => (append ? [...prev, ...data.samples] : data.samples));
+          setTotal(data.total ?? 0);
+          if (data.stats) {
+            setStats(prev => prev ? {
+              ...prev,
+              samplesThisMonth: data.stats.samplesThisMonth,
+              samplesThisYear: data.stats.samplesThisYear,
+              totalSamples: data.stats.totalSamples,
+            } : null);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+        toast.error("Failed to load moderation data");
+      } finally {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to fetch data:", error);
-      toast.error("Failed to load moderation data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   const fetchLowestRated = useCallback(async () => {
     try {
@@ -195,6 +215,22 @@ export default function ModSamplesPage() {
     fetchData("all", searchQuery);
   };
 
+  // Re-fetch the current list after a mutation, keeping everything the user
+  // has paged in loaded (rather than collapsing back to the first page).
+  const refreshCurrent = () => {
+    const view = activeTab === "search" ? "all" : "pending";
+    const search = activeTab === "search" ? searchQuery : "";
+    fetchData(view, search, {
+      limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, samples.length)),
+    });
+  };
+
+  const handleLoadMore = () => {
+    const view = activeTab === "search" ? "all" : "pending";
+    const search = activeTab === "search" ? searchQuery : "";
+    fetchData(view, search, { offset: samples.length, append: true });
+  };
+
   const handleSampleModerate = async (
     sampleId: string,
     action: "approve" | "reject"
@@ -214,7 +250,7 @@ export default function ModSamplesPage() {
       toast.success(
         action === "approve" ? "Sample published!" : "Sample rejected."
       );
-      fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+      refreshCurrent();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to moderate sample"
@@ -235,7 +271,7 @@ export default function ModSamplesPage() {
       }
 
       toast.success("Sample deleted");
-      fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+      refreshCurrent();
       fetchLowestRated();
     } catch (error) {
       toast.error("Failed to delete sample");
@@ -262,7 +298,7 @@ export default function ModSamplesPage() {
       toast.success("Creator flagged for admin review");
       setFlaggingCreator(null);
       setFlagReason("");
-      fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+      refreshCurrent();
     } catch (error) {
       toast.error("Failed to flag creator");
     }
@@ -312,7 +348,7 @@ export default function ModSamplesPage() {
             (data.skipped ? `, skipped ${data.skipped}` : "")
       );
       setSelectedIds(new Set());
-      fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+      refreshCurrent();
       fetchLowestRated();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Bulk action failed");
@@ -338,6 +374,23 @@ export default function ModSamplesPage() {
       </div>
     );
   }
+
+  const loadMoreFooter = samples.length < total && (
+    <div className="flex flex-col items-center gap-2 pt-4">
+      <p className="text-xs text-[#666]">
+        Showing {samples.length} of {total} samples
+      </p>
+      <Button
+        onClick={handleLoadMore}
+        disabled={loadingMore}
+        variant="outline"
+        className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+      >
+        {loadingMore && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+        Load more
+      </Button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -553,6 +606,7 @@ export default function ModSamplesPage() {
                   </div>
                 );
               })}
+              {loadMoreFooter}
               </>
             ) : (
               <div className="text-center py-12">
@@ -588,17 +642,22 @@ export default function ModSamplesPage() {
 
             {samples.length > 0 ? (
               <div className="space-y-4">
-                <button
-                  onClick={toggleSelectAll}
-                  className="flex items-center gap-2 text-xs text-[#a1a1a1] hover:text-white"
-                >
-                  {allSelected ? (
-                    <CheckSquare className="w-4 h-4 text-[#39b54a]" />
-                  ) : (
-                    <Square className="w-4 h-4" />
-                  )}
-                  {allSelected ? "Deselect all" : "Select all"}
-                </button>
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-2 text-xs text-[#a1a1a1] hover:text-white"
+                  >
+                    {allSelected ? (
+                      <CheckSquare className="w-4 h-4 text-[#39b54a]" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </button>
+                  <p className="text-xs text-[#666]">
+                    {total} result{total === 1 ? "" : "s"}
+                  </p>
+                </div>
                 {samples.map((sample) => (
                   <div
                     key={sample.id}
@@ -674,8 +733,12 @@ export default function ModSamplesPage() {
                         )}
                       </div>
                     </div>
+                    <div className="mt-3 pl-8">
+                      <AudioPlayer sampleId={sample.id} useFullAudio compact />
+                    </div>
                   </div>
                 ))}
+                {loadMoreFooter}
               </div>
             ) : (
               <div className="text-center py-12">
@@ -739,6 +802,9 @@ export default function ModSamplesPage() {
                         </Button>
                       </div>
                     </div>
+                    <div className="mt-3">
+                      <AudioPlayer sampleId={sample.id} useFullAudio compact />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -801,7 +867,7 @@ export default function ModSamplesPage() {
             onClose={() => setEditingSample(null)}
             onSave={() => {
               setEditingSample(null);
-              fetchData(activeTab === "search" ? "all" : "pending", searchQuery);
+              refreshCurrent();
               fetchLowestRated();
             }}
           />

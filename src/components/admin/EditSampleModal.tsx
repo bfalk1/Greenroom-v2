@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { AudioPlayer } from "@/components/audio/AudioPlayer";
 
 const KEYS = [
   "C",
@@ -115,6 +116,10 @@ export function EditSampleModal({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3">
+            <AudioPlayer sampleId={sample.id} useFullAudio preload compact />
+          </div>
+
           <div>
             <Label className="text-white">Sample Name</Label>
             <Input

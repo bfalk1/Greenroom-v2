@@ -27,28 +27,20 @@ export async function GET(req: NextRequest) {
   const statusFilter = searchParams.get("status");
   const search = searchParams.get("search");
   const view = searchParams.get("view"); // "pending", "all", "lowest-rated"
-  const limit = parseInt(searchParams.get("limit") || "50");
-  const offset = parseInt(searchParams.get("offset") || "0");
+  const limitParam = parseInt(searchParams.get("limit") || "50", 10);
+  const offsetParam = parseInt(searchParams.get("offset") || "0", 10);
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
+  const offset = Number.isFinite(offsetParam) ? Math.max(offsetParam, 0) : 0;
 
   // Build where clause
   const where: Record<string, unknown> = {};
-  
+
   if (view === "lowest-rated") {
     // Show published samples with low ratings
     where.status = "PUBLISHED";
     where.ratingCount = { gt: 0 };
     where.ratingAvg = { lt: 3 };
-  } else if (view === "all") {
-    // No status filter - show all
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { genre: { contains: search, mode: "insensitive" } },
-        { instrumentType: { contains: search, mode: "insensitive" } },
-        { tags: { has: search.toLowerCase() } },
-      ];
-    }
-  } else {
+  } else if (view !== "all") {
     // Default: pending review = samples awaiting a moderator decision (REVIEW).
     // DRAFT (creator's unsubmitted/sent-back work) and REMOVED (taken down) are
     // deliberately excluded so rejected/deleted samples don't flood the queue.
@@ -60,12 +52,16 @@ export async function GET(req: NextRequest) {
     // Show all pending samples - frontend will indicate if preview is pending
   }
 
-  // Add search to pending view too
-  if (search && view !== "all") {
+  // Same search clause for every view: sample metadata plus creator identity,
+  // so searching an artist's name surfaces their entire catalog.
+  if (search) {
     where.OR = [
       { name: { contains: search, mode: "insensitive" } },
       { genre: { contains: search, mode: "insensitive" } },
+      { instrumentType: { contains: search, mode: "insensitive" } },
+      { tags: { has: search.toLowerCase() } },
       { creator: { artistName: { contains: search, mode: "insensitive" } } },
+      { creator: { username: { contains: search, mode: "insensitive" } } },
       { creator: { email: { contains: search, mode: "insensitive" } } },
     ];
   }
