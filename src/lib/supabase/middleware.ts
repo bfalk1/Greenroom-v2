@@ -91,10 +91,15 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/waitlist") ||
     pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
+    // Vercel cron invokes these with a Bearer CRON_SECRET header and no
+    // session cookie. Each cron route verifies the secret itself and fails
+    // closed when it's unset — session auth here would block every run.
+    pathname.startsWith("/api/cron") ||
     // PayPal redirects the buyer here after approval. Deliberately public:
-    // the grant is keyed to the stored order row (not the session), so a
-    // missing/dropped cookie must not strand a paid order.
+    // the grant is keyed to the stored order row / subscription custom_id
+    // (not the session), so a missing cookie must not strand a paid order.
     pathname === "/api/credits/purchase-paypal/return" ||
+    pathname === "/api/subscription/checkout-paypal/return" ||
     isPublicSamplePath ||
     pathname.startsWith("/api/genres") ||
     pathname.startsWith("/api/search") ||

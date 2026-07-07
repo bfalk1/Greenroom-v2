@@ -44,6 +44,7 @@ interface CreditTransaction {
 interface SubscriptionInfo {
   tierName: string;
   tierDisplayName: string;
+  provider: string;
   status: string;
   currentPeriodEnd: string;
   cancelAtPeriodEnd: boolean;
@@ -211,6 +212,43 @@ export default function AccountPage() {
     } catch (error) {
       console.error("Error opening portal:", error);
       toast.error("Failed to open billing portal.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  // PayPal subs have no Stripe-portal equivalent — cancel happens in-app.
+  // Access continues until the period end (PayPal billing stops immediately).
+  const handleCancelPaypal = async () => {
+    if (
+      !window.confirm(
+        "Cancel your subscription? You'll keep your credits and access until the end of the current billing period."
+      )
+    ) {
+      return;
+    }
+
+    setPortalLoading(true);
+    try {
+      const res = await fetch("/api/subscription/cancel-paypal", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to cancel subscription");
+      }
+
+      toast.success(
+        "Subscription canceled — you keep access until the end of the billing period."
+      );
+      setSubscription((prev) =>
+        prev ? { ...prev, cancelAtPeriodEnd: true } : prev
+      );
+    } catch (error) {
+      console.error("Error canceling PayPal subscription:", error);
+      toast.error("Failed to cancel subscription. Please try again.");
     } finally {
       setPortalLoading(false);
     }
@@ -506,21 +544,50 @@ export default function AccountPage() {
                 </p>
               )}
             </div>
-            <Button
-              onClick={handleManageSubscription}
-              disabled={portalLoading}
-              variant="outline"
-              className="w-full border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
-            >
-              {portalLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                "Manage Subscription"
-              )}
-            </Button>
+            {subscription.provider === "paypal" ? (
+              <div className="space-y-2">
+                <Button
+                  onClick={() => (window.location.href = "/pricing")}
+                  variant="outline"
+                  className="w-full border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
+                >
+                  Change Plan
+                </Button>
+                {!subscription.cancelAtPeriodEnd && (
+                  <Button
+                    onClick={handleCancelPaypal}
+                    disabled={portalLoading}
+                    variant="outline"
+                    className="w-full border-[#2a2a2a] hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-white"
+                  >
+                    {portalLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      "Cancel Subscription"
+                    )}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Button
+                onClick={handleManageSubscription}
+                disabled={portalLoading}
+                variant="outline"
+                className="w-full border-[#2a2a2a] hover:bg-[#2a2a2a] text-white"
+              >
+                {portalLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Manage Subscription"
+                )}
+              </Button>
+            )}
           </div>
         )}
 

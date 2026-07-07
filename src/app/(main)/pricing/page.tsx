@@ -9,6 +9,12 @@ import { useUser } from "@/lib/hooks/useUser";
 import { trackPaywallViewed, trackSubscriptionCheckout, trackSubscriptionActivated } from "@/lib/analytics";
 import { toast } from "sonner";
 
+// PayPal subscriptions are gated separately from credit packs so packs-only
+// configs (no billing plans created) don't render buttons that 503.
+// NEXT_PUBLIC_* vars are inlined at build time (redeploy after changing).
+const paypalSubsEnabled =
+  process.env.NEXT_PUBLIC_PAYPAL_SUBSCRIPTIONS_ENABLED === "true";
+
 export default function PricingPage() {
   return (
     <Suspense fallback={
@@ -24,6 +30,9 @@ export default function PricingPage() {
 function PricingContent() {
   const [loading, setLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
+  // Which provider owns the user's current subscription (null = none) —
+  // decides whether PayPal buttons subscribe, switch plans, or hide.
+  const [subProvider, setSubProvider] = useState<string | null>(null);
   const { user, loading: userLoading } = useUser();
   const searchParams = useSearchParams();
 
@@ -48,7 +57,34 @@ function PricingContent() {
       toast.info("Checkout canceled. No charges were made.");
       window.history.replaceState({}, "", "/pricing");
     }
+    if (searchParams.get("paypal_pending") === "true") {
+      toast.info(
+        "Subscription approved — PayPal is finalizing it. Your credits will appear in a moment."
+      );
+      window.history.replaceState({}, "", "/pricing");
+    }
+    if (searchParams.get("paypal_revised") === "true") {
+      toast.success(
+        "Plan change confirmed — your new plan and credits start next billing cycle."
+      );
+      window.history.replaceState({}, "", "/pricing");
+    }
+    if (searchParams.get("paypal_error") === "true") {
+      toast.error(
+        "Something went wrong completing your PayPal subscription. If you approved a payment, contact support."
+      );
+      window.history.replaceState({}, "", "/pricing");
+    }
   }, [searchParams]);
+
+  // Load which provider owns the active subscription (for PayPal buttons).
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/user/subscription")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setSubProvider(data?.subscription?.provider ?? null))
+      .catch(() => {});
+  }, [user]);
 
   const handlePurchase = async (priceId: string) => {
     if (!user) {
@@ -77,13 +113,25 @@ function PricingContent() {
       }
     } catch (error) {
       console.error("Error creating checkout:", error);
-      toast.error("Failed to create checkout session. Please try again.");
+      // Surface the server's message — e.g. the cross-provider 409.
+      toast.error(
+        error instanceof Error && error.message !== "Failed to create checkout session"
+          ? error.message
+          : "Failed to create checkout session. Please try again."
+      );
     } finally {
       setLoading(null);
     }
   };
 
   const handleManageSubscription = async () => {
+    // PayPal subs have no Stripe portal — their cancel/change actions live
+    // on the account page.
+    if (subProvider === "paypal") {
+      window.location.href = "/account";
+      return;
+    }
+
     setPortalLoading(true);
     try {
       const res = await fetch("/api/subscription/portal", {
@@ -110,6 +158,52 @@ function PricingContent() {
   const hasActiveSub =
     user?.subscription_status === "active" ||
     user?.subscription_status === "past_due";
+
+  // New PayPal subscription, or a plan switch on an existing PayPal one.
+  const handlePaypalSubscribe = async (tierName: string) => {
+    if (!user) {
+      toast.error("Please sign in to subscribe.");
+      return;
+    }
+
+    const isRevision = hasActiveSub && subProvider === "paypal";
+    setLoading(`paypal-${tierName}`);
+    try {
+      const res = await fetch(
+        isRevision
+          ? "/api/subscription/revise-paypal"
+          : "/api/subscription/checkout-paypal",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tierName }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to start PayPal checkout");
+      }
+
+      if (data.url) {
+        const pkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(
+          (p) => p.tierName === tierName
+        );
+        trackSubscriptionCheckout(pkg?.name || "unknown", `paypal-${tierName}`);
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error("PayPal subscription error:", error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to start PayPal checkout. Please try again."
+      );
+    } finally {
+      setLoading(null);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -218,29 +312,54 @@ function PricingContent() {
                   ))}
                 </ul>
 
-                {/* CTA Button */}
-                <Button
-                  onClick={() => handlePurchase(pkg.priceId)}
-                  disabled={loading !== null || userLoading || !pkg.priceId}
-                  className={`w-full py-3 font-semibold ${
-                    pkg.highlighted
-                      ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
-                      : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
-                  }`}
-                >
-                  {loading === pkg.priceId ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Loading...
-                    </>
-                  ) : !pkg.priceId ? (
-                    "Unavailable"
-                  ) : hasActiveSub ? (
-                    "Change Plan"
-                  ) : (
-                    "Subscribe Now"
-                  )}
-                </Button>
+                {/* CTA Button — hidden for PayPal subscribers: their plan
+                    changes must go through PayPal revise, not a second
+                    (double-billing) Stripe checkout. */}
+                {!(hasActiveSub && subProvider === "paypal") && (
+                  <Button
+                    onClick={() => handlePurchase(pkg.priceId)}
+                    disabled={loading !== null || userLoading || !pkg.priceId}
+                    className={`w-full py-3 font-semibold ${
+                      pkg.highlighted
+                        ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                        : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+                    }`}
+                  >
+                    {loading === pkg.priceId ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : !pkg.priceId ? (
+                      "Unavailable"
+                    ) : hasActiveSub ? (
+                      "Change Plan"
+                    ) : (
+                      "Subscribe Now"
+                    )}
+                  </Button>
+                )}
+
+                {/* PayPal: subscribe when unsubscribed, switch plans when the
+                    existing sub is PayPal's; Stripe subs manage via portal. */}
+                {paypalSubsEnabled && (!hasActiveSub || subProvider === "paypal") && (
+                  <Button
+                    onClick={() => handlePaypalSubscribe(pkg.tierName)}
+                    disabled={loading !== null || userLoading}
+                    className="w-full py-3 mt-2 font-semibold bg-transparent border border-[#2a2a2a] text-[#a1a1a1] hover:bg-[#2a2a2a] hover:text-white"
+                  >
+                    {loading === `paypal-${pkg.tierName}` ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : hasActiveSub ? (
+                      "Switch with PayPal"
+                    ) : (
+                      "Subscribe with PayPal"
+                    )}
+                  </Button>
+                )}
 
                 {/* Price per credit */}
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">

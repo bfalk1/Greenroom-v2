@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/monthly-payouts",
       "schedule": "0 9 1 * *"
+    },
+    {
+      "path": "/api/cron/paypal-subscriptions",
+      "schedule": "0 10 * * *"
     }
   ]
 }

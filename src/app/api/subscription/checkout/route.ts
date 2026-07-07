@@ -52,6 +52,29 @@ export async function POST(request: Request) {
       );
     }
 
+    // Cross-provider guard: a live PayPal subscription must not be joined by
+    // a Stripe one — the user would be double-billed and the two providers'
+    // webhooks would fight over the single Subscription row. PayPal plan
+    // changes go through /api/subscription/revise-paypal.
+    if (
+      dbUser.subscriptionStatus === "active" ||
+      dbUser.subscriptionStatus === "past_due"
+    ) {
+      const existingSub = await prisma.subscription.findUnique({
+        where: { userId: dbUser.id },
+        select: { provider: true },
+      });
+      if (existingSub?.provider === "paypal") {
+        return NextResponse.json(
+          {
+            error:
+              "Your current subscription is billed through PayPal — change or cancel it from your account page first",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // Find or create Stripe customer
     let stripeCustomerId = dbUser.stripeCustomerId;
 

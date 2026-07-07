@@ -7,6 +7,19 @@
       "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "next-dev-paypal",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_PAYPAL_ENABLED=true",
+        "NEXT_PUBLIC_PAYPAL_SUBSCRIPTIONS_ENABLED=true",
+        "/opt/homebrew/opt/node@20/bin/node",
+        "node_modules/next/dist/bin/next",
+        "dev"
+      ],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }

@@ -32,6 +32,7 @@ export async function GET() {
       subscription: {
         tierName: subscription.tier.name,
         tierDisplayName: subscription.tier.displayName,
+        provider: subscription.provider,
         // Status reads from users.subscription_status (single source of truth);
         // uppercased here for the existing UI badge that compares ACTIVE/PAST_DUE/CANCELED.
         status: (dbUser?.subscriptionStatus ?? "none").toUpperCase(),

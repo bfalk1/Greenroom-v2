@@ -59,7 +59,7 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function paypalFetch(
+export async function paypalFetch(
   path: string,
   init: {
     method: string;

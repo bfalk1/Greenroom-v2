@@ -11,6 +11,11 @@ import {
   refundPaypalOrder,
   settlePaypalOrder,
 } from "@/lib/paypal/settle";
+import {
+  activatePaypalSubscription,
+  grantPaypalSubscriptionCycle,
+  syncPaypalSubscription,
+} from "@/lib/paypal/subscriptions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,14 +29,20 @@ interface PaypalWebhookEvent {
     amount?: { value?: string };
     supplementary_data?: { related_ids?: { order_id?: string } };
     links?: { rel: string; href: string }[];
+    // Subscription events: sale resources carry the subscription id here.
+    billing_agreement_id?: string;
+    plan_id?: string;
+    // Refund resources reference their original sale here (NOT billing_agreement_id).
+    sale_id?: string;
   };
 }
 
 // A capture's "up" link points at its order; a refund's "up" link points at
-// its capture. Fallback correlation when the direct ids aren't on the event.
+// its capture (v2) or sale (v1). Fallback correlation when the direct ids
+// aren't on the event.
 function idFromUpLink(
   resource: PaypalWebhookEvent["resource"],
-  pathSegment: "orders" | "captures"
+  pathSegment: "orders" | "captures" | "sale"
 ): string | null {
   const href = resource?.links?.find((l) => l.rel === "up")?.href;
   const match = href?.match(new RegExp(`/${pathSegment}/([A-Za-z0-9-]+)`));
@@ -184,6 +195,187 @@ export async function POST(request: Request) {
 
         if (result === "refunded") {
           console.log(`PayPal capture ${captureId} refunded — credits clawed back`);
+        }
+        break;
+      }
+
+      case "BILLING.SUBSCRIPTION.ACTIVATED": {
+        const subscriptionId = event.resource?.id;
+        if (!subscriptionId) break;
+
+        // Sync + grant any already-completed transactions (idempotent —
+        // overlaps safely with the return route and SALE events).
+        await activatePaypalSubscription(subscriptionId);
+        break;
+      }
+
+      case "PAYMENT.SALE.COMPLETED": {
+        const saleId = event.resource?.id;
+        const subscriptionId = event.resource?.billing_agreement_id;
+
+        // Sales without a billing agreement aren't subscription cycles
+        // (one-time pack payments arrive as PAYMENT.CAPTURE.*).
+        if (!saleId || !subscriptionId) break;
+
+        // Events can arrive out of order — a SALE may beat ACTIVATED, so
+        // sync (which upserts the local row) before granting.
+        const sub = await prisma.subscription.findUnique({
+          where: { paypalSubscriptionId: subscriptionId },
+          include: { tier: true },
+        });
+
+        if (!sub) {
+          const synced = await syncPaypalSubscription(subscriptionId);
+          if (!synced) {
+            console.log(
+              `PayPal sale ${saleId} for unknown subscription ${subscriptionId} — ignored`
+            );
+            break;
+          }
+          await grantPaypalSubscriptionCycle({
+            saleId,
+            eventType: event.event_type,
+            userId: synced.userId,
+            creditsPerMonth: synced.creditsPerMonth,
+            tierDisplayName: synced.tierDisplayName,
+          });
+          break;
+        }
+
+        await grantPaypalSubscriptionCycle({
+          saleId,
+          eventType: event.event_type,
+          userId: sub.userId,
+          creditsPerMonth: sub.tier.creditsPerMonth,
+          tierDisplayName: sub.tier.displayName,
+        });
+
+        // Refresh period dates (renewal moved the window forward).
+        await syncPaypalSubscription(subscriptionId);
+        break;
+      }
+
+      case "BILLING.SUBSCRIPTION.UPDATED": {
+        const subscriptionId = event.resource?.id;
+        if (!subscriptionId) break;
+
+        // Plan changes take effect on the NEXT billing cycle — PayPal charges
+        // nothing at revision approval, so NO credits are granted here; the
+        // next PAYMENT.SALE.COMPLETED grants the new tier's full amount.
+        // (Granting a top-up on revision would be a free-credit mint:
+        // revise+cancel, or downgrade/upgrade cycling, prints credits PayPal
+        // never bills for.)
+        await syncPaypalSubscription(subscriptionId);
+        break;
+      }
+
+      case "BILLING.SUBSCRIPTION.CANCELLED":
+      case "BILLING.SUBSCRIPTION.EXPIRED": {
+        const subscriptionId = event.resource?.id;
+        if (!subscriptionId) break;
+
+        // Buyer paid through the period — keep access until currentPeriodEnd;
+        // the daily cron flips subscriptionStatus to canceled after that.
+        await prisma.subscription.updateMany({
+          where: { paypalSubscriptionId: subscriptionId },
+          data: { cancelAtPeriodEnd: true },
+        });
+        break;
+      }
+
+      case "BILLING.SUBSCRIPTION.SUSPENDED":
+      case "BILLING.SUBSCRIPTION.PAYMENT.FAILED": {
+        const subscriptionId = event.resource?.id;
+        if (!subscriptionId) break;
+
+        const sub = await prisma.subscription.findUnique({
+          where: { paypalSubscriptionId: subscriptionId },
+        });
+        if (!sub) break;
+
+        // past_due still passes the paywall — flag the row so the cron ends
+        // access at period end unless a successful retry (SALE.COMPLETED →
+        // sync ACTIVE) clears the flag first.
+        await prisma.$transaction([
+          prisma.user.update({
+            where: { id: sub.userId },
+            data: { subscriptionStatus: "past_due" },
+          }),
+          prisma.subscription.update({
+            where: { id: sub.id },
+            data: { cancelAtPeriodEnd: true },
+          }),
+        ]);
+        break;
+      }
+
+      case "PAYMENT.SALE.REFUNDED":
+      case "PAYMENT.SALE.REVERSED": {
+        // The resource is the REFUND, which carries sale_id (not
+        // billing_agreement_id). Correlate to the original grant transaction
+        // by referenceId = sale id — that also yields exactly what was
+        // granted at the time, even if the tier changed since.
+        const refundId = event.resource?.id;
+        const saleId =
+          event.resource?.sale_id ?? idFromUpLink(event.resource, "sale");
+
+        if (!refundId || !saleId) {
+          console.error(
+            `${event.event_type} could not be correlated to a sale (event ${event.id}) — credits NOT clawed back, investigate manually`
+          );
+          break;
+        }
+
+        const grant = await prisma.creditTransaction.findFirst({
+          where: {
+            referenceId: saleId,
+            type: "SUBSCRIPTION",
+            amount: { gt: 0 },
+          },
+        });
+
+        if (!grant) {
+          console.log(
+            `${event.event_type} for sale ${saleId} with no matching grant — ignored`
+          );
+          break;
+        }
+
+        // Claw back the granted cycle, keyed by refund id (dedups event
+        // redeliveries and REFUNDED/REVERSED overlap for the same refund).
+        // Partial refunds claw back the full cycle — refund whole cycles, or
+        // adjust manually via admin. Balance may go negative if spent.
+        try {
+          await prisma.$transaction([
+            prisma.paypalWebhookEvent.create({
+              data: { id: `refund:${refundId}`, type: event.event_type },
+            }),
+            prisma.creditBalance.upsert({
+              where: { userId: grant.userId },
+              update: { balance: { decrement: grant.amount } },
+              create: { userId: grant.userId, balance: -grant.amount },
+            }),
+            prisma.creditTransaction.create({
+              data: {
+                userId: grant.userId,
+                amount: -grant.amount,
+                type: "REFUND",
+                referenceId: refundId,
+                note: `Refunded ${grant.amount} credits (PayPal subscription refund of sale ${saleId})`,
+              },
+            }),
+          ]);
+        } catch (error) {
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            (error as { code?: string }).code === "P2002"
+          ) {
+            console.log(`Duplicate PayPal refund ignored: ${refundId}`);
+            break;
+          }
+          throw error;
         }
         break;
       }

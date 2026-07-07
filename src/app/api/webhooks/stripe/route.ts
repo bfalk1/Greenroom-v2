@@ -93,11 +93,16 @@ async function handleCheckoutCompleted(
 
   // Create or update subscription. Status lives on users.subscription_status
   // (single source of truth) — Subscription only stores tier/period/Stripe IDs.
+  // provider/paypalSubscriptionId reset matters for returning subscribers:
+  // the row is one-per-user, so a former PayPal sub must flip back to stripe
+  // or the PayPal expiry cron could cancel an active Stripe subscriber.
   await prisma.subscription.upsert({
     where: { userId },
     update: {
       tierId: tier.id,
+      provider: "stripe",
       stripeSubscriptionId: subscription.id,
+      paypalSubscriptionId: null,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -105,6 +110,7 @@ async function handleCheckoutCompleted(
     create: {
       userId,
       tierId: tier.id,
+      provider: "stripe",
       stripeSubscriptionId: subscription.id,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
@@ -162,6 +168,14 @@ async function handleInvoicePaid(
   if (!user || !user.subscription) {
     console.error(
       `No user/subscription found for customer: ${stripeCustomerId}`
+    );
+    return;
+  }
+
+  // A late-retried Stripe event must not touch a row PayPal now owns.
+  if (user.subscription.provider !== "stripe") {
+    console.log(
+      `Ignoring ${eventType} for user ${user.id} — subscription now owned by ${user.subscription.provider}`
     );
     return;
   }
@@ -227,6 +241,9 @@ async function handleSubscriptionUpdated(
 
   if (!user || !user.subscription) return;
 
+  // A late-retried Stripe event must not touch a row PayPal now owns.
+  if (user.subscription.provider !== "stripe") return;
+
   const newPriceId = subscription.items.data[0]?.price.id;
   if (!newPriceId) return;
 
@@ -287,9 +304,14 @@ async function handleSubscriptionDeleted(
 
   const user = await prisma.user.findFirst({
     where: { stripeCustomerId },
+    include: { subscription: true },
   });
 
   if (!user) return;
+
+  // A Stripe sub ending must not cancel a user whose current subscription is
+  // PayPal's (e.g. they switched providers before the Stripe period lapsed).
+  if (user.subscription && user.subscription.provider !== "stripe") return;
 
   await prisma.user.update({
     where: { id: user.id },
@@ -307,9 +329,13 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 
   const user = await prisma.user.findFirst({
     where: { stripeCustomerId },
+    include: { subscription: true },
   });
 
   if (!user) return;
+
+  // Same provider guard as handleSubscriptionDeleted.
+  if (user.subscription && user.subscription.provider !== "stripe") return;
 
   await prisma.user.update({
     where: { id: user.id },
