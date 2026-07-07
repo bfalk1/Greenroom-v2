@@ -18,6 +18,7 @@ interface TrendChartProps {
  * Line+area chart with hover tooltip, modeled on creator/EarningsChart.
  * Hover targets are full-height invisible columns so dense series (90 daily
  * points) stay easy to inspect; visible dots only appear on sparse series.
+ * null values are "no data" and render as line gaps rather than dips to 0.
  */
 export function TrendChart({
   data,
@@ -42,17 +43,40 @@ export function TrendChart({
   const W = Math.max(data.length * STEP, STEP);
   const H = 120;
   const PLOT = 100;
-  const max = Math.max(...data.map((d) => d.value), 1);
+  const max = Math.max(
+    ...data.map((d) => d.value).filter((v): v is number => v != null),
+    1
+  );
   const x = (i: number) =>
     data.length === 1 ? W / 2 : i * STEP + STEP / 2;
   const y = (v: number) => PLOT - (v / max) * (PLOT - 10);
 
-  const line = data
-    .map((d, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(d.value)}`)
+  // Contiguous runs of non-null indices — each run is its own subpath so
+  // null buckets show as gaps.
+  const segments: number[][] = [];
+  let run: number[] = [];
+  data.forEach((d, i) => {
+    if (d.value == null) {
+      if (run.length) segments.push(run);
+      run = [];
+    } else {
+      run.push(i);
+    }
+  });
+  if (run.length) segments.push(run);
+
+  const pt = (i: number) => `${x(i)} ${y(data[i].value as number)}`;
+  const line = segments
+    .map((seg) => seg.map((i, j) => `${j === 0 ? "M" : "L"} ${pt(i)}`).join(" "))
     .join(" ");
-  const area = `M ${x(0)} ${PLOT} ${data
-    .map((d, i) => `L ${x(i)} ${y(d.value)}`)
-    .join(" ")} L ${x(data.length - 1)} ${PLOT} Z`;
+  const area = segments
+    .map(
+      (seg) =>
+        `M ${x(seg[0])} ${PLOT} ${seg
+          .map((i) => `L ${pt(i)}`)
+          .join(" ")} L ${x(seg[seg.length - 1])} ${PLOT} Z`
+    )
+    .join(" ");
 
   // Keep the tooltip inside the container near the edges.
   const tooltipLeftPct =
@@ -60,10 +84,11 @@ export function TrendChart({
       ? 50
       : Math.min(92, Math.max(8, (hoveredIndex ?? 0) / (data.length - 1) * 100));
   const showDots = data.length <= 40;
+  const hovered = hoveredIndex !== null ? data[hoveredIndex] : undefined;
 
   return (
     <div className="relative">
-      {hoveredIndex !== null && data[hoveredIndex] && (
+      {hovered && (
         <div
           className="absolute z-10 -top-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm pointer-events-none shadow-lg whitespace-nowrap"
           style={{
@@ -72,10 +97,10 @@ export function TrendChart({
           }}
         >
           <div className="text-white font-medium tabular-nums">
-            {formatValue(data[hoveredIndex].value)}{" "}
+            {hovered.value == null ? "—" : formatValue(hovered.value)}{" "}
             <span className="text-[#a1a1a1] text-xs font-normal">{label}</span>
           </div>
-          <div className="text-[#666] text-xs">{formatDate(data[hoveredIndex].date)}</div>
+          <div className="text-[#666] text-xs">{formatDate(hovered.date)}</div>
         </div>
       )}
 
@@ -117,23 +142,25 @@ export function TrendChart({
         />
 
         {showDots &&
-          data.map((d, i) => (
-            <circle
-              key={i}
-              cx={x(i)}
-              cy={y(d.value)}
-              r={hoveredIndex === i ? 5 : 3}
-              fill={hoveredIndex === i ? "#39b54a" : "#1a1a1a"}
-              stroke="#39b54a"
-              strokeWidth="2"
-              className="pointer-events-none transition-all"
-            />
-          ))}
+          data.map((d, i) =>
+            d.value == null ? null : (
+              <circle
+                key={i}
+                cx={x(i)}
+                cy={y(d.value)}
+                r={hoveredIndex === i ? 5 : 3}
+                fill={hoveredIndex === i ? "#39b54a" : "#1a1a1a"}
+                stroke="#39b54a"
+                strokeWidth="2"
+                className="pointer-events-none transition-all"
+              />
+            )
+          )}
 
-        {!showDots && hoveredIndex !== null && data[hoveredIndex] && (
+        {!showDots && hoveredIndex !== null && hovered && hovered.value != null && (
           <circle
             cx={x(hoveredIndex)}
-            cy={y(data[hoveredIndex].value)}
+            cy={y(hovered.value)}
             r={5}
             fill="#39b54a"
             stroke="#0a0a0a"

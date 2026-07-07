@@ -393,18 +393,21 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
   const ce = data.creatorEconomy;
   const sh = data.subscriberHealth;
 
-  const fmtShort = (d: string) =>
-    new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const fmtShortYear = (d: string) =>
-    new Date(d).toLocaleDateString("en-US", {
+  // Format from the server's YYYY-MM-DD day keys (parsed as local dates, same
+  // as chart bucket labels) — formatting the ISO instants with the browser's
+  // timezone would show a different date than the charts for non-UTC admins.
+  const fmtDayKey = (key: string, withYear: boolean) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
-      year: "numeric",
+      ...(withYear ? { year: "numeric" as const } : {}),
     });
+  };
   const rangeLabel =
     data.range === "all"
-      ? `All time · since ${fmtShortYear(data.rangeStart)}`
-      : `${fmtShort(data.rangeStart)} – ${fmtShortYear(data.rangeEnd)}`;
+      ? `All time · since ${fmtDayKey(data.rangeStartDay, true)}`
+      : `${fmtDayKey(data.rangeStartDay, false)} – ${fmtDayKey(data.rangeEndDay, true)}`;
 
   return (
     <div>
@@ -479,7 +482,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
             note="Trend & Δ from renewals/day"
           />
           <StatCard
-            label="Samples Purchased"
+            label="Items Purchased"
             value={fmtInt(k.samplesPurchased.current)}
             delta={pctDelta(k.samplesPurchased.current, k.samplesPurchased.previous)}
             deltaTitle={deltaTitle}
@@ -552,7 +555,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
             >
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-3 mb-5">
                 <PanelStat
-                  label="Samples Purchased"
+                  label="Items Purchased"
                   value={fmtInt(m.samplesPurchased)}
                 />
                 <PanelStat
@@ -575,7 +578,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
                 />
               </div>
               <p className="text-xs font-medium text-[#a1a1a1] mb-3">
-                Samples Purchased
+                Items Purchased
               </p>
               <TrendChart
                 data={m.purchasesSeries}
@@ -685,7 +688,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
             className="xl:sticky xl:top-4"
           >
             <SnapshotRow
-              label="Samples Purchased"
+              label="Items Purchased"
               today={data.today.samplesPurchased.today}
               yesterday={data.today.samplesPurchased.yesterday}
               format={fmtInt}

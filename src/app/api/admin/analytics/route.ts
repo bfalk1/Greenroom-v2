@@ -11,9 +11,10 @@ import {
  *
  * Returns for each KPI: the current-window value, the previous-equal-window
  * value (null when range=all — there is no "previous all time"), and a
- * gap-filled bucketed series for sparklines/charts. Buckets are daily for
- * 7d/30d/90d; for "all" they are weekly (short history) or monthly so the
- * point count stays bounded.
+ * gap-filled bucketed series for sparklines/charts. Current/previous are
+ * equal ELAPSED windows ending now (rolling N days); series buckets stay
+ * day-aligned. Buckets are daily for 7d/30d/90d; for "all" they are weekly
+ * (short history) or monthly so the point count stays bounded.
  *
  * Conventions (matching payoutMath/payouts):
  * - Royalties = GROSS payout amounts (amountUsdCents) on PAID payouts by paidAt.
@@ -29,7 +30,8 @@ type Bucket = "day" | "week" | "month";
 
 interface SeriesPoint {
   date: string;
-  value: number;
+  /** null = "no data" for ratio series (e.g. utilization buckets with no grants). */
+  value: number | null;
 }
 
 const RANGE_DAYS: Record<Exclude<RangeKey, "all">, number> = {
@@ -164,20 +166,27 @@ export async function GET(request: NextRequest) {
     const todayStart = startOfDay(now);
     const yesterdayStart = addDays(todayStart, -1);
 
-    // Window boundaries. Current window = [currentStart, now]; previous window
-    // (delta baseline) = [prevStart, currentStart). "all" has no previous.
+    // Window boundaries. Series buckets stay day-aligned: [currentStart
+    // (local midnight), now]. KPI current/previous values compare equal
+    // ELAPSED windows ending now — current [now - N days, now] vs previous
+    // [now - 2N days, now - N days) — because comparing a partially elapsed
+    // day-aligned window against a full previous one shows a spurious
+    // negative delta every morning. "all" has no previous.
     let currentStart: Date;
-    let prevStart: Date;
+    let deltaCurrentStart: Date;
+    let deltaPrevStart: Date;
     let hasPrev: boolean;
     if (range === "all") {
       const firstUser = await prisma.user.aggregate({ _min: { createdAt: true } });
       currentStart = startOfDay(firstUser._min.createdAt ?? now);
-      prevStart = currentStart;
+      deltaCurrentStart = currentStart;
+      deltaPrevStart = currentStart;
       hasPrev = false;
     } else {
       const windowDays = RANGE_DAYS[range];
       currentStart = addDays(todayStart, -(windowDays - 1));
-      prevStart = addDays(currentStart, -windowDays);
+      deltaCurrentStart = addDays(now, -windowDays);
+      deltaPrevStart = addDays(now, -2 * windowDays);
       hasPrev = true;
     }
 
@@ -188,7 +197,7 @@ export async function GET(request: NextRequest) {
       range === "all" ? (spanDays <= 200 ? "week" : "month") : "day";
     const bucketKeys = buildBucketKeys(currentStart, now, bucket);
 
-    const fetchStart = prevStart; // covers both windows in one query
+    const fetchStart = deltaPrevStart; // covers both delta windows and the series in one query
 
     const [
       purchases,
@@ -296,8 +305,11 @@ export async function GET(request: NextRequest) {
       (p.presetId && itemCreator.get(p.presetId)) ||
       null;
 
-    // Split rows into current / previous windows.
-    const inCurrent = (d: Date) => d >= currentStart;
+    // Split rows into current / previous delta windows. Rows in the current
+    // window but before the first series bucket (the partial day at the front
+    // of the rolling window) map to keys outside bucketKeys and are dropped
+    // from the series, so series stay day-aligned.
+    const inCurrent = (d: Date) => d >= deltaCurrentStart;
     const curPurchases = purchases.filter((p) => inCurrent(p.createdAt));
     const prevPurchases = hasPrev
       ? purchases.filter((p) => !inCurrent(p.createdAt))
@@ -342,7 +354,9 @@ export async function GET(request: NextRequest) {
     const utilizationSeries: SeriesPoint[] = bucketKeys.map((k) => {
       const granted = grantedByBucket.get(k) ?? 0;
       const redeemed = redeemedByBucket.get(k) ?? 0;
-      return { date: k, value: granted > 0 ? (redeemed / granted) * 100 : 0 };
+      // Grants are lumpy: null (chart gap) — not 0% — when nothing was
+      // granted in a bucket, even if credits were redeemed.
+      return { date: k, value: granted > 0 ? (redeemed / granted) * 100 : null };
     });
 
     const royaltiesCurCents = curPayouts.reduce((s, p) => s + p.amountUsdCents, 0);
@@ -518,8 +532,16 @@ export async function GET(request: NextRequest) {
       bucket,
       rangeStart: currentStart.toISOString(),
       rangeEnd: now.toISOString(),
+      // Server-local day keys matching the series bucket-key convention, so
+      // the client can render range labels that agree with chart labels
+      // regardless of the viewer's timezone.
+      rangeStartDay: dayKey(currentStart),
+      rangeEndDay: dayKey(now),
       previous: hasPrev
-        ? { start: prevStart.toISOString(), end: currentStart.toISOString() }
+        ? {
+            start: deltaPrevStart.toISOString(),
+            end: deltaCurrentStart.toISOString(),
+          }
         : null,
       kpis: {
         activeSubscribers: {
@@ -528,6 +550,9 @@ export async function GET(request: NextRequest) {
           series: renewalsSeries,
           renewals: { current: renewalsCur, previous: renewalsPrev },
         },
+        // Counts every marketplace purchase (samples + presets) — surfaced
+        // as "Items Purchased" in the UI. Same for marketplace and today
+        // snapshot below; only avgPurchasesPerPurchasedSample is samples-only.
         samplesPurchased: {
           current: curPurchases.length,
           previous: hasPrev ? prevPurchases.length : null,

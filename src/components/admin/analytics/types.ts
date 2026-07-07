@@ -6,7 +6,8 @@ export type Bucket = "day" | "week" | "month";
 
 export interface SeriesPoint {
   date: string;
-  value: number;
+  /** null = "no data" for the bucket (charts render a gap, not 0). */
+  value: number | null;
 }
 
 export interface KpiMetric {
@@ -20,6 +21,9 @@ export interface AnalyticsResponse {
   bucket: Bucket;
   rangeStart: string;
   rangeEnd: string;
+  /** Server-local YYYY-MM-DD keys matching the series bucket-key convention. */
+  rangeStartDay: string;
+  rangeEndDay: string;
   previous: { start: string; end: string } | null;
   kpis: {
     activeSubscribers: {
