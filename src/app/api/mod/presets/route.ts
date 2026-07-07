@@ -25,8 +25,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const statusFilter = searchParams.get("status");
   const search = searchParams.get("search");
-  const limit = parseInt(searchParams.get("limit") || "50");
-  const offset = parseInt(searchParams.get("offset") || "0");
+  const limitParam = parseInt(searchParams.get("limit") || "50", 10);
+  const offsetParam = parseInt(searchParams.get("offset") || "0", 10);
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
+  const offset = Number.isFinite(offsetParam) ? Math.max(offsetParam, 0) : 0;
 
   const where: Record<string, unknown> = {};
 
@@ -53,7 +55,20 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
-      include: {
+      // Explicit select: the full row includes fileSizeBytes (BigInt), which
+      // NextResponse.json cannot serialize.
+      select: {
+        id: true,
+        name: true,
+        creatorId: true,
+        description: true,
+        synthName: true,
+        presetCategory: true,
+        genre: true,
+        tags: true,
+        creditPrice: true,
+        status: true,
+        createdAt: true,
         creator: {
           select: {
             id: true,

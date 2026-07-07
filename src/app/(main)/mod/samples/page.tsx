@@ -20,6 +20,8 @@ import {
   Square,
   Pencil,
   X,
+  Download,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
@@ -58,6 +60,45 @@ interface APISample {
   downloadCount: number;
   creator: SampleCreator;
 }
+
+interface APIPreset {
+  id: string;
+  name: string;
+  creatorId: string;
+  description: string | null;
+  synthName: string;
+  presetCategory: string;
+  genre: string;
+  tags: string[];
+  creditPrice: number;
+  status: string;
+  createdAt: string;
+  creator: SampleCreator;
+}
+
+const SYNTH_DISPLAY_NAMES: Record<string, string> = {
+  SERUM: "Serum",
+  ASTRA: "Astra",
+  SERUM_2: "Serum 2",
+  PHASE_PLANT: "Phase Plant",
+  SPLICE: "Splice",
+  VITAL: "Vital",
+  SYLENTH1: "Sylenth1",
+  MASSIVE: "Massive",
+  BEAT_MAKER: "Beat Maker",
+};
+
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  BASS: "Bass",
+  LEAD: "Lead",
+  PAD: "Pad",
+  PLUCK: "Pluck",
+  FX: "FX",
+  KEYS: "Keys",
+  ARP: "Arp",
+  SEQUENCE: "Sequence",
+  OTHER: "Other",
+};
 
 interface Stats {
   totalSamples: number;
@@ -123,6 +164,11 @@ export default function ModSamplesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [presets, setPresets] = useState<APIPreset[]>([]);
+  const [presetsTotal, setPresetsTotal] = useState(0);
+  const [presetsLoading, setPresetsLoading] = useState(true);
+  const [presetsLoadingMore, setPresetsLoadingMore] = useState(false);
+  const [presetBusyId, setPresetBusyId] = useState<string | null>(null);
 
   const fetchData = useCallback(
     async (
@@ -194,10 +240,37 @@ export default function ModSamplesPage() {
     }
   }, []);
 
+  // Presets awaiting moderation (GET defaults to status=REVIEW).
+  const fetchPresets = useCallback(
+    async (opts: { offset?: number; append?: boolean; limit?: number } = {}) => {
+      const { offset = 0, append = false, limit = PAGE_SIZE } = opts;
+      try {
+        if (append) setPresetsLoadingMore(true);
+        else setPresetsLoading(true);
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        const res = await fetch(`/api/mod/presets?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch presets");
+        const data = await res.json();
+        setPresets((prev) => (append ? [...prev, ...data.presets] : data.presets));
+        setPresetsTotal(data.total ?? 0);
+      } catch (error) {
+        console.error("Failed to fetch presets:", error);
+        toast.error("Failed to load preset queue");
+      } finally {
+        if (append) setPresetsLoadingMore(false);
+        else setPresetsLoading(false);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     fetchData(activeTab === "search" ? "all" : "pending", "");
     fetchLowestRated();
-  }, [fetchData, fetchLowestRated]);
+    fetchPresets();
+  }, [fetchData, fetchLowestRated, fetchPresets]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -208,6 +281,8 @@ export default function ModSamplesPage() {
       fetchData("all", searchQuery);
     } else if (tab === "lowest-rated") {
       // Already fetched
+    } else if (tab === "presets") {
+      fetchPresets();
     }
   };
 
@@ -301,6 +376,90 @@ export default function ModSamplesPage() {
       refreshCurrent();
     } catch (error) {
       toast.error("Failed to flag creator");
+    }
+  };
+
+  // ---- Preset moderation ----
+  // Re-fetch the queue after a mutation, keeping everything paged in loaded.
+  const refreshPresets = () => {
+    fetchPresets({
+      limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, presets.length)),
+    });
+  };
+
+  const handlePresetModerate = async (
+    presetId: string,
+    action: "approve" | "reject"
+  ) => {
+    setPresetBusyId(presetId);
+    try {
+      const res = await fetch("/api/mod/presets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presetId, action }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to moderate preset");
+      }
+
+      toast.success(
+        action === "approve" ? "Preset published!" : "Preset sent back to draft."
+      );
+      refreshPresets();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to moderate preset"
+      );
+    } finally {
+      setPresetBusyId(null);
+    }
+  };
+
+  const handlePresetRemove = async (presetId: string) => {
+    if (!confirm("Remove this preset? This is a permanent takedown — the creator cannot resubmit it.")) return;
+
+    setPresetBusyId(presetId);
+    try {
+      const res = await fetch(`/api/mod/presets?presetId=${presetId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to remove preset");
+      }
+
+      toast.success("Preset removed");
+      refreshPresets();
+    } catch (error) {
+      toast.error("Failed to remove preset");
+    } finally {
+      setPresetBusyId(null);
+    }
+  };
+
+  const handlePresetDownload = async (presetId: string) => {
+    setPresetBusyId(presetId);
+    try {
+      const res = await fetch(`/api/mod/presets/${presetId}/download`);
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Failed to get download link");
+      }
+      // Signed URL forces attachment — an anchor click avoids popup blockers.
+      const a = document.createElement("a");
+      a.href = data.url;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to download preset"
+      );
+    } finally {
+      setPresetBusyId(null);
     }
   };
 
@@ -528,6 +687,13 @@ export default function ModSamplesPage() {
             >
               <TrendingDown className="w-4 h-4 mr-2" />
               Lowest Rated
+            </TabsTrigger>
+            <TabsTrigger
+              value="presets"
+              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
+            >
+              <SlidersHorizontal className="w-4 h-4 mr-2" />
+              Presets ({presetsTotal})
             </TabsTrigger>
           </TabsList>
 
@@ -813,6 +979,130 @@ export default function ModSamplesPage() {
                 <Star className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
                 <p className="text-[#a1a1a1]">
                   No low-rated samples found
+                </p>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Presets Tab */}
+          <TabsContent value="presets" className="space-y-6">
+            <p className="text-sm text-[#a1a1a1] mb-4">
+              Synth presets awaiting review — approve to publish, reject to send back to draft
+            </p>
+            {presetsLoading && presets.length === 0 ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
+              </div>
+            ) : presets.length > 0 ? (
+              <div className="space-y-4">
+                {presets.map((preset) => {
+                  const busy = presetBusyId === preset.id;
+                  return (
+                    <div
+                      key={preset.id}
+                      className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <h3 className="text-white font-medium">{preset.name}</h3>
+                            <span className="px-2 py-0.5 rounded-full text-xs bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30">
+                              {SYNTH_DISPLAY_NAMES[preset.synthName] || preset.synthName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-xs bg-[#2a2a2a] text-[#a1a1a1]">
+                              {CATEGORY_DISPLAY_NAMES[preset.presetCategory] || preset.presetCategory}
+                            </span>
+                            {preset.creator.isWhitelisted && (
+                              <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/30">
+                                <Shield className="w-3 h-3 inline mr-1" />
+                                Whitelisted
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-[#a1a1a1] mt-1">
+                            by {preset.creator.artistName || preset.creator.username || preset.creator.email} · {preset.genre} · {preset.creditPrice} credit{preset.creditPrice === 1 ? "" : "s"}
+                          </p>
+                          {preset.description && (
+                            <p className="text-sm text-[#666] mt-1 line-clamp-2">
+                              {preset.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-xs text-[#666]">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              Uploaded {new Date(preset.createdAt).toLocaleDateString()}
+                            </span>
+                            {preset.tags.length > 0 && (
+                              <span className="truncate">{preset.tags.join(", ")}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Button
+                            onClick={() => handlePresetDownload(preset.id)}
+                            disabled={busy}
+                            size="sm"
+                            variant="outline"
+                            className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+                            title="Download preset file"
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            onClick={() => handlePresetModerate(preset.id, "approve")}
+                            disabled={busy}
+                            size="sm"
+                            className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-1" /> Approve
+                          </Button>
+                          <Button
+                            onClick={() => handlePresetModerate(preset.id, "reject")}
+                            disabled={busy}
+                            size="sm"
+                            variant="outline"
+                            className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+                          >
+                            Reject
+                          </Button>
+                          <Button
+                            onClick={() => handlePresetRemove(preset.id)}
+                            disabled={busy}
+                            size="sm"
+                            variant="outline"
+                            className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                            title="Remove permanently"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                          {busy && <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {presets.length < presetsTotal && (
+                  <div className="flex flex-col items-center gap-2 pt-4">
+                    <p className="text-xs text-[#666]">
+                      Showing {presets.length} of {presetsTotal} presets
+                    </p>
+                    <Button
+                      onClick={() => fetchPresets({ offset: presets.length, append: true })}
+                      disabled={presetsLoadingMore}
+                      variant="outline"
+                      className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+                    >
+                      {presetsLoadingMore && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Load more
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
+                <p className="text-[#a1a1a1]">
+                  All presets have been reviewed!
                 </p>
               </div>
             )}

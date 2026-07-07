@@ -32,6 +32,7 @@ export async function GET() {
     totalDownloads,
     pendingApplications,
     pendingSamples,
+    pendingPresets,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { role: "CREATOR" } }),
@@ -41,6 +42,9 @@ export async function GET() {
     prisma.download.count(),
     prisma.creatorApplication.count({ where: { status: "PENDING" } }),
     prisma.sample.count({
+      where: { status: "REVIEW" },
+    }),
+    prisma.preset.count({
       where: { status: "REVIEW" },
     }),
   ]);
@@ -54,5 +58,6 @@ export async function GET() {
     totalDownloads,
     pendingApplications,
     pendingSamples,
+    pendingPresets,
   });
 }
