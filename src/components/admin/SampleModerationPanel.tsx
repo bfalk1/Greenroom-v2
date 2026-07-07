@@ -25,6 +25,9 @@ interface SampleModerationPanelProps {
   creator?: { full_name: string };
   onModerate: (action: "approve" | "reject") => void;
   actions?: React.ReactNode;
+  // Eagerly fetch the audio on mount; disable for long lists (each preload
+  // mints a signed URL and downloads the full file) — playback lazy-loads.
+  preloadAudio?: boolean;
 }
 
 export function SampleModerationPanel({
@@ -32,6 +35,7 @@ export function SampleModerationPanel({
   creator,
   onModerate,
   actions,
+  preloadAudio = true,
 }: SampleModerationPanelProps) {
   const [submitting, setSubmitting] = useState(false);
 
@@ -111,7 +115,7 @@ export function SampleModerationPanel({
               <span className="text-yellow-500 text-sm">Preview generating... (usually 1-2 min)</span>
             </div>
           ) : (
-            <AudioPlayer sampleId={sample.id} fileUrl={sample.file_url} useFullAudio preload hideVolume />
+            <AudioPlayer sampleId={sample.id} fileUrl={sample.file_url} useFullAudio preload={preloadAudio} hideVolume />
           )}
         </div>
 

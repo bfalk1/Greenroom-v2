@@ -49,16 +49,21 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
   // Preload audio on mount if requested
   useEffect(() => {
     if (preload && (sampleId || fileUrl) && !signedUrlRef.current) {
+      let cancelled = false;
       getSignedUrl().then(url => {
-        if (url) {
-          signedUrlRef.current = url;
-          if (audioRef.current) {
-            audioRef.current.src = url;
-            audioRef.current.preload = "auto";
-            audioRef.current.load();
-          }
+        // Bail if unmounted or a play attempt already fetched a URL —
+        // reassigning src here would restart active playback.
+        if (cancelled || signedUrlRef.current || !url) return;
+        signedUrlRef.current = url;
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.preload = "auto";
+          audioRef.current.load();
         }
       });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [preload, sampleId, fileUrl]);
 
@@ -77,8 +82,16 @@ export function AudioPlayer({ fileUrl, sampleId, duration = 0, useFullAudio = fa
       activeAudio = audio;
       setIsPlaying(true);
     };
-    const handlePause = () => setIsPlaying(false);
-    const handleEnded = () => setIsPlaying(false);
+    // Clear the play intent too — otherwise a later media error (e.g. expired
+    // URL on seek) would auto-resume this player via the retry path.
+    const handlePause = () => {
+      wantsPlayRef.current = false;
+      setIsPlaying(false);
+    };
+    const handleEnded = () => {
+      wantsPlayRef.current = false;
+      setIsPlaying(false);
+    };
     // Playback actually started, so the current URL works — allow a future
     // expired-URL retry.
     const handlePlaying = () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -150,6 +150,13 @@ const PAGE_SIZE = 50;
 // The API caps limit at 200; post-action refreshes reuse it to keep the loaded window.
 const MAX_LIMIT = 200;
 
+// Offset pagination over a changing list can re-serve rows already loaded —
+// keep the first occurrence so React keys and selection stay stable.
+function appendUnique<T extends { id: string }>(prev: T[], next: T[]): T[] {
+  const seen = new Set(prev.map((item) => item.id));
+  return [...prev, ...next.filter((item) => !seen.has(item.id))];
+}
+
 export default function ModSamplesPage() {
   const [samples, setSamples] = useState<APISample[]>([]);
   const [total, setTotal] = useState(0);
@@ -159,6 +166,9 @@ export default function ModSamplesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Last query actually searched — refresh/load-more must not pick up the
+  // draft the user is still typing in the search box.
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
@@ -170,6 +180,9 @@ export default function ModSamplesPage() {
   const [presetsLoading, setPresetsLoading] = useState(true);
   const [presetsLoadingMore, setPresetsLoadingMore] = useState(false);
   const [presetBusyId, setPresetBusyId] = useState<string | null>(null);
+  // Ignore responses from superseded fetches (e.g. rapid tab switches)
+  const fetchSeq = useRef(0);
+  const presetsFetchSeq = useRef(0);
 
   const fetchData = useCallback(
     async (
@@ -178,6 +191,7 @@ export default function ModSamplesPage() {
       opts: { offset?: number; append?: boolean; limit?: number } = {}
     ) => {
       const { offset = 0, append = false, limit = PAGE_SIZE } = opts;
+      const seq = ++fetchSeq.current;
       try {
         if (append) setLoadingMore(true);
         else setLoading(true);
@@ -194,6 +208,7 @@ export default function ModSamplesPage() {
 
         if (statsRes?.ok) {
           const data = await statsRes.json();
+          if (seq !== fetchSeq.current) return;
           setStats({
             totalSamples: data.totalSamples,
             publishedSamples: data.publishedSamples,
@@ -207,7 +222,8 @@ export default function ModSamplesPage() {
 
         if (samplesRes.ok) {
           const data = await samplesRes.json();
-          setSamples(prev => (append ? [...prev, ...data.samples] : data.samples));
+          if (seq !== fetchSeq.current) return;
+          setSamples(prev => (append ? appendUnique(prev, data.samples) : data.samples));
           setTotal(data.total ?? 0);
           if (data.stats) {
             setStats(prev => prev ? {
@@ -220,10 +236,12 @@ export default function ModSamplesPage() {
         }
       } catch (error) {
         console.error("Failed to fetch data:", error);
-        toast.error("Failed to load moderation data");
+        if (seq === fetchSeq.current) toast.error("Failed to load moderation data");
       } finally {
-        if (append) setLoadingMore(false);
-        else setLoading(false);
+        if (seq === fetchSeq.current) {
+          if (append) setLoadingMore(false);
+          else setLoading(false);
+        }
       }
     },
     []
@@ -245,6 +263,7 @@ export default function ModSamplesPage() {
   const fetchPresets = useCallback(
     async (opts: { offset?: number; append?: boolean; limit?: number } = {}) => {
       const { offset = 0, append = false, limit = PAGE_SIZE } = opts;
+      const seq = ++presetsFetchSeq.current;
       try {
         if (append) setPresetsLoadingMore(true);
         else setPresetsLoading(true);
@@ -254,14 +273,17 @@ export default function ModSamplesPage() {
         const res = await fetch(`/api/mod/presets?${params.toString()}`);
         if (!res.ok) throw new Error("Failed to fetch presets");
         const data = await res.json();
-        setPresets((prev) => (append ? [...prev, ...data.presets] : data.presets));
+        if (seq !== presetsFetchSeq.current) return;
+        setPresets((prev) => (append ? appendUnique(prev, data.presets) : data.presets));
         setPresetsTotal(data.total ?? 0);
       } catch (error) {
         console.error("Failed to fetch presets:", error);
-        toast.error("Failed to load preset queue");
+        if (seq === presetsFetchSeq.current) toast.error("Failed to load preset queue");
       } finally {
-        if (append) setPresetsLoadingMore(false);
-        else setPresetsLoading(false);
+        if (seq === presetsFetchSeq.current) {
+          if (append) setPresetsLoadingMore(false);
+          else setPresetsLoading(false);
+        }
       }
     },
     []
@@ -279,7 +301,7 @@ export default function ModSamplesPage() {
     if (tab === "pending") {
       fetchData("pending", "");
     } else if (tab === "search") {
-      fetchData("all", searchQuery);
+      fetchData("all", submittedQuery);
     } else if (tab === "lowest-rated") {
       // Already fetched
     } else if (tab === "presets") {
@@ -288,6 +310,7 @@ export default function ModSamplesPage() {
   };
 
   const handleSearch = () => {
+    setSubmittedQuery(searchQuery);
     fetchData("all", searchQuery);
   };
 
@@ -295,7 +318,7 @@ export default function ModSamplesPage() {
   // has paged in loaded (rather than collapsing back to the first page).
   const refreshCurrent = () => {
     const view = activeTab === "search" ? "all" : "pending";
-    const search = activeTab === "search" ? searchQuery : "";
+    const search = activeTab === "search" ? submittedQuery : "";
     fetchData(view, search, {
       limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, samples.length)),
     });
@@ -303,7 +326,7 @@ export default function ModSamplesPage() {
 
   const handleLoadMore = () => {
     const view = activeTab === "search" ? "all" : "pending";
-    const search = activeTab === "search" ? searchQuery : "";
+    const search = activeTab === "search" ? submittedQuery : "";
     fetchData(view, search, { offset: samples.length, append: true });
   };
 
@@ -713,7 +736,7 @@ export default function ModSamplesPage() {
                   )}
                   {allSelected ? "Deselect all" : "Select all"}
                 </button>
-                {samples.map((sample) => {
+                {samples.map((sample, index) => {
                 const panelSample = mapSampleForPanel(sample);
                 return (
                   <div key={sample.id} className="flex items-start gap-3">
@@ -731,6 +754,7 @@ export default function ModSamplesPage() {
                     <div className="flex-1 min-w-0">
                   <SampleModerationPanel
                     sample={panelSample}
+                    preloadAudio={index < PAGE_SIZE}
                     creator={{
                       full_name:
                         sample.creator.artistName ||
