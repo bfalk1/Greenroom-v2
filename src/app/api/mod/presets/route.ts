@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
         creditPrice: true,
         status: true,
         createdAt: true,
+        previewUrl: true,
         creator: {
           select: {
             id: true,
@@ -85,7 +86,41 @@ export async function GET(req: NextRequest) {
     prisma.preset.count({ where }),
   ]);
 
-  return NextResponse.json({ presets, total });
+  // Preview WAVs live in the private previews bucket — swap the stored path
+  // for a signed URL so moderators can audition inline (same pattern as the
+  // public presets API).
+  const previewPaths = presets.map((p) =>
+    p.previewUrl?.startsWith("previews/")
+      ? p.previewUrl.replace("previews/", "")
+      : null
+  );
+  const validPaths = previewPaths.filter((p): p is string => p !== null);
+
+  const signedUrlMap: Record<string, string> = {};
+  if (validPaths.length > 0) {
+    const { createClient: createServiceClient } = await import("@supabase/supabase-js");
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const { data } = await serviceClient.storage
+      .from("previews")
+      .createSignedUrls(validPaths, 3600);
+    if (data) {
+      for (const item of data) {
+        if (item.signedUrl && item.path) {
+          signedUrlMap[item.path] = item.signedUrl;
+        }
+      }
+    }
+  }
+
+  const withPreviews = presets.map((p, i) => ({
+    ...p,
+    previewUrl: previewPaths[i] ? signedUrlMap[previewPaths[i]] || null : null,
+  }));
+
+  return NextResponse.json({ presets: withPreviews, total });
 }
 
 // PATCH /api/mod/presets — approve/reject a preset

@@ -73,6 +73,7 @@ interface APIPreset {
   creditPrice: number;
   status: string;
   createdAt: string;
+  previewUrl: string | null;
   creator: SampleCreator;
 }
 
@@ -1034,6 +1035,15 @@ export default function ModSamplesPage() {
                             </span>
                             {preset.tags.length > 0 && (
                               <span className="truncate">{preset.tags.join(", ")}</span>
+                            )}
+                          </div>
+                          <div className="mt-3">
+                            {preset.previewUrl ? (
+                              <AudioPlayer fileUrl={preset.previewUrl} compact />
+                            ) : (
+                              <p className="text-xs text-[#666] italic">
+                                No audio preview uploaded
+                              </p>
                             )}
                           </div>
                         </div>
