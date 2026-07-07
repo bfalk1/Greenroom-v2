@@ -207,6 +207,7 @@ model CreditTransaction {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([createdAt])
   @@map("credit_transactions")
 }
 
@@ -328,6 +329,7 @@ model Purchase {
   @@index([userId])
   @@index([sampleId])
   @@index([presetId])
+  @@index([createdAt])
   @@map("purchases")
 }
 
@@ -347,6 +349,7 @@ model Download {
   @@index([userId])
   @@index([sampleId])
   @@index([presetId])
+  @@index([createdAt])
   @@map("downloads")
 }
 
@@ -482,6 +485,10 @@ model CreatorPayout {
   invoiceNumber     String?      @unique @map("invoice_number")
   status            PayoutStatus @default(PENDING)
   paidAt            DateTime?    @map("paid_at")
+  // Optional proof-of-payment uploaded by an admin, stored in the private
+  // payout-receipts bucket; visible to the creator via a signed URL.
+  receiptPath       String?      @map("receipt_path")
+  receiptUploadedAt DateTime?    @map("receipt_uploaded_at")
   createdAt         DateTime     @default(now()) @map("created_at")
 
   creator User @relation(fields: [creatorId], references: [id])
