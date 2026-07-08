@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Sparkles, Loader2 } from "lucide-react";
+import { safeRedirectPath } from "@/lib/safeRedirect";
 
 interface InviteData {
   email: string;
@@ -34,6 +35,10 @@ function SignupForm() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Optional post-signup destination (e.g. the /vip lifetime flow sends
+  // ?redirect=/vip). Same-origin relative paths only, validated centrally.
+  const safeRedirect = safeRedirectPath(searchParams.get("redirect"));
 
   // Check for invite token on mount (creator or beta invites)
   useEffect(() => {
@@ -114,7 +119,11 @@ function SignupForm() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/callback`,
+          // Carry the redirect through the email-confirmation path too, so the
+          // /callback route can land a confirmed user back on /vip.
+          emailRedirectTo: `${window.location.origin}/callback${
+            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
+          }`,
         },
       });
 
@@ -132,7 +141,7 @@ function SignupForm() {
         } else if (betaInvite) {
           router.push("/onboarding");
         } else {
-          router.push("/pricing?welcome=true");
+          router.push(safeRedirect ?? "/pricing?welcome=true");
         }
         return;
       }
@@ -343,7 +352,11 @@ function SignupForm() {
       <p className="text-center text-[#a1a1a1] text-sm mt-6">
         Already have an account?{" "}
         <Link
-          href="/login"
+          href={
+            safeRedirect
+              ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
+              : "/login"
+          }
           className="text-[#39b54a] hover:text-[#2e9140] font-medium"
         >
           Sign In

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
 import { INSTRUMENT_CATEGORIES } from "@/lib/utils/genre";
 
 // GET /api/instruments - Get all instrument types with categories
@@ -77,6 +78,25 @@ export async function GET(request: NextRequest) {
 // PUT /api/instruments - Initialize default instrument types (admin only)
 export async function PUT() {
   try {
+    // Route-level admin check. GET on this path is public in the middleware
+    // (explore filter options), so this handler must enforce its own auth
+    // rather than rely on the middleware session wall.
+    const supabase = await createClient();
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const adminUser = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: { role: true },
+    });
+
+    if (adminUser?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
     let created = 0;
 
     for (const [category, instruments] of Object.entries(INSTRUMENT_CATEGORIES)) {

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { trackLogin } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { safeRedirectPath } from "@/lib/safeRedirect";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,6 +32,14 @@ export default function LoginPage() {
         return;
       }
 
+      // Honor a safe same-origin redirect target (e.g. the /vip lifetime flow
+      // sends ?redirect=/vip). Relative paths only — never an absolute/external
+      // URL, so a crafted ?redirect can't bounce the user off-site after login.
+      const dest =
+        safeRedirectPath(
+          new URLSearchParams(window.location.search).get("redirect")
+        ) ?? "/marketplace";
+
       // Check if profile is complete
       const res = await fetch("/api/user/me");
       if (res.ok) {
@@ -42,7 +51,7 @@ export default function LoginPage() {
       }
 
       trackLogin();
-      router.push("/marketplace");
+      router.push(dest);
       router.refresh();
     } catch (err) {
       console.error("Login error:", err);
@@ -113,6 +122,16 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </Button>
         </form>
+
+        <p className="text-center text-[#a1a1a1] text-sm mt-6">
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/signup"
+            className="text-[#39b54a] hover:text-[#2e9140] font-medium"
+          >
+            Sign Up
+          </Link>
+        </p>
       </div>
     </div>
   );
