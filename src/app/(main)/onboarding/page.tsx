@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+import { useUser } from "@/lib/hooks/useUser";
+import { safeRedirectPath } from "@/lib/safeRedirect";
 
 export default function OnboardingPage() {
+  // userLoading gates the submit button: the post-submit redirect below
+  // branches on subscription/role, so submitting before the user record
+  // loads could misroute a paywall-exempt user (e.g. beta invitee) to the
+  // subscribe prompt.
+  const { user, loading: userLoading } = useUser();
   const [formData, setFormData] = useState({
     username: "",
     full_name: "",
@@ -36,7 +43,29 @@ export default function OnboardingPage() {
         return;
       }
 
-      router.push("/marketplace");
+      // A carried redirect wins (e.g. a new user who signed up via /vip returns
+      // there to claim the offer). Otherwise: new regular signups land on the
+      // subscribe prompt; anyone who already has a plan (or bypasses the
+      // paywall — creators/staff/beta invitees, who arrive via
+      // /onboarding?creator=true or with an active status) goes straight to the
+      // marketplace. Subscribing stays optional — the pricing page links back
+      // out to the catalog.
+      const params = new URLSearchParams(window.location.search);
+      const safeRedirect = safeRedirectPath(params.get("redirect"));
+      const isCreatorFlow = params.get("creator") === "true";
+      const hasActiveSub =
+        user?.subscription_status === "active" ||
+        user?.subscription_status === "past_due";
+      const isPaywallExemptRole =
+        user != null && ["CREATOR", "ADMIN", "MODERATOR"].includes(user.role);
+
+      if (safeRedirect) {
+        router.push(safeRedirect);
+      } else if (isCreatorFlow || hasActiveSub || isPaywallExemptRole) {
+        router.push("/marketplace");
+      } else {
+        router.push("/pricing?welcome=true");
+      }
       router.refresh();
     } catch (err) {
       console.error("Error completing profile:", err);
@@ -131,7 +160,7 @@ export default function OnboardingPage() {
 
           <Button
             type="submit"
-            disabled={loading}
+            disabled={loading || userLoading}
             className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3 flex items-center justify-center gap-2"
           >
             {loading ? "Creating Profile..." : "Continue"}

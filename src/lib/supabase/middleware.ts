@@ -81,7 +81,10 @@ export async function updateSession(request: NextRequest) {
   // startsWith): only the catalog list, a single sample, and its preview. Any
   // other /api/samples/** sub-route (e.g. following) is NOT public by default,
   // so a future sub-route can't silently ship unauthenticated.
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
+  // /explore and /pricing are public so the landing page's "Browse samples"
+  // and pricing links work for anonymous visitors; both pages already render
+  // a logged-out variant (signup CTAs) and their write actions require auth.
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/explore", "/pricing", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
@@ -102,10 +105,18 @@ export async function updateSession(request: NextRequest) {
     pathname === "/api/subscription/checkout-paypal/return" ||
     isPublicSamplePath ||
     pathname.startsWith("/api/genres") ||
+    // Read-only filter options (published-sample metadata) used by the public
+    // /explore browse page. GET only — the route also exports an admin-only
+    // PUT (seed defaults) that must stay behind auth.
+    (request.method === "GET" && pathname.startsWith("/api/instruments")) ||
     pathname.startsWith("/api/search") ||
     pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify" ||
-    pathname === "/api/beta-invites/verify";
+    pathname === "/api/beta-invites/verify" ||
+    // VIP offer password gate — unauthenticated by design (a shared marketing
+    // code, not account auth); the route rate-limits and the unlock is an
+    // HMAC-signed cookie the checkout routes verify server-side.
+    pathname.startsWith("/api/vip-offer");
 
   // If user is logged in and on login/signup, redirect to marketplace.
   // Must run BEFORE the isPublicPath early-return — /login and /signup are

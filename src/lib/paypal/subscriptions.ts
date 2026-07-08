@@ -18,11 +18,26 @@ const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
   AA: process.env.PAYPAL_AA_PLAN_ID,
 };
 
+// Discounted "lifetime VIP" plan for the /vip returning-subscriber offer. Same
+// VIP tier (200 credits) at a lower price — PayPal can't apply a coupon, so the
+// discount is a separate billing plan created in the PayPal dashboard at the
+// lifetime price ($11.99). Empty when not configured → the checkout route
+// fails closed rather than billing full price.
+const VIP_LIFETIME_PLAN_ID = process.env.PAYPAL_VIP_LIFETIME_PLAN_ID;
+
 export function paypalPlanIdForTier(tierName: string): string | null {
   return PLAN_ENV_BY_TIER[tierName] ?? null;
 }
 
+export function paypalVipLifetimePlanId(): string | null {
+  return VIP_LIFETIME_PLAN_ID ?? null;
+}
+
 export function tierNameForPaypalPlan(planId: string): string | null {
+  // The discounted lifetime plan grants the SAME VIP tier — only the price
+  // differs — so it must resolve to VIP for credit grants + subscription sync,
+  // or a lifetime subscriber's payments wouldn't map to any tier.
+  if (VIP_LIFETIME_PLAN_ID && planId === VIP_LIFETIME_PLAN_ID) return "VIP";
   for (const [tierName, id] of Object.entries(PLAN_ENV_BY_TIER)) {
     if (id && id === planId) return tierName;
   }
@@ -81,12 +96,34 @@ export async function createPaypalSubscription(params: {
   userId: string;
   returnUrl: string;
   cancelUrl: string;
+  // Location-based sales tax added ON TOP (exclusive), as a percentage number
+  // (e.g. 13 for ON HST). Computed server-side from the buyer's region via
+  // src/lib/tax/canadaRates.ts — PayPal Billing can't derive it itself. Omit or
+  // 0 for zero-rated exports / tax disabled. Fixed for the life of the sub:
+  // PayPal applies it to every cycle, so a buyer who later moves provinces
+  // keeps their original rate until they resubscribe.
+  taxPercent?: number;
 }): Promise<PaypalSubscription> {
+  const taxPercent = params.taxPercent ?? 0;
   const res = await paypalFetch("/v1/billing/subscriptions", {
     method: "POST",
     body: {
       plan_id: params.planId,
       custom_id: params.userId,
+      // Tax must be a PLAN OVERRIDE (`plan.taxes`), NOT a top-level `taxes`
+      // field — PayPal Subscriptions v1 has no top-level taxes and silently
+      // ignores it, which would attach no tax at all. Overriding plan.taxes may
+      // require "Billing Plan Override" permission on the PayPal account; verify
+      // in sandbox before enabling tax in prod (a 422 here fails closed —
+      // createPaypalSubscription throws and checkout errors, rather than
+      // under-charging).
+      ...(taxPercent > 0
+        ? {
+            plan: {
+              taxes: { percentage: String(taxPercent), inclusive: false },
+            },
+          }
+        : {}),
       application_context: {
         brand_name: "Greenroom",
         user_action: "SUBSCRIBE_NOW",

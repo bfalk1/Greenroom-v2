@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
-import { trackPaywallViewed, trackSubscriptionCheckout, trackSubscriptionActivated } from "@/lib/analytics";
+import { trackPaywallViewed, trackSubscriptionActivated } from "@/lib/analytics";
 import { toast } from "sonner";
 
 // PayPal subscriptions are gated separately from credit packs so packs-only
@@ -28,21 +29,24 @@ export default function PricingPage() {
 }
 
 function PricingContent() {
-  const [loading, setLoading] = useState<string | null>(null);
+  const router = useRouter();
   const [portalLoading, setPortalLoading] = useState(false);
   // Which provider owns the user's current subscription (null = none) —
   // decides whether PayPal buttons subscribe, switch plans, or hide.
   const [subProvider, setSubProvider] = useState<string | null>(null);
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, error: userError } = useUser();
   const searchParams = useSearchParams();
 
   const isWelcome = searchParams.get("welcome") === "true";
 
-  // Track paywall view
+  // Track paywall view — signed-in users only. /pricing is public now, so
+  // anonymous marketing traffic would otherwise inflate paywall_viewed and
+  // skew the activations/paywall-views conversion metric.
   useEffect(() => {
+    if (!user) return;
     const redirectFrom = searchParams.get("redirect") || undefined;
     trackPaywallViewed(redirectFrom);
-  }, [searchParams]);
+  }, [searchParams, user]);
 
   // Handle success/canceled URL params
   useEffect(() => {
@@ -86,44 +90,6 @@ function PricingContent() {
       .catch(() => {});
   }, [user]);
 
-  const handlePurchase = async (priceId: string) => {
-    if (!user) {
-      toast.error("Please sign in to subscribe.");
-      return;
-    }
-
-    setLoading(priceId);
-    try {
-      const res = await fetch("/api/subscription/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create checkout session");
-      }
-
-      if (data.url) {
-        const pkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(p => p.priceId === priceId);
-        trackSubscriptionCheckout(pkg?.name || "unknown", priceId);
-        window.location.href = data.url;
-      }
-    } catch (error) {
-      console.error("Error creating checkout:", error);
-      // Surface the server's message — e.g. the cross-provider 409.
-      toast.error(
-        error instanceof Error && error.message !== "Failed to create checkout session"
-          ? error.message
-          : "Failed to create checkout session. Please try again."
-      );
-    } finally {
-      setLoading(null);
-    }
-  };
-
   const handleManageSubscription = async () => {
     // PayPal subs have no Stripe portal — their cancel/change actions live
     // on the account page.
@@ -159,52 +125,6 @@ function PricingContent() {
     user?.subscription_status === "active" ||
     user?.subscription_status === "past_due";
 
-  // New PayPal subscription, or a plan switch on an existing PayPal one.
-  const handlePaypalSubscribe = async (tierName: string) => {
-    if (!user) {
-      toast.error("Please sign in to subscribe.");
-      return;
-    }
-
-    const isRevision = hasActiveSub && subProvider === "paypal";
-    setLoading(`paypal-${tierName}`);
-    try {
-      const res = await fetch(
-        isRevision
-          ? "/api/subscription/revise-paypal"
-          : "/api/subscription/checkout-paypal",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tierName }),
-        }
-      );
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to start PayPal checkout");
-      }
-
-      if (data.url) {
-        const pkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(
-          (p) => p.tierName === tierName
-        );
-        trackSubscriptionCheckout(pkg?.name || "unknown", `paypal-${tierName}`);
-        window.location.href = data.url;
-      }
-    } catch (error) {
-      console.error("PayPal subscription error:", error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to start PayPal checkout. Please try again."
-      );
-    } finally {
-      setLoading(null);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       {/* Header */}
@@ -215,6 +135,12 @@ function PricingContent() {
             <h2 className="text-2xl font-bold text-white mb-2">Welcome to GREENROOM! 🎉</h2>
             <p className="text-[#a1a1a1]">
               Choose a plan below to unlock unlimited access to thousands of royalty-free samples.
+            </p>
+            <p className="text-sm text-[#a1a1a1] mt-3">
+              Not ready yet?{" "}
+              <Link href="/explore" className="text-[#39b54a] hover:underline">
+                Browse the catalog first
+              </Link>
             </p>
           </div>
         )}
@@ -312,54 +238,37 @@ function PricingContent() {
                   ))}
                 </ul>
 
-                {/* CTA Button — hidden for PayPal subscribers: their plan
-                    changes must go through PayPal revise, not a second
-                    (double-billing) Stripe checkout. */}
-                {!(hasActiveSub && subProvider === "paypal") && (
-                  <Button
-                    onClick={() => handlePurchase(pkg.priceId)}
-                    disabled={loading !== null || userLoading || !pkg.priceId}
-                    className={`w-full py-3 font-semibold ${
-                      pkg.highlighted
-                        ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
-                        : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
-                    }`}
-                  >
-                    {loading === pkg.priceId ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Loading...
-                      </>
-                    ) : !pkg.priceId ? (
-                      "Unavailable"
-                    ) : hasActiveSub ? (
-                      "Change Plan"
-                    ) : (
-                      "Subscribe Now"
-                    )}
-                  </Button>
-                )}
-
-                {/* PayPal: subscribe when unsubscribed, switch plans when the
-                    existing sub is PayPal's; Stripe subs manage via portal. */}
-                {paypalSubsEnabled && (!hasActiveSub || subProvider === "paypal") && (
-                  <Button
-                    onClick={() => handlePaypalSubscribe(pkg.tierName)}
-                    disabled={loading !== null || userLoading}
-                    className="w-full py-3 mt-2 font-semibold bg-transparent border border-[#2a2a2a] text-[#a1a1a1] hover:bg-[#2a2a2a] hover:text-white"
-                  >
-                    {loading === `paypal-${pkg.tierName}` ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Loading...
-                      </>
-                    ) : hasActiveSub ? (
-                      "Switch with PayPal"
-                    ) : (
-                      "Subscribe with PayPal"
-                    )}
-                  </Button>
-                )}
+                {/* Payment method is chosen on /checkout — one button here.
+                    /pricing is public but /checkout is login-walled, so
+                    anonymous visitors go create an account first (signup
+                    routes them back here via /pricing?welcome=true).
+                    userError means an AUTHENTICATED session whose
+                    /api/user/me load failed (see UserContext) — route those
+                    to /checkout like any signed-in user (its APIs auth via
+                    the session cookie), never to /signup, where the
+                    middleware would bounce them to /marketplace and lose
+                    the subscribe intent. */}
+                <Button
+                  onClick={() =>
+                    user || userError
+                      ? router.push(`/checkout?tier=${pkg.tierName}`)
+                      : router.push("/signup")
+                  }
+                  disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
+                  className={`w-full py-3 font-semibold ${
+                    pkg.highlighted
+                      ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                      : "bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+                  }`}
+                >
+                  {!pkg.priceId && !paypalSubsEnabled
+                    ? "Unavailable"
+                    : !user && !userError
+                      ? "Get Started"
+                      : hasActiveSub
+                        ? "Change Plan"
+                        : "Subscribe Now"}
+                </Button>
 
                 {/* Price per credit */}
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">
@@ -416,9 +325,9 @@ function PricingContent() {
                 What payment methods do you accept?
               </h3>
               <p className="text-[#a1a1a1]">
-                We accept all major credit cards via Stripe, and PayPal for
-                credit pack purchases. Payments are secure and processed
-                instantly.
+                We accept all major credit cards via Stripe, and PayPal — for
+                both subscriptions and credit packs. Payments are secure and
+                processed instantly.
               </p>
             </div>
           </div>

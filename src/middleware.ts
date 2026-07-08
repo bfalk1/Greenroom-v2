@@ -12,9 +12,10 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public assets
+     * - public assets (images, video, audio) — must be excluded or anonymous
+     *   requests for e.g. the landing-page demo video get redirected to /login
      * - api/releases (public endpoint)
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/releases|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/releases|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico|mp4|webm|mov|mp3|wav|m4a|ogg)$).*)",
   ],
 };

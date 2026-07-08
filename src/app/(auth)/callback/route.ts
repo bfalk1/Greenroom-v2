@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { safeRedirectPath } from "@/lib/safeRedirect";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -186,15 +187,28 @@ export async function GET(request: Request) {
         });
       }
 
-      // Redirect based on profile completion
+      // Optional post-confirmation destination carried from signup (e.g. the
+      // /vip lifetime flow). Same-origin relative paths only.
+      const safeRedirect = safeRedirectPath(searchParams.get("redirect"));
+      const redirectQuery = safeRedirect
+        ? `redirect=${encodeURIComponent(safeRedirect)}`
+        : "";
+
+      // Redirect based on profile completion. A brand-new user still completes
+      // onboarding first — but the redirect is carried THROUGH onboarding so a
+      // new user who signed up via /vip returns there once their profile exists.
       if (!user.profileCompleted) {
         if (hasCreatorInvite || user.role === "CREATOR") {
-          return NextResponse.redirect(`${origin}/onboarding?creator=true`);
+          return NextResponse.redirect(
+            `${origin}/onboarding?creator=true${redirectQuery ? `&${redirectQuery}` : ""}`
+          );
         }
-        return NextResponse.redirect(`${origin}/onboarding`);
+        return NextResponse.redirect(
+          `${origin}/onboarding${redirectQuery ? `?${redirectQuery}` : ""}`
+        );
       }
 
-      return NextResponse.redirect(`${origin}/marketplace`);
+      return NextResponse.redirect(`${origin}${safeRedirect ?? "/marketplace"}`);
     }
   }
 
