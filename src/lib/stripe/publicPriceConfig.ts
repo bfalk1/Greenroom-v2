@@ -40,6 +40,19 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
   },
 ] as const;
 
+// Returning-subscriber "lifetime VIP" offer, surfaced only on the password-gated
+// /vip page. The subscription rides the normal VIP price/plan — the $6/mo
+// discount is applied server-side (Stripe: a coupon; PayPal: a dedicated
+// discounted billing plan). These values are display-only and must mirror the
+// VIP package price above + the coupon/plan amount in Stripe/PayPal.
+export const VIP_LIFETIME_OFFER = {
+  tierName: "VIP",
+  credits: 200,
+  regularPrice: 17.99,
+  lifetimePrice: 11.99,
+  priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
+} as const;
+
 export const PUBLIC_CREDIT_PACKAGES = [
   {
     credits: 50,
