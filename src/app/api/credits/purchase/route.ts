@@ -60,6 +60,9 @@ export async function POST(request: Request) {
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm";
 
+    // NOTE: credit-pack tax is a deliberate follow-up (both providers) — see
+    // docs/tax-runbook.md. Left untaxed here so it stays consistent with the
+    // PayPal credit path until both are done together.
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       mode: "payment",
