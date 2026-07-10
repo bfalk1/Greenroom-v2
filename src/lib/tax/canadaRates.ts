@@ -89,6 +89,108 @@ export function canadaTaxPercent(
   return Math.round((base + addon) * 1000) / 1000;
 }
 
+function normLoc(s: string | null | undefined): string {
+  return (s ?? "").trim().toUpperCase();
+}
+
+export interface TaxLocationInputs {
+  /** Country the buyer selected on our checkout page (self-declared). */
+  declaredCountry: string | null | undefined;
+  /** Province the buyer selected (self-declared). */
+  declaredRegion: string | null | undefined;
+  /** IP-geolocated country from Vercel's `x-vercel-ip-country` edge header. */
+  ipCountry: string | null | undefined;
+  /** IP-geolocated region from Vercel's `x-vercel-ip-country-region` header. */
+  ipRegion: string | null | undefined;
+}
+
+export interface TaxResolution {
+  /** Combined rate to charge, as a percent (e.g. 13). */
+  percent: number;
+  /** Country the rate was computed for after resolving the two indicators. */
+  country: string;
+  /** Region the rate was computed for. */
+  region: string;
+  /** Why this decision was reached — retained as audit evidence. */
+  basis: string;
+  /** True when the declared country and the IP country disagreed on CA-vs-not. */
+  conflict: boolean;
+  /** The raw indicators relied on, for the per-transaction audit record. */
+  indicators: {
+    declaredCountry: string;
+    declaredRegion: string;
+    ipCountry: string;
+    ipRegion: string;
+  };
+}
+
+/**
+ * Resolve the tax rate from TWO location indicators — the buyer's self-declared
+ * country/region AND their IP-geolocated country/region — instead of trusting a
+ * single self-declared field. This mirrors the CRA cross-border digital-economy
+ * rule (two or more non-contradicting indicators obtained in the ordinary course
+ * of operations) and, importantly, closes the evasion gap: a buyer who picks a
+ * tax-free country on our form but connects from Canada still pays Canadian tax,
+ * because the IP indicator (which they can't set from the form) contradicts the
+ * declaration and we resolve the conflict toward Canada (the safer side to remit).
+ *
+ * The IP inputs come from Vercel's edge headers, which are absent in local dev —
+ * when the IP country is unknown we fall back to the declared indicator alone.
+ * The returned `indicators`/`basis` are meant to be logged/retained per charge as
+ * the audit evidence the CRA test is graded against.
+ */
+export function resolveCanadaTax(
+  inputs: TaxLocationInputs,
+  registered: Set<string> = pstRegisteredProvinces()
+): TaxResolution {
+  const declaredCountry = normLoc(inputs.declaredCountry);
+  const declaredRegion = normLoc(inputs.declaredRegion);
+  const ipCountry = normLoc(inputs.ipCountry);
+  const ipRegion = normLoc(inputs.ipRegion);
+
+  const declaredCA = declaredCountry === "CA";
+  const ipCA = ipCountry === "CA";
+  const ipKnown = ipCountry !== "";
+
+  let country: string;
+  let region: string;
+  let basis: string;
+
+  if (declaredCA && ipCA) {
+    // Both indicators Canadian — strongest signal. Prefer the declared province
+    // (billing address is more reliable than IP for province); IP fills a blank.
+    country = "CA";
+    region = declaredRegion || ipRegion;
+    basis = "both-indicators-ca";
+  } else if (declaredCA) {
+    // Declared Canada — a Canadian indicator and an explicit opt-in to tax.
+    country = "CA";
+    region = declaredRegion;
+    basis = ipKnown ? "declared-ca-ip-foreign" : "declared-ca-ip-unknown";
+  } else if (ipCA) {
+    // Declared non-Canada but the IP says Canada — the evasion-suspect case.
+    // Resolve toward Canada and tax from the IP's province: over-collecting and
+    // remitting is the safe side, and it removes any incentive to mis-declare.
+    country = "CA";
+    region = ipRegion;
+    basis = "ip-ca-declared-foreign";
+  } else {
+    // No Canadian indicator → zero-rated export (0%).
+    country = declaredCountry || ipCountry || "";
+    region = "";
+    basis = ipKnown ? "both-indicators-foreign" : "declared-foreign-ip-unknown";
+  }
+
+  return {
+    percent: canadaTaxPercent(country, region, registered),
+    country,
+    region,
+    basis,
+    conflict: ipKnown && declaredCA !== ipCA,
+    indicators: { declaredCountry, declaredRegion, ipCountry, ipRegion },
+  };
+}
+
 /** Master on/off for tax collection — both providers read this one flag. */
 export function taxCollectionEnabled(): boolean {
   return process.env.NEXT_PUBLIC_TAX_ENABLED === "true";

@@ -43,7 +43,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false }, { status: 400 });
   }
 
-  if (password.trim() !== vipOfferPassword()) {
+  // Case-insensitive match: past subscribers may type the shared code in any
+  // casing (grvip / GRVIP / GrViP), so compare with case folded on both sides.
+  if (password.trim().toLowerCase() !== vipOfferPassword().toLowerCase()) {
     return NextResponse.json(
       { ok: false, error: "Incorrect password" },
       { status: 401 }

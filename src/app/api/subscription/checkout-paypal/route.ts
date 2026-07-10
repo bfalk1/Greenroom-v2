@@ -8,7 +8,7 @@ import {
   paypalVipLifetimePlanId,
   paypalSubscriptionsConfigured,
 } from "@/lib/paypal/subscriptions";
-import { canadaTaxPercent, taxCollectionEnabled } from "@/lib/tax/canadaRates";
+import { resolveCanadaTax, taxCollectionEnabled } from "@/lib/tax/canadaRates";
 import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
@@ -130,13 +130,36 @@ export async function POST(request: Request) {
       }
     }
 
-    // Location-based tax, added on top (exclusive). The rate is ALWAYS computed
-    // here from the buyer's declared country/region — never accepted from the
-    // client — so a tampered request can't lower its own tax. Inert (0%) unless
-    // tax collection is enabled; non-Canada is a zero-rated export (0%).
-    const taxPercent = taxCollectionEnabled()
-      ? canadaTaxPercent(country, region)
-      : 0;
+    // Location-based tax, added on top (exclusive). The rate is resolved from TWO
+    // indicators — the buyer's declared country/region AND their IP-geolocated
+    // country/region from Vercel's edge headers — never from a client-sent amount.
+    // Using a second indicator the buyer can't set on the form (IP) both satisfies
+    // the CRA two-indicator rule and closes the evasion gap: declaring a tax-free
+    // country while connecting from Canada still resolves to Canadian tax. The
+    // x-vercel-ip-* headers are set by Vercel's edge (client-supplied copies are
+    // stripped) and are absent in local dev, where we fall back to the declared
+    // indicator alone. Inert (0%) unless tax collection is enabled.
+    let taxPercent = 0;
+    if (taxCollectionEnabled()) {
+      const resolved = resolveCanadaTax({
+        declaredCountry: country,
+        declaredRegion: region,
+        ipCountry: request.headers.get("x-vercel-ip-country"),
+        ipRegion: request.headers.get("x-vercel-ip-country-region"),
+      });
+      taxPercent = resolved.percent;
+
+      // Audit evidence: the CRA test grades a vendor on the indicators obtained in
+      // the ordinary course and RETAINED, so record the full basis + both signals.
+      // NOTE: a log line is not durable retention — persisting this per subscription
+      // is a tracked follow-up before tax collection is enabled in production.
+      console.log(
+        `[tax] paypal sub user=${user.id} charge=${taxPercent}% ` +
+          `basis=${resolved.basis} conflict=${resolved.conflict} ` +
+          `declared=${resolved.indicators.declaredCountry || "-"}/${resolved.indicators.declaredRegion || "-"} ` +
+          `ip=${resolved.indicators.ipCountry || "-"}/${resolved.indicators.ipRegion || "-"}`
+      );
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm";
 

@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare } from "lucide-react";
+import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare, Sliders } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
+import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
+import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
@@ -442,6 +444,166 @@ function LibraryRow({
 }
 
 const PAGE_SIZE = 20;
+
+// Presets tab — self-contained so it stays clear of the samples tab's
+// keyboard-nav / now-playing-queue machinery. Every preset here is owned, so
+// PresetRow renders in download mode and onPurchase is never called.
+function LibraryPresetsTab({
+  user,
+}: {
+  user: { id: string; email?: string } | null;
+}) {
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const hasFetchedRef = useRef(false);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const isFiltered = searchQuery.trim() !== "";
+
+  const fetchPresets = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String((currentPage - 1) * PAGE_SIZE),
+      });
+      if (searchQuery) params.set("search", searchQuery);
+
+      const res = await fetch(`/api/library/presets?${params}`);
+      const data = await res.json();
+      if (res.ok) {
+        setPresets(data.presets || []);
+        setTotal(data.total || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching library presets:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, currentPage, searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!user) return;
+    const delay = hasFetchedRef.current ? 300 : 0;
+    const timer = setTimeout(() => {
+      fetchPresets();
+      hasFetchedRef.current = true;
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [fetchPresets, user]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-6">
+        <div className="relative">
+          <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
+          <Input
+            type="text"
+            placeholder="Search your presets..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
+          />
+        </div>
+      </div>
+
+      {loading && !hasFetchedRef.current ? (
+        <div className="space-y-2">
+          {Array(8)
+            .fill(0)
+            .map((_, i) => (
+              <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
+            ))}
+        </div>
+      ) : presets.length > 0 ? (
+        <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+          {/* Table Header — mirrors the marketplace Presets header */}
+          <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+            <div className="w-10" />
+            <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
+            <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+            <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
+            <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+            <span className="hidden md:block text-xs font-medium text-[#a1a1a1] text-center">&#9733;</span>
+            <div className="text-xs font-medium text-[#a1a1a1]"></div>
+          </div>
+
+          {/* Rows — every preset is owned */}
+          <div className="divide-y divide-[#2a2a2a]">
+            {presets.map((preset) => (
+              <PresetRow
+                key={preset.id}
+                preset={preset}
+                user={user}
+                isOwned={true}
+                onPurchase={() => {}}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="border-t border-[#2a2a2a] flex flex-col items-center gap-2 py-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+                disabled={loading}
+              />
+              <span className="text-xs text-[#666]">
+                Page {currentPage} of {totalPages} · {total} preset{total !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : isFiltered ? (
+        <div className="text-center py-16">
+          <Sliders className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
+          <p className="text-[#a1a1a1] mb-6">
+            No presets in your library match this search.
+          </p>
+          <Button
+            onClick={() => setSearchQuery("")}
+            variant="outline"
+            className="border-[#2a2a2a] text-white hover:bg-[#2a2a2a]"
+          >
+            Clear search
+          </Button>
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <Sliders className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">
+            No presets in your library
+          </h3>
+          <p className="text-[#a1a1a1] mb-6">
+            Purchase presets from the marketplace to add them here.
+          </p>
+          <Link href="/marketplace">
+            <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
+              Browse Marketplace
+            </Button>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type LibraryFilterState = {
   genre: string;
   instrumentType: string;
@@ -460,6 +622,7 @@ const DEFAULT_LIBRARY_FILTERS: LibraryFilterState = {
 
 export default function LibraryPage() {
   const { user, loading: userLoading } = useUser();
+  const [activeTab, setActiveTab] = useState<MarketplaceTab>("samples");
   const [samples, setSamples] = useState<LibrarySample[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -786,13 +949,21 @@ export default function LibraryPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">My Library</h1>
           <p className="text-[#a1a1a1]">
-            {total} sample{total !== 1 ? "s" : ""} purchased
+            {activeTab === "samples"
+              ? `${total} sample${total !== 1 ? "s" : ""} purchased`
+              : "Your purchased presets"}
           </p>
         </div>
 
+        <MarketplaceTabs activeTab={activeTab} onTabChange={setActiveTab} />
+
+        {activeTab === "presets" ? (
+          <LibraryPresetsTab user={user} />
+        ) : (
+        <>
         {(samples.length > 0 || isFiltered) && (
           <div className="mb-6 space-y-4">
             <div className="flex items-center gap-4">
@@ -904,6 +1075,8 @@ export default function LibraryPage() {
               </Button>
             </Link>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>
