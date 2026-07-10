@@ -20,12 +20,14 @@ import {
   Square,
   Pencil,
   X,
+  Sliders,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
+import { PresetModeration } from "@/components/admin/PresetModeration";
 import { formatSampleType } from "@/lib/utils/sampleType";
 import { toast } from "sonner";
 
@@ -529,6 +531,13 @@ export default function ModSamplesPage() {
               <TrendingDown className="w-4 h-4 mr-2" />
               Lowest Rated
             </TabsTrigger>
+            <TabsTrigger
+              value="presets"
+              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
+            >
+              <Sliders className="w-4 h-4 mr-2" />
+              Presets
+            </TabsTrigger>
           </TabsList>
 
           {/* Pending Review Tab */}
@@ -816,6 +825,11 @@ export default function ModSamplesPage() {
                 </p>
               </div>
             )}
+          </TabsContent>
+
+          {/* Presets Tab */}
+          <TabsContent value="presets" className="space-y-6">
+            <PresetModeration />
           </TabsContent>
         </Tabs>
 

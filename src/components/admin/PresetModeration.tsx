@@ -14,7 +14,6 @@ import {
   Shield,
   Download,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { toast } from "sonner";
 
@@ -80,8 +79,13 @@ interface ModPreset {
 const PAGE_SIZE = 50;
 const MAX_LIMIT = 200;
 
-const STATUS_OPTIONS = ["ALL", "REVIEW", "PUBLISHED", "DRAFT", "REMOVED"] as const;
-type StatusFilter = (typeof STATUS_OPTIONS)[number];
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "REVIEW", label: "Pending review" },
+  { value: "ALL", label: "All statuses" },
+  { value: "PUBLISHED", label: "Published" },
+  { value: "DRAFT", label: "Draft (sent back)" },
+  { value: "REMOVED", label: "Removed" },
+];
 
 function statusBadgeClass(status: string): string {
   switch (status) {
@@ -96,22 +100,21 @@ function statusBadgeClass(status: string): string {
   }
 }
 
-export default function ModPresetsPage() {
+export function PresetModeration() {
   const [presets, setPresets] = useState<ModPreset[]>([]);
   const [total, setTotal] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
-  const [activeTab, setActiveTab] = useState("pending");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchStatus, setSearchStatus] = useState<StatusFilter>("ALL");
+  const [statusFilter, setStatusFilter] = useState("REVIEW");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
 
   const fetchData = useCallback(
     async (
-      status: StatusFilter,
+      status: string,
       search = "",
       opts: { offset?: number; append?: boolean; limit?: number } = {}
     ) => {
@@ -145,7 +148,6 @@ export default function ModPresetsPage() {
     []
   );
 
-  // The pending count drives the tab label; refreshed after every mutation.
   const fetchPendingCount = useCallback(async () => {
     try {
       const res = await fetch("/api/mod/presets?status=REVIEW&limit=1");
@@ -154,7 +156,7 @@ export default function ModPresetsPage() {
         setPendingCount(data.total ?? 0);
       }
     } catch {
-      // non-fatal — label just shows a stale count
+      // non-fatal
     }
   }, []);
 
@@ -163,39 +165,23 @@ export default function ModPresetsPage() {
     fetchPendingCount();
   }, [fetchData, fetchPendingCount]);
 
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
-    if (tab === "pending") {
-      fetchData("REVIEW", "");
-    } else if (tab === "search") {
-      fetchData(searchStatus, searchQuery);
-    }
-  };
+  const applyFilters = () => fetchData(statusFilter, searchQuery);
 
-  const handleSearch = () => {
-    fetchData(searchStatus, searchQuery);
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    fetchData(value, searchQuery);
   };
 
   // Re-fetch the current list after a mutation, keeping paged-in rows loaded.
   const refreshCurrent = () => {
-    if (activeTab === "search") {
-      fetchData(searchStatus, searchQuery, {
-        limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, presets.length)),
-      });
-    } else {
-      fetchData("REVIEW", "", {
-        limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, presets.length)),
-      });
-    }
+    fetchData(statusFilter, searchQuery, {
+      limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, presets.length)),
+    });
     fetchPendingCount();
   };
 
   const handleLoadMore = () => {
-    if (activeTab === "search") {
-      fetchData(searchStatus, searchQuery, { offset: presets.length, append: true });
-    } else {
-      fetchData("REVIEW", "", { offset: presets.length, append: true });
-    }
+    fetchData(statusFilter, searchQuery, { offset: presets.length, append: true });
   };
 
   const handleModerate = async (presetId: string, action: "approve" | "reject") => {
@@ -266,14 +252,6 @@ export default function ModPresetsPage() {
     }
   };
 
-  if (loading && presets.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
-      </div>
-    );
-  }
-
   const loadMoreFooter = presets.length < total && (
     <div className="flex flex-col items-center gap-2 pt-4">
       <p className="text-xs text-[#666]">
@@ -291,15 +269,12 @@ export default function ModPresetsPage() {
     </div>
   );
 
-  const renderPresetCard = (preset: ModPreset, opts: { showStatus?: boolean } = {}) => {
+  const renderPresetCard = (preset: ModPreset) => {
     const synthDisplay = SYNTH_DISPLAY_NAMES[preset.synthName] || preset.synthName;
     const categoryDisplay = CATEGORY_DISPLAY_NAMES[preset.presetCategory] || preset.presetCategory;
     const isBusy = busyId === preset.id;
     return (
-      <div
-        key={preset.id}
-        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4"
-      >
+      <div key={preset.id} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
         <div className="flex items-start gap-4">
           {/* Cover */}
           <div className="relative w-16 h-16 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden">
@@ -317,11 +292,9 @@ export default function ModPresetsPage() {
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-white font-medium truncate" title={preset.name}>{preset.name}</h3>
-              {opts.showStatus && (
-                <span className={`px-2 py-0.5 rounded-full text-xs ${statusBadgeClass(preset.status)}`}>
-                  {preset.status}
-                </span>
-              )}
+              <span className={`px-2 py-0.5 rounded-full text-xs ${statusBadgeClass(preset.status)}`}>
+                {preset.status}
+              </span>
               <span className="px-2 py-0.5 rounded-full text-xs bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30">
                 {synthDisplay}
               </span>
@@ -434,128 +407,99 @@ export default function ModPresetsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Preset Moderation</h1>
-        <p className="text-[#a1a1a1] mb-8">
-          Review, approve, and take down community presets.
-        </p>
+    <div className="space-y-4">
+      {/* Filter bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
+          <Input
+            type="text"
+            placeholder="Search by name, genre, creator..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
+            className="pl-12 bg-[#1a1a1a] border-[#2a2a2a] text-white"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => handleStatusChange(e.target.value)}
+          className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-[#39b54a]"
+        >
+          {STATUS_OPTIONS.map(s => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <Button onClick={applyFilters} className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
+          Search
+        </Button>
+      </div>
 
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="bg-[#1a1a1a] border border-[#2a2a2a] p-1 mb-8">
-            <TabsTrigger
-              value="pending"
-              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
-            >
-              Pending Review ({pendingCount})
-            </TabsTrigger>
-            <TabsTrigger
-              value="search"
-              className="data-[state=active]:bg-[#39b54a] data-[state=active]:text-black"
-            >
-              <Search className="w-4 h-4 mr-2" />
-              Search All
-            </TabsTrigger>
-          </TabsList>
+      <p className="text-xs text-[#666]">
+        {pendingCount} preset{pendingCount === 1 ? "" : "s"} pending review
+        {" · "}
+        {total} shown
+      </p>
 
-          {/* Pending Review */}
-          <TabsContent value="pending" className="space-y-4">
-            {presets.length > 0 ? (
-              <>
-                {presets.map(p => renderPresetCard(p))}
-                {loadMoreFooter}
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
-                <p className="text-[#a1a1a1]">All presets have been reviewed!</p>
-              </div>
-            )}
-          </TabsContent>
+      {loading && presets.length === 0 ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 text-[#39b54a] animate-spin" />
+        </div>
+      ) : presets.length > 0 ? (
+        <>
+          {presets.map(renderPresetCard)}
+          {loadMoreFooter}
+        </>
+      ) : (
+        <div className="text-center py-12">
+          <CheckCircle2 className="w-12 h-12 text-[#39b54a] mx-auto mb-4" />
+          <p className="text-[#a1a1a1]">
+            {statusFilter === "REVIEW"
+              ? "All presets have been reviewed!"
+              : "No presets match your filter."}
+          </p>
+        </div>
+      )}
 
-          {/* Search All */}
-          <TabsContent value="search" className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <div className="flex-1 relative">
-                <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
-                <Input
-                  type="text"
-                  placeholder="Search by name, genre, creator..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="pl-12 bg-[#1a1a1a] border-[#2a2a2a] text-white"
-                />
-              </div>
-              <select
-                value={searchStatus}
-                onChange={(e) => setSearchStatus(e.target.value as StatusFilter)}
-                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-[#39b54a]"
+      {/* Flag Creator Modal */}
+      {flaggingCreator && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Flag className="w-5 h-5 text-yellow-400" />
+              Flag Creator for Review
+            </h3>
+            <p className="text-[#a1a1a1] text-sm mb-4">
+              This will flag the account for admin review. Provide a reason:
+            </p>
+            <textarea
+              value={flagReason}
+              onChange={(e) => setFlagReason(e.target.value)}
+              placeholder="Reason for flagging..."
+              className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] mb-4"
+              rows={3}
+            />
+            <div className="flex gap-3">
+              <Button
+                onClick={() => {
+                  setFlaggingCreator(null);
+                  setFlagReason("");
+                }}
+                variant="outline"
+                className="flex-1 border-[#2a2a2a]"
               >
-                {STATUS_OPTIONS.map(s => (
-                  <option key={s} value={s}>{s === "ALL" ? "All statuses" : s}</option>
-                ))}
-              </select>
-              <Button onClick={handleSearch} className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
-                Search
+                Cancel
+              </Button>
+              <Button
+                onClick={() => handleFlagCreator(flaggingCreator)}
+                className="flex-1 bg-yellow-500 text-black hover:bg-yellow-400"
+              >
+                Flag Account
               </Button>
             </div>
-
-            {presets.length > 0 ? (
-              <>
-                <p className="text-xs text-[#666]">{total} result{total === 1 ? "" : "s"}</p>
-                {presets.map(p => renderPresetCard(p, { showStatus: true }))}
-                {loadMoreFooter}
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <Search className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
-                <p className="text-[#a1a1a1]">No presets match your search.</p>
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
-
-        {/* Flag Creator Modal */}
-        {flaggingCreator && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 max-w-md w-full mx-4">
-              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <Flag className="w-5 h-5 text-yellow-400" />
-                Flag Creator for Review
-              </h3>
-              <p className="text-[#a1a1a1] text-sm mb-4">
-                This will flag the account for admin review. Provide a reason:
-              </p>
-              <textarea
-                value={flagReason}
-                onChange={(e) => setFlagReason(e.target.value)}
-                placeholder="Reason for flagging..."
-                className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white placeholder-[#666] focus:outline-none focus:border-[#39b54a] mb-4"
-                rows={3}
-              />
-              <div className="flex gap-3">
-                <Button
-                  onClick={() => {
-                    setFlaggingCreator(null);
-                    setFlagReason("");
-                  }}
-                  variant="outline"
-                  className="flex-1 border-[#2a2a2a]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => handleFlagCreator(flaggingCreator)}
-                  className="flex-1 bg-yellow-500 text-black hover:bg-yellow-400"
-                >
-                  Flag Account
-                </Button>
-              </div>
-            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
