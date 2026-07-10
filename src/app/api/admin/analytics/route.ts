@@ -208,6 +208,7 @@ export async function GET(request: NextRequest) {
       approvedApps,
       usedInvites,
       activeSubscribers,
+      compedSubscribers,
       outstandingAgg,
       totalPublishedSamples,
       creatorCount,
@@ -256,15 +257,32 @@ export async function GET(request: NextRequest) {
         where: { usedAt: { gte: fetchStart } },
         select: { id: true, usedAt: true, usedByUserId: true },
       }),
+      // Active subscribers = real, currently-active subscription records
+      // (provider-backed, not past their period). This excludes beta "subscription
+      // bypass" comps (which set users.subscription_status = "active" but create NO
+      // subscriptions row) and stale flags left behind by missed cancel webhooks.
+      prisma.subscription.count({
+        where: {
+          currentPeriodEnd: { gte: now },
+          OR: [
+            { stripeSubscriptionId: { not: null } },
+            { paypalSubscriptionId: { not: null } },
+          ],
+        },
+      }),
+      // Comped = entitled via the beta bypass (active/past_due flag, no billing row).
       prisma.user.count({
-        where: { subscriptionStatus: { in: ["active", "past_due"] } },
+        where: {
+          subscriptionStatus: { in: ["active", "past_due"] },
+          subscription: { is: null },
+        },
       }),
       prisma.creditBalance.aggregate({ _sum: { balance: true } }),
       prisma.sample.count({ where: { status: "PUBLISHED" } }),
       prisma.user.count({ where: { role: "CREATOR" } }),
       prisma.creditBalance.aggregate({
         _avg: { balance: true },
-        where: { user: { subscriptionStatus: "active" } },
+        where: { user: { subscription: { currentPeriodEnd: { gte: now } } } },
       }),
       prisma.platformSetting.findFirst({ select: { creatorPayoutRate: true } }),
       prisma.user.findMany({
@@ -614,6 +632,7 @@ export async function GET(request: NextRequest) {
       },
       subscriberHealth: {
         activeSubscribers,
+        compedSubscribers,
         upgradeUsers: upgradeUsersCur,
         upgradeRatePct,
         avgCreditsRemaining,

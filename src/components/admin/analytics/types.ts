@@ -65,6 +65,7 @@ export interface AnalyticsResponse {
   };
   subscriberHealth: {
     activeSubscribers: number;
+    compedSubscribers: number;
     upgradeUsers: number;
     upgradeRatePct: number | null;
     avgCreditsRemaining: number | null;
