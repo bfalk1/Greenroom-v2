@@ -342,21 +342,25 @@ export default function VipOfferPage() {
                   </span>
                 )}
 
-                <h3
-                  style={display}
-                  className="text-xl uppercase tracking-wide text-white"
-                >
-                  {pkg.name}
-                </h3>
+                <div className="flex items-start justify-between gap-3">
+                  <h3
+                    style={display}
+                    className="text-xl uppercase tracking-wide text-white"
+                  >
+                    {pkg.name}
+                  </h3>
 
-                <div className="mt-4 flex items-end gap-2">
-                  {isVip && (
-                    <span className="pb-1 text-xl font-semibold text-red-500 line-through decoration-red-500 decoration-2">
-                      ${VIP_LIFETIME_OFFER.regularPrice}
+                  <div className="flex shrink-0 items-end gap-1.5">
+                    {isVip && (
+                      <span className="pb-0.5 text-sm font-semibold text-red-500 line-through decoration-red-500 decoration-2">
+                        ${VIP_LIFETIME_OFFER.regularPrice}
+                      </span>
+                    )}
+                    <span className="text-3xl font-bold leading-none text-white">
+                      ${price}
                     </span>
-                  )}
-                  <span className="text-4xl font-bold text-white">${price}</span>
-                  <span className="pb-1 text-[#a1a1a1]">/mo</span>
+                    <span className="pb-0.5 text-sm text-[#a1a1a1]">/mo</span>
+                  </div>
                 </div>
 
                 <div className="mt-5 flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-4 py-3">
