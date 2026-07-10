@@ -32,9 +32,10 @@ export async function GET(req: NextRequest) {
 
   // Pending = presets awaiting a moderator decision (REVIEW). DRAFT (sent back)
   // and REMOVED (taken down) are excluded so they don't flood the queue.
+  // "ALL" opts out of status filtering entirely — used by the Search All view.
   if (statusFilter && ["DRAFT", "REVIEW", "PUBLISHED", "REMOVED"].includes(statusFilter)) {
     where.status = statusFilter;
-  } else {
+  } else if (statusFilter !== "ALL") {
     where.status = "REVIEW";
   }
 
@@ -53,7 +54,28 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        creatorId: true,
+        synthName: true,
+        presetCategory: true,
+        genre: true,
+        tags: true,
+        creditPrice: true,
+        previewUrl: true,
+        coverImageUrl: true,
+        fileSizeBytes: true,
+        compatibleVersions: true,
+        isInitPreset: true,
+        downloadCount: true,
+        ratingAvg: true,
+        ratingCount: true,
+        status: true,
+        isActive: true,
+        createdAt: true,
         creator: {
           select: {
             id: true,
@@ -70,7 +92,63 @@ export async function GET(req: NextRequest) {
     prisma.preset.count({ where }),
   ]);
 
-  return NextResponse.json({ presets, total });
+  // Batch-sign preview URLs so moderators can audition presets in-browser
+  // (mirrors the public /api/presets route). Preview audio lives in the
+  // private `previews` bucket, stored as a "previews/<path>" reference.
+  const { createClient: createServiceClient } = await import("@supabase/supabase-js");
+  const serviceClient = createServiceClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!.trim()
+  );
+
+  const previewPaths = presets.map(p =>
+    p.previewUrl?.startsWith("previews/") ? p.previewUrl.replace("previews/", "") : null
+  );
+  const validPaths = previewPaths.filter((p): p is string => p !== null);
+
+  const signedUrlMap: Record<string, string> = {};
+  if (validPaths.length > 0) {
+    const { data } = await serviceClient.storage
+      .from("previews")
+      .createSignedUrls(validPaths, 3600);
+    if (data) {
+      for (const item of data) {
+        if (item.signedUrl && item.path) signedUrlMap[item.path] = item.signedUrl;
+      }
+    }
+  }
+
+  // Map to a clean DTO: signed preview URL and BigInt fileSize coerced to a
+  // Number (raw BigInt is not JSON-serializable).
+  const mapped = presets.map((p, i) => {
+    const path = previewPaths[i];
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      creatorId: p.creatorId,
+      synthName: p.synthName,
+      presetCategory: p.presetCategory,
+      genre: p.genre,
+      tags: p.tags,
+      creditPrice: p.creditPrice,
+      previewUrl: path ? signedUrlMap[path] ?? null : null,
+      coverImageUrl: p.coverImageUrl,
+      fileSizeBytes: p.fileSizeBytes != null ? Number(p.fileSizeBytes) : null,
+      compatibleVersions: p.compatibleVersions,
+      isInitPreset: p.isInitPreset,
+      downloadCount: p.downloadCount,
+      ratingAvg: p.ratingAvg,
+      ratingCount: p.ratingCount,
+      status: p.status,
+      isActive: p.isActive,
+      createdAt: p.createdAt.toISOString(),
+      creator: p.creator,
+    };
+  });
+
+  return NextResponse.json({ presets: mapped, total });
 }
 
 // PATCH /api/mod/presets — approve/reject a preset
