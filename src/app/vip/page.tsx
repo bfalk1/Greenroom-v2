@@ -32,8 +32,8 @@ function DemoVideo() {
   if (failed) return null;
 
   return (
-    <section className="relative z-10 px-5 pb-8">
-      <div className="relative mx-auto max-w-6xl">
+    <section className="relative z-10 px-5 pb-6 pt-8 sm:pt-10">
+      <div className="relative mx-auto max-w-3xl">
         <div
           aria-hidden
           className="pointer-events-none absolute -inset-8 -z-0 rounded-[2.5rem] opacity-35 blur-[80px]"
@@ -279,6 +279,9 @@ export default function VipOfferPage() {
         </Link>
       </header>
 
+      {/* Demo video — leads the page */}
+      <DemoVideo />
+
       {/* Hero + lifetime graphic */}
       <section className="relative px-5 pb-6 pt-8 text-center sm:pt-12">
         <div
@@ -292,15 +295,15 @@ export default function VipOfferPage() {
         <div className="relative z-10 mx-auto max-w-3xl">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#39b54a]/30 bg-[#39b54a]/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-[#39b54a]">
             <Sparkles className="h-3.5 w-3.5" />
-            New member offer
+            New VIP offer
           </p>
           <h1
             style={display}
             className="text-[clamp(2rem,5.5vw,4rem)] uppercase leading-[0.95] tracking-[-0.01em]"
           >
-            <span className="block text-white">Choose your</span>
+            <span className="text-white">Choose your</span>{" "}
             <span
-              className="block text-[#39b54a]"
+              className="text-[#39b54a]"
               style={{ textShadow: "0 0 50px rgba(0,255,136,0.4)" }}
             >
               plan
@@ -312,9 +315,6 @@ export default function VipOfferPage() {
           </p>
         </div>
       </section>
-
-      {/* Demo video */}
-      <DemoVideo />
 
       {/* All plans */}
       <section className="relative px-5 pb-20 pt-4">
