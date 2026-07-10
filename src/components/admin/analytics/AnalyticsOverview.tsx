@@ -479,7 +479,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
             )}
             deltaTitle={`Subscription renewals ${deltaTitle}`}
             series={k.activeSubscribers.series}
-            note="Trend & Δ from renewals/day"
+            note="Paying · Δ from renewals/day"
           />
           <StatCard
             label="Items Purchased"
@@ -656,8 +656,13 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
 
               <Panel title="Subscriber Health">
                 <MetricRow
+                  label="Comped (beta)"
+                  hint="active access, no billing"
+                  value={fmtInt(sh.compedSubscribers)}
+                />
+                <MetricRow
                   label="Upgrade Rate"
-                  hint={`${fmtInt(sh.upgradeUsers)} of ${fmtInt(sh.activeSubscribers)} subscribers`}
+                  hint={`${fmtInt(sh.upgradeUsers)} of ${fmtInt(sh.activeSubscribers)} paying subscribers`}
                   value={fmtPct(sh.upgradeRatePct)}
                 />
                 <MetricRow
