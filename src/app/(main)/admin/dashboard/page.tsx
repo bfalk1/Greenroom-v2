@@ -25,6 +25,7 @@ import {
   FileText,
   Upload,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { AdminSidebar, AdminSidebarItem } from "@/components/admin/AdminSidebar";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
@@ -37,6 +38,7 @@ import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
 import { InviteInfiniteUserPanel } from "@/components/admin/InviteInfiniteUserPanel";
 import { CreatorUploadsPanel } from "@/components/admin/CreatorUploadsPanel";
+import AnalyticsOverview from "@/components/admin/analytics/AnalyticsOverview";
 import { toast } from "sonner";
 
 type AdminSection =
@@ -191,6 +193,7 @@ export default function AdminDashboardPage() {
   const [payoutFilter, setPayoutFilter] = useState<string>("PENDING");
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [editingSample, setEditingSample] = useState<ReturnType<
     typeof mapSampleForPanel
@@ -582,73 +585,24 @@ export default function AdminDashboardPage() {
         {/* Content */}
         <div className="flex-1 min-w-0">
           {activeSection === "overview" && (
-            <div>
-              {/* Platform Overview Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Users</p>
-                      <p className="text-3xl font-bold text-white">{stats?.totalUsers ?? "—"}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-blue-400" />
-                  </div>
-                </div>
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Creators</p>
-                      <p className="text-3xl font-bold text-white">{stats?.totalCreators ?? "—"}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-purple-400" />
-                  </div>
-                </div>
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Samples</p>
-                      <p className="text-3xl font-bold text-white">{stats?.totalSamples ?? "—"}</p>
-                    </div>
-                    <Music className="w-8 h-8 text-[#39b54a]" />
-                  </div>
-                </div>
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Total Purchases</p>
-                      <p className="text-3xl font-bold text-white">{stats?.totalPurchases ?? "—"}</p>
-                    </div>
-                    <CheckCircle2 className="w-8 h-8 text-green-400" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Items */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Pending Applications</p>
-                      <p className="text-3xl font-bold text-white">
-                        {stats?.pendingApplications ?? applications.length}
-                      </p>
-                    </div>
-                    <Clock className="w-8 h-8 text-[#39b54a]" />
-                  </div>
-                </div>
-                <div className="p-6 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a]">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#a1a1a1] mb-1">Samples Awaiting Review</p>
-                      <p className="text-3xl font-bold text-white">
-                        {stats?.pendingSamples ?? draftSamples.length}
-                      </p>
-                    </div>
-                    <Music className="w-8 h-8 text-[#39b54a]" />
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AnalyticsOverview
+              onNavigate={(id) => {
+                // Preset moderation lives on the mod queue page, not in a
+                // dashboard section.
+                if (id === "presets") {
+                  router.push("/mod/samples");
+                  return;
+                }
+                const next = id as AdminSection;
+                setActiveSection(next);
+                if (next === "payouts") {
+                  fetchPayouts("PENDING");
+                }
+                if (next === "tools") {
+                  fetchSettings();
+                }
+              }}
+            />
           )}
           {activeSection === "applications" && (
             <div>
