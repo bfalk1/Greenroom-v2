@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
+import { tierNameForStripePrice } from "@/lib/stripe/config";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -79,10 +80,17 @@ async function handleCheckoutCompleted(
     return;
   }
 
-  // Find the matching tier
-  const tier = await prisma.subscriptionTier.findFirst({
-    where: { stripePriceId: priceId, isActive: true },
-  });
+  // Resolve the tier from the env price map (single source of truth — mirrors
+  // the checkout route), then load the row by its stable name for the FK id +
+  // credits. The DB stripe_price_id column is intentionally not consulted, so a
+  // rotated price ID can't leave a paying subscriber unresolvable here (which
+  // would silently skip their subscription record + credit grant).
+  const tierName = tierNameForStripePrice(priceId);
+  const tier = tierName
+    ? await prisma.subscriptionTier.findFirst({
+        where: { name: tierName, isActive: true },
+      })
+    : null;
 
   if (!tier) {
     console.error(`No tier found for priceId: ${priceId}`);
@@ -247,9 +255,13 @@ async function handleSubscriptionUpdated(
   const newPriceId = subscription.items.data[0]?.price.id;
   if (!newPriceId) return;
 
-  const newTier = await prisma.subscriptionTier.findFirst({
-    where: { stripePriceId: newPriceId, isActive: true },
-  });
+  // Env price map → stable tier name → DB row (same as handleCheckoutCompleted).
+  const newTierName = tierNameForStripePrice(newPriceId);
+  const newTier = newTierName
+    ? await prisma.subscriptionTier.findFirst({
+        where: { name: newTierName, isActive: true },
+      })
+    : null;
 
   if (!newTier) return;
 

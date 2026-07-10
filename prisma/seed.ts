@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { randomBytes } from "node:crypto";
+import { SUBSCRIPTION_TIERS } from "../src/lib/stripe/config";
 
 const prisma = new PrismaClient();
 
@@ -26,30 +27,19 @@ async function main() {
   assertSafeToSeed();
   console.log("🌱 Seeding database...");
 
-  // Upsert subscription tiers
-  const tiers = [
-    {
-      name: "GA",
-      displayName: "General Admission",
-      creditsPerMonth: 100,
-      priceUsdCents: 1099,
-      stripePriceId: "price_1Sx90A5k6Fwn7Cbz1uGYPTpZ",
-    },
-    {
-      name: "VIP",
-      displayName: "VIP",
-      creditsPerMonth: 200,
-      priceUsdCents: 1899,
-      stripePriceId: "price_1Sx90Q5k6Fwn7CbzwN0qSyDO",
-    },
-    {
-      name: "AA",
-      displayName: "All Access",
-      creditsPerMonth: 500,
-      priceUsdCents: 3499,
-      stripePriceId: "price_1Sx90e5k6Fwn7CbzYPkArchS",
-    },
-  ];
+  // Upsert subscription tiers. Sourced from the env-driven SUBSCRIPTION_TIERS
+  // config — the SAME single source of truth the app resolves against — so the
+  // seeded rows can never drift from the live Stripe price IDs (a hardcoded list
+  // here previously went stale and 400'd every checkout with "Invalid
+  // subscription plan"). stripePriceId is stored for reference only; the app no
+  // longer reads it (tier resolution goes through tierNameForStripePrice).
+  const tiers = Object.values(SUBSCRIPTION_TIERS).map((t) => ({
+    name: t.name,
+    displayName: t.displayName,
+    creditsPerMonth: t.creditsPerMonth,
+    priceUsdCents: t.priceUsdCents,
+    stripePriceId: t.stripePriceId || null,
+  }));
 
   for (const tier of tiers) {
     await prisma.subscriptionTier.upsert({
