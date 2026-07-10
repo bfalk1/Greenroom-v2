@@ -70,8 +70,6 @@ export function Navbar() {
                   {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                     navLink("/mod/samples", "Moderation")}
-                  {(user.role === "MODERATOR" || user.role === "ADMIN") &&
-                    navLink("/mod/presets", "Preset Review")}
                   {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
                   {downloadBubble}
                 </>
@@ -193,11 +191,6 @@ export function Navbar() {
                   {(user.role === "MODERATOR" || user.role === "ADMIN") && (
                     <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                       Moderation
-                    </Link>
-                  )}
-                  {(user.role === "MODERATOR" || user.role === "ADMIN") && (
-                    <Link href="/mod/presets" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                      Preset Review
                     </Link>
                   )}
                   {user.role === "ADMIN" && (
