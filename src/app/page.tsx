@@ -79,9 +79,9 @@ function DemoVideo() {
   if (failed) return null;
 
   return (
-    <section className="relative z-10 -mt-16 px-5 sm:-mt-20">
+    <section className="relative z-10 -mt-20 px-5 sm:-mt-28">
       <Reveal>
-        <div className="relative mx-auto max-w-5xl">
+        <div className="relative mx-auto max-w-6xl">
           <div
             aria-hidden
             className="pointer-events-none absolute -inset-8 -z-0 rounded-[2.5rem] opacity-35 blur-[80px]"
@@ -166,7 +166,7 @@ export default function LandingPage() {
       </header>
 
       {/* ---------- HERO ---------- */}
-      <section className="relative flex h-screen min-h-[640px] flex-col items-center justify-center overflow-hidden px-5 text-center">
+      <section className="relative flex h-[82vh] min-h-[600px] flex-col items-center justify-center overflow-hidden px-5 text-center">
         {/* Background webp ("the gif") */}
         <div className="absolute inset-0">
           <img src="/background.webp" alt="" className="h-full w-full object-cover" />
@@ -182,7 +182,7 @@ export default function LandingPage() {
         <div className="relative z-10 flex flex-col items-center">
           <h1
             style={display}
-            className={`max-w-5xl text-[clamp(2.8rem,9vw,7.5rem)] uppercase leading-[0.92] tracking-[-0.01em] transition-all duration-1000 delay-150 ${
+            className={`max-w-5xl text-[clamp(2.4rem,7.5vw,6rem)] uppercase leading-[0.92] tracking-[-0.01em] transition-all duration-1000 delay-150 ${
               mounted ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
             }`}
           >
@@ -196,7 +196,7 @@ export default function LandingPage() {
           </h1>
 
           <p
-            className={`mt-7 max-w-xl text-base leading-relaxed text-[#c9c9c9] sm:text-lg transition-all duration-1000 delay-300 ${
+            className={`mt-6 max-w-xl text-sm leading-relaxed text-[#c9c9c9] sm:text-base transition-all duration-1000 delay-300 ${
               mounted ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
             }`}
           >

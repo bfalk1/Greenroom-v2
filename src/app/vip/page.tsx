@@ -33,7 +33,7 @@ function DemoVideo() {
 
   return (
     <section className="relative z-10 px-5 pb-8">
-      <div className="relative mx-auto max-w-5xl">
+      <div className="relative mx-auto max-w-6xl">
         <div
           aria-hidden
           className="pointer-events-none absolute -inset-8 -z-0 rounded-[2.5rem] opacity-35 blur-[80px]"
@@ -280,7 +280,7 @@ export default function VipOfferPage() {
       </header>
 
       {/* Hero + lifetime graphic */}
-      <section className="relative px-5 pb-10 pt-10 text-center sm:pt-16">
+      <section className="relative px-5 pb-6 pt-8 text-center sm:pt-12">
         <div
           aria-hidden
           className="pointer-events-none absolute left-1/2 top-0 -z-0 h-[460px] w-[680px] -translate-x-1/2 rounded-full opacity-30 blur-[130px]"
@@ -296,7 +296,7 @@ export default function VipOfferPage() {
           </p>
           <h1
             style={display}
-            className="text-[clamp(2.4rem,7vw,5rem)] uppercase leading-[0.95] tracking-[-0.01em]"
+            className="text-[clamp(2rem,5.5vw,4rem)] uppercase leading-[0.95] tracking-[-0.01em]"
           >
             <span className="block text-white">Choose your</span>
             <span
@@ -306,7 +306,7 @@ export default function VipOfferPage() {
               plan
             </span>
           </h1>
-          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-[#bdbdbd] sm:text-lg">
+          <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-[#bdbdbd] sm:text-base">
             Every plan includes monthly credits that roll over and 100%
             royalty-free samples.
           </p>

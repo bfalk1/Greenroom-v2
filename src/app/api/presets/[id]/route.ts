@@ -135,3 +135,65 @@ export async function PATCH(
     );
   }
 }
+
+// DELETE /api/presets/[id] — Creator deletes their own preset. Mirrors the
+// sample delete: verify ownership, then remove the preset and every dependent
+// row atomically so a mid-cascade failure can't leave the preset live while
+// buyers' purchase/download history is already gone (or vice versa).
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const supabase = await createClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+
+    if (!authUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: { role: true },
+    });
+
+    if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
+      return NextResponse.json(
+        { error: "Only creators can delete presets" },
+        { status: 403 }
+      );
+    }
+
+    const existing = await prisma.preset.findUnique({ where: { id } });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Preset not found" }, { status: 404 });
+    }
+
+    if (existing.creatorId !== authUser.id) {
+      return NextResponse.json(
+        { error: "You can only delete your own presets" },
+        { status: 403 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.download.deleteMany({ where: { presetId: id } });
+      await tx.purchase.deleteMany({ where: { presetId: id } });
+      await tx.rating.deleteMany({ where: { presetId: id } });
+      await tx.favorite.deleteMany({ where: { presetId: id } });
+      await tx.preset.delete({ where: { id } });
+    });
+
+    return NextResponse.json({ success: true, message: "Preset deleted" });
+  } catch (error) {
+    console.error("DELETE /api/presets/[id] error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete preset" },
+      { status: 500 }
+    );
+  }
+}

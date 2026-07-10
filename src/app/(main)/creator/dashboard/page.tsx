@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2, CheckSquare, Square, X } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2, CheckSquare, Square, X, Sliders } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
 import {
   getSampleTableRowClass,
   SAMPLE_TABLE_WAVEFORM_CLASS,
   SampleTableHeader,
 } from "@/components/marketplace/SampleTable";
+import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
@@ -312,11 +313,218 @@ function CreatorSampleRow({
   );
 }
 
+const SYNTH_DISPLAY_NAMES: Record<string, string> = {
+  SERUM: "Serum",
+  ASTRA: "Astra",
+  SERUM_2: "Serum 2",
+  PHASE_PLANT: "Phase Plant",
+  SPLICE: "Splice",
+  VITAL: "Vital",
+  SYLENTH1: "Sylenth1",
+  MASSIVE: "Massive",
+  BEAT_MAKER: "Beat Maker",
+};
+
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  BASS: "Bass",
+  LEAD: "Lead",
+  PAD: "Pad",
+  PLUCK: "Pluck",
+  FX: "FX",
+  KEYS: "Keys",
+  ARP: "Arp",
+  SEQUENCE: "Sequence",
+  OTHER: "Other",
+};
+
+interface CreatorPreset {
+  id: string;
+  name: string;
+  slug: string;
+  synthName: string;
+  presetCategory: string;
+  genre: string;
+  tags: string[];
+  creditPrice: number;
+  coverImageUrl?: string | null;
+  creatorAvatarUrl?: string | null;
+  previewUrl?: string | null;
+  status: string;
+  downloadCount: number;
+  ratingAvg: number;
+  ratingCount: number;
+  purchases: number;
+  downloads: number;
+  totalCredits: number;
+  earningsUsd: number;
+  createdAt: string;
+}
+
+// Preset management row — mirrors CreatorSampleRow but preset-shaped: synth +
+// category instead of waveform/key/bpm, and no "submit for review" (presets go
+// straight to REVIEW on upload). Reuses the same creatorAudio manager so preset
+// and sample playback never overlap.
+function CreatorPresetRow({
+  preset,
+  onDelete,
+}: {
+  preset: CreatorPreset;
+  onDelete: (id: string) => void;
+}) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPlayingState, setIsPlayingState] = useState(false);
+
+  useEffect(() => {
+    creatorSetters.set(preset.id, setIsPlayingState);
+    return () => {
+      creatorSetters.delete(preset.id);
+      if (creatorPlayingId === preset.id) {
+        getCreatorAudio()?.pause();
+        creatorPlayingId = null;
+      }
+    };
+  }, [preset.id]);
+
+  const handlePlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!preset.previewUrl) {
+      toast.error("No audio preview for this preset");
+      return;
+    }
+
+    const audio = getCreatorAudio();
+    if (!audio) return;
+
+    if (creatorPlayingId === preset.id) {
+      audio.pause();
+      setIsPlayingState(false);
+      creatorPlayingId = null;
+      return;
+    }
+
+    if (creatorPlayingId) {
+      creatorSetters.get(creatorPlayingId)?.(false);
+      audio.pause();
+    }
+
+    setIsLoading(true);
+    try {
+      audio.src = preset.previewUrl;
+      audio.currentTime = 0;
+      await audio.play();
+      creatorPlayingId = preset.id;
+      setIsPlayingState(true);
+    } catch (err) {
+      console.error("Play error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const synthDisplay = SYNTH_DISPLAY_NAMES[preset.synthName] || preset.synthName;
+  const categoryDisplay = CATEGORY_DISPLAY_NAMES[preset.presetCategory] || preset.presetCategory;
+
+  return (
+    <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_110px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors hover:bg-[#242424]">
+      {/* Cover + Play */}
+      <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
+        <img
+          src={
+            preset.coverImageUrl ||
+            preset.creatorAvatarUrl ||
+            "https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=80&h=80&fit=crop"
+          }
+          alt={preset.name}
+          className="w-full h-full object-cover"
+        />
+        {preset.previewUrl && (
+          <button
+            onClick={handlePlay}
+            className={`absolute inset-0 flex items-center justify-center transition ${
+              isPlayingState || isLoading ? "bg-black/60" : "bg-black/0 group-hover:bg-black/60"
+            }`}
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />
+            ) : isPlayingState ? (
+              <Pause className="w-4 h-4 fill-current text-[#39b54a]" />
+            ) : (
+              <Play className="w-4 h-4 fill-current text-white opacity-0 group-hover:opacity-100 transition ml-0.5" />
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Synth — hidden on mobile */}
+      <span className="hidden md:block text-xs font-medium text-[#39b54a] truncate">
+        {synthDisplay}
+      </span>
+
+      {/* Name + price */}
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-white" title={preset.name}>
+          {preset.name}
+        </p>
+        <p className="text-xs text-[#666]">
+          <span className="md:hidden">{synthDisplay} · </span>
+          {preset.creditPrice} credits
+        </p>
+      </div>
+
+      {/* Category — hidden on mobile */}
+      <span className="hidden md:block text-sm text-[#a1a1a1] truncate">
+        {categoryDisplay}
+      </span>
+
+      {/* Genre — hidden on mobile */}
+      <span className="hidden md:block text-sm text-[#a1a1a1] truncate">
+        {preset.genre || "—"}
+      </span>
+
+      {/* Status */}
+      <div>
+        <span
+          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+            preset.status === "PUBLISHED"
+              ? "bg-[#39b54a]/20 text-[#39b54a]"
+              : preset.status === "REVIEW"
+              ? "bg-yellow-500/20 text-yellow-400"
+              : preset.status === "REMOVED"
+              ? "bg-red-500/20 text-red-400"
+              : "bg-[#2a2a2a] text-[#a1a1a1]"
+          }`}
+        >
+          {preset.status === "REMOVED" ? "Removed by moderator" : preset.status}
+        </span>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onDelete(preset.id)}
+          className="h-7 w-7 p-0 text-[#a1a1a1] hover:text-red-400 hover:bg-red-500/10"
+          title="Delete"
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function CreatorDashboardPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
+  const [activeTab, setActiveTab] = useState<MarketplaceTab>("samples");
   const [samples, setSamples] = useState<CreatorSample[]>([]);
   const [filteredSamples, setFilteredSamples] = useState<CreatorSample[]>([]);
+  const [presets, setPresets] = useState<CreatorPreset[]>([]);
+  const [filteredPresets, setFilteredPresets] = useState<CreatorPreset[]>([]);
+  const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetsFetched, setPresetsFetched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -339,6 +547,23 @@ export default function CreatorDashboardPage() {
     }
   }, []);
 
+  const fetchPresets = useCallback(async () => {
+    try {
+      setPresetsLoading(true);
+      const res = await fetch("/api/creator/presets");
+      if (!res.ok) throw new Error("Failed to fetch presets");
+      const data = await res.json();
+      setPresets(data.presets);
+      setFilteredPresets(data.presets);
+      setPresetsFetched(true);
+    } catch (error) {
+      console.error("Error fetching presets:", error);
+      toast.error("Failed to load your presets");
+    } finally {
+      setPresetsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
       fetchSamples();
@@ -347,12 +572,35 @@ export default function CreatorDashboardPage() {
     }
   }, [user, userLoading, fetchSamples]);
 
+  // Presets are fetched lazily the first time the Presets tab is opened.
+  useEffect(() => {
+    if (
+      activeTab === "presets" &&
+      !presetsFetched &&
+      user &&
+      (user.role === "CREATOR" || user.role === "ADMIN")
+    ) {
+      fetchPresets();
+    }
+  }, [activeTab, presetsFetched, user, fetchPresets]);
+
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    const filtered = samples.filter((s) =>
-      s.name.toLowerCase().includes(query.toLowerCase())
-    );
-    setFilteredSamples(filtered);
+    const q = query.toLowerCase();
+    setFilteredSamples(samples.filter((s) => s.name.toLowerCase().includes(q)));
+    setFilteredPresets(presets.filter((p) => p.name.toLowerCase().includes(q)));
+  };
+
+  const handleDeletePreset = async (presetId: string) => {
+    if (!confirm("Delete this preset? This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/presets/${presetId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      toast.success("Preset deleted");
+      fetchPresets();
+    } catch {
+      toast.error("Failed to delete preset");
+    }
   };
 
   const handleDeleteSample = async (sampleId: string) => {
@@ -485,8 +733,8 @@ export default function CreatorDashboardPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Bulk action bar */}
-        {selectedIds.size > 0 && (
+        {/* Bulk action bar (samples only) */}
+        {activeTab === "samples" && selectedIds.size > 0 && (
           <div className="sticky top-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-[#141414]/95 backdrop-blur border-b border-[#39b54a]/30 flex flex-wrap items-center gap-3">
             <span className="text-sm font-medium text-white">{selectedIds.size} selected</span>
             <Button
@@ -578,6 +826,21 @@ export default function CreatorDashboardPage() {
           totalPurchases={totalPurchases}
         />
 
+        {/* Samples / Presets tabs */}
+        <div className="mt-6">
+          <MarketplaceTabs
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              setSearchQuery("");
+              setFilteredSamples(samples);
+              setFilteredPresets(presets);
+            }}
+          />
+        </div>
+
+        {activeTab === "samples" && (
+        <>
         {/* Search */}
         {samples.length > 0 && (
           <div className="mb-6">
@@ -636,6 +899,80 @@ export default function CreatorDashboardPage() {
               Upload Sample
             </Button>
           </div>
+        )}
+        </>
+        )}
+
+        {activeTab === "presets" && (
+        <>
+        {/* Search */}
+        {presets.length > 0 && (
+          <div className="mb-6">
+            <div className="relative">
+              <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
+              <Input
+                type="text"
+                placeholder="Search your presets..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Presets Grid */}
+        {presetsLoading && !presetsFetched ? (
+          <div className="space-y-2">
+            {Array(6)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
+              ))}
+          </div>
+        ) : filteredPresets.length > 0 ? (
+          <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_110px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+              <div className="w-10" />
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
+              <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Status</span>
+              <div className="text-xs font-medium text-[#a1a1a1]"></div>
+            </div>
+
+            {/* Rows */}
+            <div className="divide-y divide-[#2a2a2a]">
+              {filteredPresets.map((preset) => (
+                <CreatorPresetRow
+                  key={preset.id}
+                  preset={preset}
+                  onDelete={handleDeletePreset}
+                />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-16">
+            <Sliders className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">
+              No presets yet
+            </h3>
+            <p className="text-[#a1a1a1] mb-6">
+              Upload your first preset to get started.
+            </p>
+            <Button
+              onClick={() => router.push("/creator/upload-preset")}
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Upload Preset
+            </Button>
+          </div>
+        )}
+        </>
         )}
 
         {/* Creator Terms link */}
