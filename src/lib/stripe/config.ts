@@ -27,6 +27,23 @@ export const SUBSCRIPTION_TIERS = {
 
 export type TierName = keyof typeof SUBSCRIPTION_TIERS;
 
+// Reverse-map a Stripe price ID to its tier name using the env-driven config
+// above — the price↔tier mapping lives ONLY in env (this mirrors PayPal's
+// tierNameForPaypalPlan). Callers resolve the DB SubscriptionTier row by this
+// stable `name`, so rotating a Stripe price ID is an env-only change: it can't
+// drift from the subscription_tiers.stripe_price_id column and strand a
+// checkout ("Invalid subscription plan") or a webhook credit grant.
+export function tierNameForStripePrice(priceId: string): TierName | null {
+  if (!priceId) return null;
+  for (const name of Object.keys(SUBSCRIPTION_TIERS) as TierName[]) {
+    const configured = SUBSCRIPTION_TIERS[name].stripePriceId;
+    // An unset env var collapses stripePriceId to "" — never match on empty, or
+    // a missing price ID would resolve to whichever tier is also unconfigured.
+    if (configured && configured === priceId) return name;
+  }
+  return null;
+}
+
 export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }

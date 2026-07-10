@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
-import { stripeTaxCheckoutParams } from "@/lib/stripe/config";
+import { stripeTaxCheckoutParams, tierNameForStripePrice } from "@/lib/stripe/config";
 import { VIP_OFFER_COOKIE, vipLifetimeCouponId, verifyVipUnlock } from "@/lib/vipOffer";
 
 export async function POST(request: Request) {
@@ -26,15 +26,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Only allow checkout against a priceId that maps to an active tier. This is
-    // the SAME lookup the Stripe webhook uses to grant the subscription + credits
-    // (see handleCheckoutCompleted), so accepting anything else would let a user
+    // Only allow checkout against a priceId that maps to an active tier. The
+    // price→tier mapping comes from env (tierNameForStripePrice); we then confirm
+    // the tier is active in our DB by its stable name. This is the SAME
+    // resolution the Stripe webhook uses to grant the subscription + credits (see
+    // handleCheckoutCompleted), so accepting anything else would let a user
     // subscribe at an off-list/legacy/test price that the webhook can't resolve —
     // leaving a live Stripe subscription with no Greenroom record.
-    const tier = await prisma.subscriptionTier.findFirst({
-      where: { stripePriceId: priceId, isActive: true },
-      select: { id: true, name: true },
-    });
+    const tierName = tierNameForStripePrice(priceId);
+    const tier = tierName
+      ? await prisma.subscriptionTier.findFirst({
+          where: { name: tierName, isActive: true },
+          select: { id: true, name: true },
+        })
+      : null;
 
     if (!tier) {
       return NextResponse.json(
