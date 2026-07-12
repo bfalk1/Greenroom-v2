@@ -12,6 +12,7 @@ import { resolveCanadaTax, taxCollectionEnabled } from "@/lib/tax/canadaRates";
 import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
+import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
 
 export async function POST(request: Request) {
   try {
@@ -108,26 +109,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // The lifetime offer is for NEW accounts only — anyone who has EVER
-    // subscribed (a prior/cancelled subscription, or any non-empty status) is
-    // ineligible. The active/past_due case is already handled above; this also
-    // blocks churned users. Enforced server-side so a direct API call can't
+    // The lifetime offer is for accounts that have never PAID — a
+    // provider-backed subscription row disqualifies; beta comps (flag only, no
+    // row) stay eligible. The active/past_due case is already handled above.
+    // Shared rule with /api/user/subscription and the Stripe checkout route
+    // via isLifetimeEligible; enforced server-side so a direct API call can't
     // bypass the client gate.
-    if (isLifetime) {
-      const priorSub = await prisma.subscription.findUnique({
-        where: { userId: dbUser.id },
-        select: { id: true },
-      });
-      const hasSubscriptionHistory =
-        priorSub != null ||
-        (dbUser.subscriptionStatus != null &&
-          dbUser.subscriptionStatus !== "none");
-      if (hasSubscriptionHistory) {
-        return NextResponse.json(
-          { error: "The lifetime offer is for new accounts only." },
-          { status: 409 }
-        );
-      }
+    if (isLifetime && !(await isLifetimeEligible(dbUser.id))) {
+      return NextResponse.json(
+        {
+          error:
+            "The lifetime offer is for members without a prior paid subscription.",
+        },
+        { status: 409 }
+      );
     }
 
     // Location-based tax, added on top (exclusive). The rate is resolved from TWO
@@ -161,7 +156,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm";
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm").trim();
 
     const subscription = await createPaypalSubscription({
       planId,

@@ -21,10 +21,35 @@ export function resetAnalytics() {
   posthog.reset();
 }
 
+// --- Funnel: Landing ---
+
+// Which landing-page CTA converts. cta values: nav_join, nav_signin,
+// hero_signup, hero_browse, final_signup, final_signin.
+export function trackLandingCta(cta: string) {
+  posthog.capture("landing_cta_clicked", { cta });
+}
+
 // --- Auth ---
 
-export function trackSignup(method: "email" | "invite") {
-  posthog.capture("signup", { method });
+export function trackSignup(method: "email" | "invite", source?: string) {
+  // source attributes the signup to a funnel (e.g. "vip" for the lifetime
+  // offer) so the 267-landed→N-subscribed question can be segmented at the
+  // signup step instead of only at the endpoints.
+  posthog.capture("signup", { method, ...(source ? { source } : {}) });
+}
+
+// Signup-step leaks: client validation, provider rejections, and the
+// already-registered dead end each shed would-be subscribers differently.
+export function trackSignupFailed(
+  reason:
+    | "password_mismatch"
+    | "password_too_short"
+    | "terms_not_accepted"
+    | "already_registered"
+    | "provider_error"
+    | "error"
+) {
+  posthog.capture("signup_failed", { reason });
 }
 
 export function trackLogin() {
@@ -49,12 +74,118 @@ export function trackPaywallViewed(redirectFrom?: string) {
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
-export function trackSubscriptionCheckout(plan: string, priceId: string) {
-  posthog.capture("subscription_checkout", { plan, price_id: priceId });
+// Plan click on /pricing. destination captures the anonymous-intent leak:
+// signed-out clickers bounce to /signup and their tier choice is dropped, so
+// signed_in=false + destination=signup marks funnel exits the checkout events
+// can never see. (/vip has its own vip_plan_selected.)
+export function trackPricingPlanSelected(
+  tier: string,
+  opts: { signedIn: boolean; destination: "checkout" | "signup" }
+) {
+  posthog.capture("pricing_plan_selected", {
+    tier,
+    signed_in: opts.signedIn,
+    destination: opts.destination,
+  });
 }
 
-export function trackSubscriptionActivated(plan: string) {
-  posthog.capture("subscription_activated", { plan });
+export function trackSubscriptionCheckout(
+  plan: string,
+  priceId: string,
+  opts?: { tier?: string; lifetime?: boolean; method?: string }
+) {
+  posthog.capture("subscription_checkout", {
+    plan,
+    price_id: priceId,
+    tier: opts?.tier,
+    lifetime: opts?.lifetime ?? false,
+    payment_method: opts?.method,
+  });
+}
+
+// NOTE: subscription_activated is captured SERVER-side only (see
+// src/lib/analyticsServer.ts) — it fires from the grant itself (webhook /
+// PayPal return), not from a success page the buyer may never see. Don't
+// reintroduce a client emitter for it: the same event name from both sides
+// double-counts the funnel's key conversion.
+
+// --- Funnel: VIP lifetime offer (/vip) ---
+
+// Fired once when the /vip page resolves — `gate` if the password wall is
+// showing, `unlocked` if the offer itself is visible (cookie already cleared).
+export function trackVipOfferViewed(state: "gate" | "unlocked") {
+  posthog.capture("vip_offer_viewed", { state });
+}
+
+// reason distinguishes a genuinely wrong code from the per-IP rate limiter
+// (10/min) and transport errors — without it the gate's failure rate looks
+// like bad codes when it's actually shared-IP throttling.
+export function trackVipOfferUnlock(
+  success: boolean,
+  reason?: "wrong_password" | "rate_limited" | "error"
+) {
+  posthog.capture(success ? "vip_offer_unlocked" : "vip_offer_unlock_failed", {
+    ...(reason ? { reason } : {}),
+  });
+}
+
+export function trackVipPlanSelected(tier: string, lifetime: boolean) {
+  posthog.capture("vip_plan_selected", { tier, lifetime });
+}
+
+// User accepted the lifetime-terms modal and is being sent to checkout.
+export function trackVipLifetimeConfirmed() {
+  posthog.capture("vip_lifetime_confirmed");
+}
+
+// --- Funnel: checkout page ---
+
+export function trackCheckoutViewed(props: {
+  tier: string;
+  lifetime: boolean;
+  lifetimeEligible: boolean | null;
+}) {
+  posthog.capture("checkout_viewed", {
+    tier: props.tier,
+    lifetime: props.lifetime,
+    lifetime_eligible: props.lifetimeEligible,
+  });
+}
+
+export function trackCheckoutMethodSelected(method: "card" | "paypal") {
+  posthog.capture("checkout_method_selected", { method });
+}
+
+// The event that answers "are payment errors blocking subscribers": every
+// failed checkout API call is captured with its endpoint, status and message
+// (previously these failures existed only in provider request logs).
+export function trackCheckoutApiError(props: {
+  endpoint: string;
+  status: number;
+  message: string;
+}) {
+  posthog.capture("checkout_api_error", {
+    endpoint: props.endpoint,
+    status: props.status,
+    message: props.message,
+  });
+}
+
+// /checkout/complete verification result. NOT the activation event (that is
+// server-side, from the grant) — this measures what the BUYER saw: how long
+// verification took, and how often it times out (webhook lag) or errors.
+export function trackCheckoutCompleteOutcome(props: {
+  provider: string | null;
+  initialStatus: string | null;
+  outcome: "confirmed" | "timeout" | "error";
+  secondsToConfirm?: number;
+}) {
+  posthog.capture("checkout_complete_outcome", {
+    provider: props.provider,
+    initial_status: props.initialStatus,
+    outcome: props.outcome,
+    seconds_to_confirm: props.secondsToConfirm,
+  });
 }
 
 // --- Funnel: Browse → Play → Buy ---

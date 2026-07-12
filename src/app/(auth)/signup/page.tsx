@@ -4,12 +4,13 @@ import React, { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { trackSignup } from "@/lib/analytics";
+import { trackSignup, trackSignupFailed } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Sparkles, Loader2 } from "lucide-react";
 import { safeRedirectPath } from "@/lib/safeRedirect";
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 
 interface InviteData {
   email: string;
@@ -29,6 +30,10 @@ function SignupForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
+    "idle"
+  );
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -97,16 +102,19 @@ function SignupForm() {
     setError(null);
 
     if (password !== confirmPassword) {
+      trackSignupFailed("password_mismatch");
       setError("Passwords don't match");
       return;
     }
 
     if (password.length < 6) {
+      trackSignupFailed("password_too_short");
       setError("Password must be at least 6 characters");
       return;
     }
 
     if (!termsAccepted) {
+      trackSignupFailed("terms_not_accepted");
       setError("You must accept the Terms of Use and Privacy Policy");
       return;
     }
@@ -128,18 +136,45 @@ function SignupForm() {
       });
 
       if (error) {
+        trackSignupFailed("provider_error");
         setError(error.message);
         return;
       }
 
+      // Already-registered email: Supabase anti-enumeration returns success
+      // with a user whose identities are empty (and no session). The old
+      // behavior showed "Check Your Email" — a dead end, since no email comes.
+      // This audience skews toward past users, so say it straight and point
+      // them at sign-in with the redirect intact.
+      if (
+        !data.session &&
+        data.user &&
+        (data.user.identities?.length ?? 0) === 0
+      ) {
+        // Not lost traffic — a returning user on the wrong form. High volume
+        // here says past users are re-entering through signup, not login.
+        trackSignupFailed("already_registered");
+        setAlreadyRegistered(true);
+        return;
+      }
+
+      const signupSource =
+        safeRedirect && /lifetime=1|\/vip/.test(safeRedirect)
+          ? "vip"
+          : undefined;
+
       // If session exists, email confirmation is off — redirect
       if (data.session) {
         await fetch("/api/user/me");
-        trackSignup(invite ? "invite" : betaInvite ? "invite" : "email");
-        if (invite) {
-          router.push("/onboarding");
-        } else if (betaInvite) {
-          router.push("/onboarding");
+        trackSignup(invite ? "invite" : betaInvite ? "invite" : "email", signupSource);
+        if (invite || betaInvite) {
+          // Onboarding honors ?redirect after submit, so the VIP intent
+          // survives the profile step instead of being discarded here.
+          router.push(
+            safeRedirect
+              ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
+              : "/onboarding"
+          );
         } else {
           router.push(safeRedirect ?? "/pricing?welcome=true");
         }
@@ -147,15 +182,64 @@ function SignupForm() {
       }
 
       // Email confirmation is on — show check email screen
-      trackSignup(invite ? "invite" : betaInvite ? "invite" : "email");
+      trackSignup(invite ? "invite" : betaInvite ? "invite" : "email", signupSource);
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);
+      trackSignupFailed("error");
       setError("Failed to create account. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  const loginHref = safeRedirect
+    ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
+    : "/login";
+
+  const handleResend = async () => {
+    setResendState("sending");
+    try {
+      const supabase = createClient();
+      await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/callback${
+            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
+          }`,
+        },
+      });
+      setResendState("sent");
+    } catch {
+      setResendState("idle");
+    }
+  };
+
+  if (alreadyRegistered) {
+    return (
+      <div className="w-full max-w-md text-center">
+        <img
+          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+          alt="GREENROOM"
+          className="h-6 mx-auto mb-6"
+        />
+        <h1 className="text-3xl font-bold text-white mb-4">
+          You Already Have an Account
+        </h1>
+        <p className="text-[#a1a1a1] mb-6">
+          <span className="text-white font-medium">{email}</span> is already
+          registered. Sign in to continue
+          {safeRedirect ? " where you left off — your offer is waiting" : ""}.
+        </p>
+        <Link href={loginHref}>
+          <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
+            Sign In to Continue
+          </Button>
+        </Link>
+      </div>
+    );
+  }
 
   if (success) {
     return (
@@ -166,14 +250,32 @@ function SignupForm() {
           className="h-6 mx-auto mb-6"
         />
         <h1 className="text-3xl font-bold text-white mb-4">Check Your Email</h1>
-        <p className="text-[#a1a1a1] mb-6">
-          We sent a confirmation link to <span className="text-white font-medium">{email}</span>. Click it to activate your account.
+        <p className="text-[#a1a1a1] mb-2">
+          We sent a confirmation link to <span className="text-white font-medium">{email}</span>. Click it to activate your account
+          {safeRedirect ? " and pick up right where you left off" : ""}.
         </p>
-        <Link href="/login">
-          <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
-            Back to Sign In
+        <p className="text-[#a1a1a1] text-sm mb-6">
+          Nothing arriving? Check your spam or junk folder — and open the link
+          on this device so it can sign you in here.
+        </p>
+        <div className="flex flex-col items-center gap-3">
+          <Button
+            onClick={handleResend}
+            disabled={resendState !== "idle"}
+            className="bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a] font-semibold"
+          >
+            {resendState === "sent"
+              ? "Confirmation re-sent"
+              : resendState === "sending"
+                ? "Re-sending…"
+                : "Re-send confirmation email"}
           </Button>
-        </Link>
+          <Link href={loginHref}>
+            <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
+              Back to Sign In
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }
@@ -348,6 +450,12 @@ function SignupForm() {
             : "Sign Up"}
         </Button>
       </form>
+
+      {/* OAuth skips the whole email-confirmation round trip. Not offered for
+          invite signups — those must be created under the invited email. */}
+      {!invite && !betaInvite && (
+        <GoogleAuthButton redirect={safeRedirect} label="Sign up with Google" />
+      )}
 
       <p className="text-center text-[#a1a1a1] text-sm mt-6">
         Already have an account?{" "}

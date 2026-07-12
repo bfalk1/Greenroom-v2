@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useUser } from "@/lib/hooks/useUser";
 import { safeRedirectPath } from "@/lib/safeRedirect";
+import {
+  trackOnboardingStarted,
+  trackOnboardingCompleted,
+} from "@/lib/analytics";
 
 export default function OnboardingPage() {
   // userLoading gates the submit button: the post-submit redirect below
@@ -23,6 +27,12 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  // Funnel step between signup and paywall — completion rate here shows how
+  // many new accounts stall on the profile form.
+  useEffect(() => {
+    trackOnboardingStarted();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +60,8 @@ export default function OnboardingPage() {
       // /onboarding?creator=true or with an active status) goes straight to the
       // marketplace. Subscribing stays optional — the pricing page links back
       // out to the catalog.
+      trackOnboardingCompleted();
+
       const params = new URLSearchParams(window.location.search);
       const safeRedirect = safeRedirectPath(params.get("redirect"));
       const isCreatorFlow = params.get("creator") === "true";

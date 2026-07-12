@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
+import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -65,8 +66,12 @@ async function handleCheckoutCompleted(
 
   const userId = session.metadata?.userId;
   if (!userId) {
-    console.error("No userId in checkout session metadata");
-    return;
+    // Throw, don't skip: a paid session we can't attribute must surface as a
+    // failing delivery in the Stripe dashboard (and retry), never as a silent
+    // 200 that leaves a paying customer with nothing.
+    throw new Error(
+      `checkout.session.completed ${session.id}: no userId in session metadata — paid session cannot be granted`
+    );
   }
 
   // Expand the subscription to get the price
@@ -76,8 +81,9 @@ async function handleCheckoutCompleted(
   const priceId = subscription.items.data[0]?.price.id;
 
   if (!priceId) {
-    console.error("No priceId found on subscription");
-    return;
+    throw new Error(
+      `checkout.session.completed ${session.id}: no priceId on subscription ${subscription.id}`
+    );
   }
 
   // Resolve the tier from the env price map (single source of truth — mirrors
@@ -93,9 +99,21 @@ async function handleCheckoutCompleted(
     : null;
 
   if (!tier) {
-    console.error(`No tier found for priceId: ${priceId}`);
-    return;
+    // Unknown price or missing/inactive tier row: both mean a PAID
+    // subscription we cannot grant. Throw → 500 → Stripe retries and the
+    // endpoint shows as failing, instead of the historical silent-skip.
+    throw new Error(
+      `checkout.session.completed ${session.id}: cannot resolve tier (priceId=${priceId}, envTierName=${tierName ?? "none"}, dbRow=${tierName ? "missing/inactive" : "n/a"}) — paid subscription not granted`
+    );
   }
+
+  // Attribution: written by the checkout route into both session and
+  // subscription metadata; store on the row so revenue can be attributed to
+  // the offer that produced it.
+  const acquisitionSource =
+    session.metadata?.acquisitionSource ??
+    subscription.metadata?.acquisitionSource ??
+    null;
 
   const { periodStart, periodEnd } = getPeriodDates(subscription);
 
@@ -111,6 +129,7 @@ async function handleCheckoutCompleted(
       provider: "stripe",
       stripeSubscriptionId: subscription.id,
       paypalSubscriptionId: null,
+      acquisitionSource,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -120,11 +139,31 @@ async function handleCheckoutCompleted(
       tierId: tier.id,
       provider: "stripe",
       stripeSubscriptionId: subscription.id,
+      acquisitionSource,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: false,
     },
   });
+
+  // The initial grant is once per SUBSCRIPTION, not just once per event: the
+  // reconcile cron (api/cron/stripe-subscriptions) may have granted this sub
+  // already during a webhook outage, and a manually re-driven event carries a
+  // fresh event id that the event marker alone wouldn't catch.
+  const alreadyGranted = await prisma.creditTransaction.findFirst({
+    where: {
+      userId,
+      type: "SUBSCRIPTION",
+      referenceId: subscription.id,
+    },
+    select: { id: true },
+  });
+  if (alreadyGranted) {
+    console.log(
+      `Initial grant for Stripe subscription ${subscription.id} already recorded — skipping credits`
+    );
+    return;
+  }
 
   // Atomic: event marker + balance + subscription_status flag + transaction
   // must commit together (idempotency — see handleCreditPurchase).
@@ -149,6 +188,18 @@ async function handleCheckoutCompleted(
       },
     }),
   ]);
+
+  // Authoritative activation event — fired from the grant itself, not from a
+  // success page the buyer may never see. After the transaction so a
+  // redelivered event (P2002 rollback) never double-counts.
+  trackSubscriptionActivatedServer({
+    userId,
+    plan: tier.name,
+    provider: "stripe",
+    lifetime: acquisitionSource === "vip-lifetime",
+    source: acquisitionSource,
+    via: "webhook",
+  });
 }
 
 async function handleInvoicePaid(
@@ -366,14 +417,26 @@ export async function POST(request: Request) {
     );
   }
 
+  // A missing secret is an OPS failure, not a bad request — distinguish it
+  // loudly from a signature mismatch. Every event 400ing as "invalid
+  // signature" because the env was unset is exactly the silent
+  // paid-but-not-granted failure mode this endpoint has already suffered.
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  if (!webhookSecret) {
+    console.error(
+      "STRIPE_WEBHOOK_SECRET is not set — refusing all Stripe webhook deliveries. " +
+        "Payments are being taken WITHOUT granting subscriptions/credits until this is fixed."
+    );
+    return NextResponse.json(
+      { error: "Webhook not configured" },
+      { status: 500 }
+    );
+  }
+
   let event: Stripe.Event;
 
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    );
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (err) {
     console.error("Webhook signature verification failed:", err);
     return NextResponse.json(

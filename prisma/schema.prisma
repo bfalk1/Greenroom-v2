@@ -172,6 +172,10 @@ model Subscription {
   provider             String   @default("stripe") // stripe | paypal
   stripeSubscriptionId String?  @map("stripe_subscription_id")
   paypalSubscriptionId String?  @unique @map("paypal_subscription_id")
+  // Which funnel produced this subscription (e.g. "vip-lifetime"). Written at
+  // activation so revenue can be attributed to an offer — provider objects
+  // alone can't tell a lifetime sub from a full-price one once coupons change.
+  acquisitionSource    String?  @map("acquisition_source")
   currentPeriodStart   DateTime @map("current_period_start")
   currentPeriodEnd     DateTime @map("current_period_end")
   cancelAtPeriodEnd    Boolean  @default(false) @map("cancel_at_period_end")

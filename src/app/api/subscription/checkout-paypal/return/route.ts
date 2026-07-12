@@ -8,14 +8,21 @@ export const dynamic = "force-dynamic";
 // (?subscription_id=...). Like the credit-pack return route this is public
 // and session-independent: attribution comes from the subscription's
 // custom_id, and the SALE webhook backstops everything done here.
+//
+// Buyers land on /checkout/complete, which VERIFIES the subscription row
+// before celebrating — never a success banner driven by a URL param alone
+// (that pattern told the July 2026 incident's victims their credits were
+// ready while the webhook was failing).
 export async function GET(request: Request) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm";
-  const redirect = (params: string) =>
-    NextResponse.redirect(`${appUrl}/pricing?${params}`);
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm").trim();
+  const complete = (status: string) =>
+    NextResponse.redirect(
+      `${appUrl}/checkout/complete?provider=paypal&status=${status}`
+    );
 
   try {
     if (!isPaypalConfigured()) {
-      return redirect("paypal_error=true");
+      return complete("error");
     }
 
     const subscriptionId = new URL(request.url).searchParams.get(
@@ -23,24 +30,26 @@ export async function GET(request: Request) {
     );
 
     if (!subscriptionId) {
-      return redirect("canceled=true");
+      // Buyer backed out on PayPal — not a payment outcome.
+      return NextResponse.redirect(`${appUrl}/pricing?canceled=true`);
     }
 
-    const result = await activatePaypalSubscription(subscriptionId);
+    const result = await activatePaypalSubscription(subscriptionId, "return");
 
     if (result === "active") {
-      return redirect("success=true");
+      return complete("active");
     }
 
     if (result === "pending") {
       // Approved but PayPal hasn't flipped it ACTIVE yet — the ACTIVATED
-      // webhook finishes the job within moments.
-      return redirect("paypal_pending=true");
+      // webhook finishes the job within moments; /checkout/complete polls
+      // until the row appears.
+      return complete("pending");
     }
 
-    return redirect("paypal_error=true");
+    return complete("error");
   } catch (error) {
     console.error("Error completing PayPal subscription:", error);
-    return redirect("paypal_error=true");
+    return complete("error");
   }
 }

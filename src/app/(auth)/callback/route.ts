@@ -212,5 +212,16 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  // Exchange failed (typically a confirmation link opened in a different
+  // browser/device than the one that signed up — the PKCE verifier lives in
+  // that browser's storage) or no code at all. Land on login with a notice
+  // that explains what happened and the redirect intact, instead of the old
+  // silent strand: the account IS usually confirmed at this point, so signing
+  // in completes the journey.
+  const failedRedirect = safeRedirectPath(searchParams.get("redirect"));
+  return NextResponse.redirect(
+    `${origin}/login?error=confirm_link${
+      failedRedirect ? `&redirect=${encodeURIComponent(failedRedirect)}` : ""
+    }`
+  );
 }

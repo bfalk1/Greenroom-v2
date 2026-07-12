@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,12 @@ import {
   taxCollectionEnabled,
 } from "@/lib/tax/canadaRates";
 import { useUser } from "@/lib/hooks/useUser";
-import { trackSubscriptionCheckout } from "@/lib/analytics";
+import {
+  trackSubscriptionCheckout,
+  trackCheckoutViewed,
+  trackCheckoutMethodSelected,
+  trackCheckoutApiError,
+} from "@/lib/analytics";
 import { toast } from "sonner";
 
 const paypalSubsEnabled =
@@ -54,8 +59,17 @@ function CheckoutContent() {
 
   const [sub, setSub] = useState<CurrentSub | null>(null);
   const [subLoaded, setSubLoaded] = useState(false);
+  // Server-computed lifetime eligibility (never-PAID rule). null = still
+  // loading — the price area shows a skeleton rather than flashing the full
+  // price at an eligible buyer (or promising $11.99 to an ineligible one).
+  const [lifetimeEligible, setLifetimeEligible] = useState<boolean | null>(
+    null
+  );
   const [method, setMethod] = useState<PayMethod>("card");
   const [submitting, setSubmitting] = useState(false);
+  // Last checkout API failure, shown inline — a transient toast is easy to
+  // miss and leaves the page looking silently broken on retry-proof errors.
+  const [apiError, setApiError] = useState<string | null>(null);
   // Billing region for the PayPal tax path (Stripe collects its own address).
   const [country, setCountry] = useState("");
   const [region, setRegion] = useState("");
@@ -65,11 +79,33 @@ function CheckoutContent() {
     if (!pkg) router.replace("/pricing");
   }, [pkg, router]);
 
+  // checkout_viewed fires once, after the lifetime verdict resolves (so the
+  // event carries whether the buyer saw $11.99 or the ineligible fallback).
+  const viewTracked = useRef(false);
+  useEffect(() => {
+    if (viewTracked.current || !pkg) return;
+    const lt = searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
+    if (lt && lifetimeEligible === null) return;
+    viewTracked.current = true;
+    trackCheckoutViewed({
+      tier: pkg.tierName,
+      lifetime: lt,
+      lifetimeEligible: lt ? lifetimeEligible : null,
+    });
+  }, [pkg, searchParams, lifetimeEligible]);
+
   useEffect(() => {
     if (!user) return;
     fetch("/api/user/subscription")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setSub(data?.subscription ?? null))
+      .then((data) => {
+        setSub(data?.subscription ?? null);
+        setLifetimeEligible(
+          typeof data?.lifetimeEligible === "boolean"
+            ? data.lifetimeEligible
+            : false
+        );
+      })
       .catch(() => {})
       .finally(() => setSubLoaded(true));
   }, [user]);
@@ -108,18 +144,15 @@ function CheckoutContent() {
   // Lifetime VIP offer (arrived via /vip → /checkout?tier=VIP&lifetime=1). The
   // discount is authorized server-side from the gr_vip_offer unlock cookie —
   // here we just show the discounted price and pass the flag through.
-  // applyLifetime gates on "NEW account": the offer is for users who aren't
-  // subscribed AND have never subscribed. Anyone with subscription history sees
-  // normal pricing and sends no lifetime flag (otherwise the summary would
-  // promise $11.99 while the server correctly refuses / bills full price). The
-  // server routes enforce the same rule authoritatively; user.subscription_status
-  // is "none" only for an account that has never subscribed.
-  const isNewAccount =
-    user != null &&
-    (user.subscription_status == null || user.subscription_status === "none");
+  // Eligibility is the server's never-PAID verdict from /api/user/subscription
+  // (same rule the checkout APIs enforce via isLifetimeEligible), NOT the
+  // subscription_status flag — that flag is set by beta comps and has drifted
+  // stale before, which wrongly showed full price to eligible buyers. While
+  // the verdict is loading (null) the price area renders a skeleton.
   const isLifetime =
     searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
-  const applyLifetime = isLifetime && isNewAccount;
+  const applyLifetime = isLifetime && lifetimeEligible === true;
+  const lifetimeUndetermined = isLifetime && lifetimeEligible === null;
   const price = applyLifetime ? VIP_LIFETIME_OFFER.lifetimePrice : pkg.price;
 
   // A live subscription pins the payment method to its own provider: PayPal
@@ -171,8 +204,9 @@ function CheckoutContent() {
     }
 
     setSubmitting(true);
+    setApiError(null);
+    let endpoint = "";
     try {
-      let endpoint: string;
       let body: Record<string, string | boolean>;
 
       if (effectiveMethod === "card") {
@@ -201,26 +235,51 @@ function CheckoutContent() {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to start checkout");
+        const message: string =
+          typeof data?.error === "string" && data.error
+            ? data.error
+            : "Failed to start checkout. Please try again.";
+        // Payment failures were previously invisible in analytics — the
+        // expired-coupon outage lived only in Stripe's request logs.
+        trackCheckoutApiError({ endpoint, status: res.status, message });
+        setApiError(message);
+        toast.error(message);
+        setSubmitting(false);
+        return;
       }
 
       if (data.url) {
         trackSubscriptionCheckout(
           pkg.name,
-          effectiveMethod === "card" ? pkg.priceId : `paypal-${pkg.tierName}`
+          effectiveMethod === "card" ? pkg.priceId : `paypal-${pkg.tierName}`,
+          { tier: pkg.tierName, lifetime: applyLifetime, method: effectiveMethod }
         );
         window.location.href = data.url;
+        return;
       }
+
+      // 2xx without a redirect URL — never leave an eternal spinner.
+      trackCheckoutApiError({
+        endpoint,
+        status: res.status,
+        message: "No redirect URL in checkout response",
+      });
+      setApiError(
+        "Something went wrong starting checkout — nothing was charged. Please try again."
+      );
+      setSubmitting(false);
     } catch (error) {
       console.error("Checkout error:", error);
-      toast.error(
-        error instanceof Error && error.message !== "Failed to start checkout"
+      const message =
+        error instanceof Error && error.message
           ? error.message
-          : "Failed to start checkout. Please try again."
-      );
+          : "Failed to start checkout. Please try again.";
+      trackCheckoutApiError({ endpoint, status: 0, message });
+      setApiError(message);
+      toast.error(message);
       setSubmitting(false);
     }
   };
@@ -228,12 +287,15 @@ function CheckoutContent() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        {/* The lifetime flow's escape hatch goes back to the offer, not to
+            full-price /pricing — leaking a discounted buyer into the standard
+            grid quietly costs them the deal. */}
         <Link
-          href="/pricing"
+          href={isLifetime ? "/vip" : "/pricing"}
           className="inline-flex items-center gap-2 text-sm text-[#a1a1a1] hover:text-white transition-colors mb-10"
         >
           <ArrowLeft className="w-4 h-4" />
-          All plans
+          {isLifetime ? "Back to VIP offer" : "All plans"}
         </Link>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-12 items-start">
@@ -267,7 +329,10 @@ function CheckoutContent() {
                   {cardAvailable && (
                     <MethodCard
                       selected={effectiveMethod === "card"}
-                      onSelect={() => setMethod("card")}
+                      onSelect={() => {
+                        setMethod("card");
+                        trackCheckoutMethodSelected("card");
+                      }}
                       locked={isStripeChange}
                       title="Card"
                       subtitle="Visa, Mastercard, Amex and more — via Stripe"
@@ -277,7 +342,10 @@ function CheckoutContent() {
                   {paypalAvailable && (
                     <MethodCard
                       selected={effectiveMethod === "paypal"}
-                      onSelect={() => setMethod("paypal")}
+                      onSelect={() => {
+                        setMethod("paypal");
+                        trackCheckoutMethodSelected("paypal");
+                      }}
                       locked={isPaypalSwitch}
                       title="PayPal"
                       subtitle={
@@ -287,6 +355,15 @@ function CheckoutContent() {
                       }
                       icon={<PaypalMark />}
                     />
+                  )}
+                  {!cardAvailable && !paypalAvailable && (
+                    // Previously a silent dead end: no method cards, a
+                    // permanently disabled button, and no explanation.
+                    <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm">
+                      Payments are temporarily unavailable — nothing is wrong
+                      with your account, and nothing has been charged. Please
+                      try again shortly or contact support@greenroom.fm.
+                    </div>
                   )}
                 </div>
 
@@ -332,12 +409,23 @@ function CheckoutContent() {
                   </div>
                 )}
 
+                {apiError && (
+                  <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
+                    {apiError}
+                  </div>
+                )}
+
                 <Button
                   onClick={handleContinue}
                   disabled={
                     submitting ||
                     userLoading ||
                     !subLoaded ||
+                    // Lifetime flow with the eligibility verdict still unknown
+                    // (e.g. the subscription fetch failed): never let a buyer
+                    // continue blind — the summary is a skeleton and the
+                    // charge could silently be full price.
+                    lifetimeUndetermined ||
                     taxRegionIncomplete ||
                     // No payable method at all (no Stripe price ID and PayPal
                     // subs disabled) — reachable by direct URL even though
@@ -379,26 +467,34 @@ function CheckoutContent() {
                   <span>Monthly Pass</span>
                 </div>
                 <h2 className="text-2xl font-bold text-white">{pkg.name}</h2>
-                <div className="flex items-baseline gap-2 mt-1 mb-5">
-                  {applyLifetime && (
-                    <span className="text-xl font-semibold text-[#6a6a6a] line-through">
-                      ${VIP_LIFETIME_OFFER.regularPrice}
+                {lifetimeUndetermined ? (
+                  // Eligibility still loading: a skeleton beats flashing the
+                  // full price at an eligible buyer for a second.
+                  <div className="mt-2 mb-5 h-10 w-40 rounded-lg bg-[#2a2a2a] animate-pulse" />
+                ) : (
+                  <div className="flex items-baseline gap-2 mt-1 mb-5">
+                    {applyLifetime && (
+                      <span className="text-xl font-semibold text-[#6a6a6a] line-through">
+                        ${VIP_LIFETIME_OFFER.regularPrice}
+                      </span>
+                    )}
+                    <span className="text-4xl font-bold text-[#39b54a]">
+                      ${price}
                     </span>
-                  )}
-                  <span className="text-4xl font-bold text-[#39b54a]">
-                    ${price}
-                  </span>
-                  <span className="text-[#a1a1a1]">/month</span>
-                </div>
+                    <span className="text-[#a1a1a1]">/month USD</span>
+                  </div>
+                )}
                 {applyLifetime && (
                   <p className="-mt-3 mb-5 text-xs font-semibold uppercase tracking-wider text-[#39b54a]">
                     Lifetime price · locked forever
                   </p>
                 )}
-                {isLifetime && !applyLifetime && (
+                {isLifetime && !applyLifetime && !lifetimeUndetermined && (
                   <p className="-mt-3 mb-5 text-xs text-[#a1a1a1]">
-                    The lifetime price is for new members only — it applies to
-                    your first Greenroom subscription.
+                    The $11.99 lifetime price is for members without a prior
+                    paid subscription, so this shows your standard price. Think
+                    that&apos;s a mistake? Contact support@greenroom.fm before
+                    subscribing.
                   </p>
                 )}
                 <div className="bg-[#0a0a0a] rounded-lg p-3 border border-[#2a2a2a] flex items-center gap-2">

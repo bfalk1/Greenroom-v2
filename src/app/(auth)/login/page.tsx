@@ -1,20 +1,50 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { trackLogin } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { safeRedirectPath } from "@/lib/safeRedirect";
-export default function LoginPage() {
+import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
+
+// Notices driven by ?error= from the middleware (suspended) and the auth
+// callback (confirm_link). Informational, not form errors — the visitor did
+// nothing wrong.
+const NOTICE_BY_CODE: Record<string, string> = {
+  confirm_link:
+    "That confirmation link couldn't be completed in this browser (links only work on the device you signed up from). Your account may already be confirmed — sign in below to continue where you left off.",
+  suspended: "This account is suspended. Contact support if you think that's a mistake.",
+};
+
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // Post-login destination. A carried ?redirect (the /vip lifetime flow deep
+  // links /checkout?tier=VIP&lifetime=1) wins; a legacy ?lifetime=1 (from the
+  // old middleware redirect, still in shared links) reconstructs the same
+  // destination so those buyers aren't dumped on /marketplace at full price.
+  const safeRedirect =
+    safeRedirectPath(searchParams.get("redirect")) ??
+    (searchParams.get("lifetime") === "1"
+      ? "/checkout?tier=VIP&lifetime=1"
+      : null);
+
+  const notice = NOTICE_BY_CODE[searchParams.get("error") ?? ""] ?? null;
+
+  // The signup cross-link must carry the redirect: a never-registered VIP
+  // buyer who lands here (middleware default) loses the discount without it.
+  const signupHref = safeRedirect
+    ? `/signup?redirect=${encodeURIComponent(safeRedirect)}`
+    : "/signup";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,20 +62,20 @@ export default function LoginPage() {
         return;
       }
 
-      // Honor a safe same-origin redirect target (e.g. the /vip lifetime flow
-      // sends ?redirect=/vip). Relative paths only — never an absolute/external
-      // URL, so a crafted ?redirect can't bounce the user off-site after login.
-      const dest =
-        safeRedirectPath(
-          new URLSearchParams(window.location.search).get("redirect")
-        ) ?? "/marketplace";
+      const dest = safeRedirect ?? "/marketplace";
 
-      // Check if profile is complete
+      // Check if profile is complete. Onboarding carries the redirect through
+      // (it honors ?redirect after submit), so an incomplete profile delays
+      // the destination instead of discarding it.
       const res = await fetch("/api/user/me");
       if (res.ok) {
         const data = await res.json();
         if (!data.user.profile_completed) {
-          router.push("/onboarding");
+          router.push(
+            safeRedirect
+              ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
+              : "/onboarding"
+          );
           return;
         }
       }
@@ -76,6 +106,13 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-[#a1a1a1]">Sign in to your GREENROOM account</p>
         </div>
+
+        {/* Info notice (confirmation-link fallback, suspension) */}
+        {notice && (
+          <div className="mb-4 p-3 rounded-lg bg-[#1a2418] border border-[#2e9140]/30 text-[#a8d5ae] text-sm">
+            {notice}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -123,10 +160,12 @@ export default function LoginPage() {
           </Button>
         </form>
 
+        <GoogleAuthButton redirect={safeRedirect} label="Continue with Google" />
+
         <p className="text-center text-[#a1a1a1] text-sm mt-6">
           Don&apos;t have an account?{" "}
           <Link
-            href="/signup"
+            href={signupHref}
             className="text-[#39b54a] hover:text-[#2e9140] font-medium"
           >
             Sign Up
@@ -134,5 +173,14 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  // useSearchParams requires a Suspense boundary during prerender.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
