@@ -149,13 +149,12 @@ async function handleCheckoutCompleted(
   // The initial grant is once per SUBSCRIPTION, not just once per event: the
   // reconcile cron (api/cron/stripe-subscriptions) may have granted this sub
   // already during a webhook outage, and a manually re-driven event carries a
-  // fresh event id that the event marker alone wouldn't catch.
-  const alreadyGranted = await prisma.creditTransaction.findFirst({
-    where: {
-      userId,
-      type: "SUBSCRIPTION",
-      referenceId: subscription.id,
-    },
+  // fresh event id that the event marker alone wouldn't catch. Fast-path skip
+  // here; the ATOMIC guarantee is the shared `grant:<subId>` marker row in the
+  // transaction below — webhook and cron both insert it, so a concurrent race
+  // conflicts on the PK and rolls the loser back (never a double-grant).
+  const alreadyGranted = await prisma.stripeWebhookEvent.findUnique({
+    where: { id: `grant:${subscription.id}` },
     select: { id: true },
   });
   if (alreadyGranted) {
@@ -165,10 +164,13 @@ async function handleCheckoutCompleted(
     return;
   }
 
-  // Atomic: event marker + balance + subscription_status flag + transaction
-  // must commit together (idempotency — see handleCreditPurchase).
+  // Atomic: event marker + grant marker + balance + subscription_status flag +
+  // transaction must commit together (idempotency — see handleCreditPurchase).
   await prisma.$transaction([
     prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
+    prisma.stripeWebhookEvent.create({
+      data: { id: `grant:${subscription.id}`, type: "initial-grant" },
+    }),
     prisma.creditBalance.upsert({
       where: { userId },
       update: { balance: { increment: tier.creditsPerMonth } },

@@ -38,6 +38,10 @@ function CompleteContent() {
   // hint only shapes copy — the DB poll below is the source of truth.
   const hint = searchParams.get("status");
   const provider = searchParams.get("provider");
+  // Expected tier (Stripe success_url carries it): a plan-CHANGE buyer already
+  // has an ACTIVE row with the OLD tier, so "any active subscription" would
+  // instantly celebrate the wrong plan — require the tier to match when known.
+  const expectedTier = searchParams.get("tier");
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +57,8 @@ function CompleteContent() {
           if (
             !cancelled &&
             data?.subscription &&
-            data.subscription.status === "ACTIVE"
+            data.subscription.status === "ACTIVE" &&
+            (!expectedTier || data.subscription.tierName === expectedTier)
           ) {
             setActiveSub({
               tierDisplayName: data.subscription.tierDisplayName,
@@ -171,7 +176,9 @@ function CompleteContent() {
       <p className="text-[#a1a1a1]">
         {hint === "pending"
           ? "PayPal has approved your subscription — finalizing the activation now."
-          : "Payment received — setting up your plan and credits. This usually takes a few seconds."}
+          : hint === "error"
+            ? "Checking your payment status. This usually takes a few seconds."
+            : "Payment received — setting up your plan and credits. This usually takes a few seconds."}
       </p>
     </div>
   );

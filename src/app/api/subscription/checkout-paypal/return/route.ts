@@ -25,13 +25,17 @@ export async function GET(request: Request) {
       return complete("error");
     }
 
-    const subscriptionId = new URL(request.url).searchParams.get(
-      "subscription_id"
-    );
+    const params = new URL(request.url).searchParams;
+    const subscriptionId = params.get("subscription_id");
 
     if (!subscriptionId) {
-      // Buyer backed out on PayPal — not a payment outcome.
-      return NextResponse.redirect(`${appUrl}/pricing?canceled=true`);
+      // Buyer backed out on PayPal — not a payment outcome. A lifetime buyer
+      // goes back to the offer, not to the full-price grid.
+      return NextResponse.redirect(
+        params.get("lifetime") === "1"
+          ? `${appUrl}/vip?canceled=true`
+          : `${appUrl}/pricing?canceled=true`
+      );
     }
 
     const result = await activatePaypalSubscription(subscriptionId, "return");

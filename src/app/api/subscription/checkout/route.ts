@@ -182,7 +182,7 @@ export async function POST(request: Request) {
       // the post-discount amount, which is the correct base.
       ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
       ...stripeTaxCheckoutParams(),
-      success_url: `${appUrl}/checkout/complete?provider=stripe&session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${appUrl}/checkout/complete?provider=stripe&tier=${encodeURIComponent(tier.name)}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: discountCoupon
         ? `${appUrl}/vip?canceled=true`
         : `${appUrl}/pricing?canceled=true`,

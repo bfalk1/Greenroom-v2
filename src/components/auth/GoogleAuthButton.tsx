@@ -80,6 +80,29 @@ export function GoogleAuthButton({
         </svg>
         {loading ? "Redirecting…" : label}
       </Button>
+      {/* OAuth signups never see the email form's terms checkbox — consent
+          has to be stated here instead. */}
+      <p className="mt-3 text-center text-xs text-[#6a6a6a]">
+        By continuing with Google you agree to the{" "}
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#39b54a] hover:underline"
+        >
+          User Terms of Use
+        </a>{" "}
+        and{" "}
+        <a
+          href="/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#39b54a] hover:underline"
+        >
+          Privacy Policy
+        </a>
+        .
+      </p>
     </>
   );
 }

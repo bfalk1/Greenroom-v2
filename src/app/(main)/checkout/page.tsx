@@ -70,6 +70,9 @@ function CheckoutContent() {
   // Last checkout API failure, shown inline — a transient toast is easy to
   // miss and leaves the page looking silently broken on retry-proof errors.
   const [apiError, setApiError] = useState<string | null>(null);
+  // The subscription/eligibility fetch failed — block checkout and offer a
+  // reload rather than proceeding on unknown plan state.
+  const [subLoadError, setSubLoadError] = useState(false);
   // Billing region for the PayPal tax path (Stripe collects its own address).
   const [country, setCountry] = useState("");
   const [region, setRegion] = useState("");
@@ -97,7 +100,7 @@ function CheckoutContent() {
   useEffect(() => {
     if (!user) return;
     fetch("/api/user/subscription")
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
       .then((data) => {
         setSub(data?.subscription ?? null);
         setLifetimeEligible(
@@ -105,8 +108,12 @@ function CheckoutContent() {
             ? data.lifetimeEligible
             : false
         );
+        setSubLoadError(false);
       })
-      .catch(() => {})
+      // A failed fetch must NOT resolve to "ineligible" (silently showing an
+      // eligible buyer full price) or leave the skeleton stuck forever —
+      // surface it as a retryable error instead.
+      .catch(() => setSubLoadError(true))
       .finally(() => setSubLoaded(true));
   }, [user]);
 
@@ -409,6 +416,21 @@ function CheckoutContent() {
                   </div>
                 )}
 
+                {subLoadError && (
+                  <div className="mb-4 p-3 rounded-lg bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm flex items-center justify-between gap-3">
+                    <span>
+                      We couldn&apos;t confirm your plan details — nothing has
+                      been charged.
+                    </span>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="shrink-0 underline font-semibold hover:text-white"
+                    >
+                      Reload
+                    </button>
+                  </div>
+                )}
+
                 {apiError && (
                   <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
                     {apiError}
@@ -421,10 +443,12 @@ function CheckoutContent() {
                     submitting ||
                     userLoading ||
                     !subLoaded ||
-                    // Lifetime flow with the eligibility verdict still unknown
-                    // (e.g. the subscription fetch failed): never let a buyer
-                    // continue blind — the summary is a skeleton and the
-                    // charge could silently be full price.
+                    // Plan/eligibility state unknown (fetch failed) — never
+                    // let a buyer continue blind.
+                    subLoadError ||
+                    // Lifetime flow with the eligibility verdict still unknown:
+                    // the summary is a skeleton and the charge could silently
+                    // be full price.
                     lifetimeUndetermined ||
                     taxRegionIncomplete ||
                     // No payable method at all (no Stripe price ID and PayPal

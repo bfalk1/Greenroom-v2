@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe/client";
+import { SUBSCRIPTION_TIERS } from "@/lib/stripe/config";
 import { isPaypalConfigured, paypalFetch } from "@/lib/paypal/client";
 import {
   paypalPlanIdForTier,
@@ -147,17 +148,30 @@ export async function GET(request: NextRequest) {
       : "analytics silently disabled",
   });
 
-  // Stripe: subscription prices + the lifetime coupon.
+  // Stripe: subscription prices + the lifetime coupon. Two things per tier:
+  // (1) the CLIENT-side id (NEXT_PUBLIC_*, what the checkout page POSTs) must
+  // be a live, active price; (2) it must MATCH the server-side resolution
+  // (STRIPE_* takes precedence in src/lib/stripe/config.ts) — skew between
+  // the two 400s every checkout as "Invalid subscription plan".
   if (process.env.STRIPE_SECRET_KEY?.trim()) {
-    results.push(
-      await checkStripePrice("GA", process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID)
-    );
-    results.push(
-      await checkStripePrice("VIP", process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID)
-    );
-    results.push(
-      await checkStripePrice("AA", process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID)
-    );
+    for (const [name, clientVar] of [
+      ["GA", process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID],
+      ["VIP", process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID],
+      ["AA", process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID],
+    ] as const) {
+      results.push(await checkStripePrice(name, clientVar));
+      const serverSide =
+        SUBSCRIPTION_TIERS[name as keyof typeof SUBSCRIPTION_TIERS]
+          ?.stripePriceId;
+      const clientSide = (clientVar ?? "").trim();
+      if (serverSide && clientSide && serverSide !== clientSide) {
+        results.push({
+          check: `stripe price ${name} client/server skew`,
+          status: "fail",
+          detail: `server resolves ${serverSide} but the client sends ${clientSide} — checkout will 400`,
+        });
+      }
+    }
     results.push(await checkStripeCoupon());
   } else {
     results.push({

@@ -13,9 +13,12 @@ import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 // makes any divergence a logged, counted signal instead of a customer
 // complaint. Mirrors api/cron/paypal-subscriptions (CRON_SECRET, GET+POST).
 //
-// Idempotency: the initial grant is keyed per-subscription via the
-// SUBSCRIPTION creditTransaction referencing the Stripe sub id — the webhook
-// checks the same marker, so whichever path runs second no-ops.
+// Idempotency: the initial grant is keyed by the shared `grant:<subId>`
+// stripe_webhook_events marker — the webhook inserts the SAME marker in its
+// grant transaction, so a concurrent webhook/cron race conflicts on the PK
+// and exactly one grant commits.
+
+export const maxDuration = 300;
 
 function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get("authorization");
@@ -57,17 +60,10 @@ async function resolveUserId(
   return user?.id ?? null;
 }
 
-async function reconcileOne(subscription: Stripe.Subscription): Promise<
-  "ok" | "repaired" | "unresolvable"
-> {
-  const userId = await resolveUserId(subscription);
-  if (!userId) {
-    console.error(
-      `[stripe-reconcile] live subscription ${subscription.id} cannot be attributed to a user (no metadata.userId, unknown customer)`
-    );
-    return "unresolvable";
-  }
-
+async function reconcileOne(
+  subscription: Stripe.Subscription,
+  userId: string
+): Promise<"ok" | "repaired"> {
   const priceId = subscription.items.data[0]?.price.id;
   const tierName = priceId ? tierNameForStripePrice(priceId) : null;
   const tier = tierName
@@ -76,10 +72,9 @@ async function reconcileOne(subscription: Stripe.Subscription): Promise<
       })
     : null;
   if (!tier) {
-    console.error(
-      `[stripe-reconcile] subscription ${subscription.id}: cannot resolve tier (priceId=${priceId ?? "none"})`
+    throw new Error(
+      `subscription ${subscription.id}: cannot resolve tier (priceId=${priceId ?? "none"})`
     );
-    return "unresolvable";
   }
 
   const existing = await prisma.subscription.findUnique({
@@ -87,8 +82,8 @@ async function reconcileOne(subscription: Stripe.Subscription): Promise<
     select: { stripeSubscriptionId: true, provider: true },
   });
 
-  const alreadyGranted = await prisma.creditTransaction.findFirst({
-    where: { userId, type: "SUBSCRIPTION", referenceId: subscription.id },
+  const alreadyGranted = await prisma.stripeWebhookEvent.findUnique({
+    where: { id: `grant:${subscription.id}` },
     select: { id: true },
   });
 
@@ -103,14 +98,17 @@ async function reconcileOne(subscription: Stripe.Subscription): Promise<
   // Never clobber a PayPal-owned row from a reconcile sweep — the webhook's
   // provider guards own that arbitration; just surface it.
   if (existing?.provider === "paypal" && !rowCurrent) {
-    console.error(
-      `[stripe-reconcile] user ${userId} has live Stripe sub ${subscription.id} but a PayPal-owned row — possible double subscription, needs manual review`
+    throw new Error(
+      `user ${userId} has live Stripe sub ${subscription.id} but a PayPal-owned row — possible double subscription, needs manual review`
     );
-    return "unresolvable";
   }
 
   const { periodStart, periodEnd } = getPeriodDates(subscription);
   const acquisitionSource = subscription.metadata?.acquisitionSource ?? null;
+  // Mirror Stripe's own status: a past_due sub must not be flipped back to
+  // "active", or dunning state (set by invoice.payment_failed) is clobbered.
+  const statusFlag =
+    subscription.status === "past_due" ? "past_due" : "active";
 
   await prisma.subscription.upsert({
     where: { userId },
@@ -137,49 +135,66 @@ async function reconcileOne(subscription: Stripe.Subscription): Promise<
   });
 
   if (!alreadyGranted) {
-    await prisma.$transaction([
-      prisma.stripeWebhookEvent.create({
-        data: { id: `reconcile:${subscription.id}`, type: "reconcile" },
-      }),
-      prisma.creditBalance.upsert({
-        where: { userId },
-        update: { balance: { increment: tier.creditsPerMonth } },
-        create: { userId, balance: tier.creditsPerMonth },
-      }),
-      prisma.user.update({
-        where: { id: userId },
-        data: { subscriptionStatus: "active" },
-      }),
-      prisma.creditTransaction.create({
-        data: {
-          userId,
-          amount: tier.creditsPerMonth,
-          type: "SUBSCRIPTION",
-          referenceId: subscription.id,
-          note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits (reconciled)`,
-        },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.stripeWebhookEvent.create({
+          data: { id: `grant:${subscription.id}`, type: "initial-grant" },
+        }),
+        prisma.creditBalance.upsert({
+          where: { userId },
+          update: { balance: { increment: tier.creditsPerMonth } },
+          create: { userId, balance: tier.creditsPerMonth },
+        }),
+        prisma.user.update({
+          where: { id: userId },
+          data: { subscriptionStatus: statusFlag },
+        }),
+        prisma.creditTransaction.create({
+          data: {
+            userId,
+            amount: tier.creditsPerMonth,
+            type: "SUBSCRIPTION",
+            referenceId: subscription.id,
+            note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits (reconciled)`,
+          },
+        }),
+      ]);
 
-    trackSubscriptionActivatedServer({
-      userId,
-      plan: tier.name,
-      provider: "stripe",
-      lifetime: acquisitionSource === "vip-lifetime",
-      source: acquisitionSource,
-      via: "reconcile",
-    });
+      trackSubscriptionActivatedServer({
+        userId,
+        plan: tier.name,
+        provider: "stripe",
+        lifetime: acquisitionSource === "vip-lifetime",
+        source: acquisitionSource,
+        via: "reconcile",
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        // The webhook granted concurrently — exactly what the shared marker
+        // is for. The row repair above still counts.
+        console.log(
+          `[stripe-reconcile] grant for ${subscription.id} raced the webhook — webhook won, no double-grant`
+        );
+      } else {
+        throw error;
+      }
+    }
   } else {
     // Row was stale/missing but credits were granted before — status flag
     // still needs to reflect the live subscription.
     await prisma.user.update({
       where: { id: userId },
-      data: { subscriptionStatus: "active" },
+      data: { subscriptionStatus: statusFlag },
     });
   }
 
   console.log(
-    `[stripe-reconcile] repaired subscription ${subscription.id} for user ${userId} (${tier.name}${alreadyGranted ? ", credits already granted" : ", credits granted"})`
+    `[stripe-reconcile] repaired subscription ${subscription.id} for user ${userId} (${tier.name}${alreadyGranted ? ", credits already granted" : ""})`
   );
   return "repaired";
 }
@@ -190,21 +205,52 @@ async function runReconcile(request: NextRequest) {
   }
 
   try {
-    let ok = 0;
-    let repaired = 0;
-    let unresolvable = 0;
+    // Gather first, then reconcile: a user with TWO live Stripe subs must be
+    // surfaced for manual review, not "repaired" — the single row per user
+    // would otherwise flip-flop between the subs on every sweep.
+    const byUser = new Map<string, Stripe.Subscription[]>();
+    let unattributed = 0;
 
-    // All live active/past_due subs — the account is small enough to sweep
-    // fully; auto-pagination keeps this correct as it grows.
     for (const status of ["active", "past_due"] as const) {
       for await (const subscription of stripe.subscriptions.list({
         status,
         limit: 100,
       })) {
-        const result = await reconcileOne(subscription);
+        const userId = await resolveUserId(subscription);
+        if (!userId) {
+          console.error(
+            `[stripe-reconcile] live subscription ${subscription.id} cannot be attributed to a user (no metadata.userId, unknown customer)`
+          );
+          unattributed += 1;
+          continue;
+        }
+        const list = byUser.get(userId) ?? [];
+        list.push(subscription);
+        byUser.set(userId, list);
+      }
+    }
+
+    let ok = 0;
+    let repaired = 0;
+    let unresolvable = unattributed;
+
+    for (const [userId, subs] of byUser) {
+      if (subs.length > 1) {
+        console.error(
+          `[stripe-reconcile] user ${userId} has ${subs.length} live Stripe subscriptions (${subs.map((s) => s.id).join(", ")}) — possible double-billing, needs manual review; skipping`
+        );
+        unresolvable += 1;
+        continue;
+      }
+      try {
+        const result = await reconcileOne(subs[0], userId);
         if (result === "ok") ok += 1;
-        else if (result === "repaired") repaired += 1;
-        else unresolvable += 1;
+        else repaired += 1;
+      } catch (error) {
+        console.error(
+          `[stripe-reconcile] ${error instanceof Error ? error.message : error}`
+        );
+        unresolvable += 1;
       }
     }
 
@@ -216,7 +262,12 @@ async function runReconcile(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true, checked: ok + repaired + unresolvable, repaired, unresolvable });
+    return NextResponse.json({
+      ok: true,
+      checked: ok + repaired + unresolvable,
+      repaired,
+      unresolvable,
+    });
   } catch (error) {
     console.error("Stripe subscription reconcile cron failed:", error);
     return NextResponse.json({ error: "Cron failed" }, { status: 500 });

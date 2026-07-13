@@ -99,14 +99,27 @@ export async function POST(request: Request) {
 
     // One subscription per user across BOTH providers. An existing Stripe sub
     // is managed via the Stripe portal; an existing PayPal sub via revise.
+    // The guard requires a PROVIDER-BACKED row, not just the status flag: beta
+    // comps carry subscription_status="active" with no subscription row at
+    // all, and blocking them here would contradict the lifetime offer they
+    // were just shown (they're "never PAID" and fully eligible to buy).
     if (
       dbUser.subscriptionStatus === "active" ||
       dbUser.subscriptionStatus === "past_due"
     ) {
-      return NextResponse.json(
-        { error: "You already have a subscription — manage it from your account page" },
-        { status: 409 }
-      );
+      const existingSub = await prisma.subscription.findUnique({
+        where: { userId: dbUser.id },
+        select: { stripeSubscriptionId: true, paypalSubscriptionId: true },
+      });
+      if (
+        existingSub &&
+        (existingSub.stripeSubscriptionId || existingSub.paypalSubscriptionId)
+      ) {
+        return NextResponse.json(
+          { error: "You already have a subscription — manage it from your account page" },
+          { status: 409 }
+        );
+      }
     }
 
     // The lifetime offer is for accounts that have never PAID — a
@@ -162,7 +175,12 @@ export async function POST(request: Request) {
       planId,
       userId: dbUser.id,
       taxPercent,
-      returnUrl: `${appUrl}/api/subscription/checkout-paypal/return`,
+      // lifetime=1 tells the return route where "cancel/back out" should land
+      // (back on the offer, not full-price /pricing). PayPal appends its own
+      // params (subscription_id, ba_token) to whatever query is here.
+      returnUrl: `${appUrl}/api/subscription/checkout-paypal/return${
+        isLifetime ? "?lifetime=1" : ""
+      }`,
       cancelUrl: isLifetime
         ? `${appUrl}/vip?canceled=true`
         : `${appUrl}/pricing?canceled=true`,

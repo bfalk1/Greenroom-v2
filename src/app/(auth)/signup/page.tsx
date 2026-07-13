@@ -31,9 +31,9 @@ function SignupForm() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
-  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">(
-    "idle"
-  );
+  const [resendState, setResendState] = useState<
+    "idle" | "sending" | "sent" | "failed"
+  >("idle");
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
@@ -201,7 +201,9 @@ function SignupForm() {
     setResendState("sending");
     try {
       const supabase = createClient();
-      await supabase.auth.resend({
+      // resend() reports failures via { error }, not by throwing — a rate
+      // limit or provider error must not show "re-sent".
+      const { error } = await supabase.auth.resend({
         type: "signup",
         email,
         options: {
@@ -210,9 +212,9 @@ function SignupForm() {
           }`,
         },
       });
-      setResendState("sent");
+      setResendState(error ? "failed" : "sent");
     } catch {
-      setResendState("idle");
+      setResendState("failed");
     }
   };
 
@@ -261,14 +263,16 @@ function SignupForm() {
         <div className="flex flex-col items-center gap-3">
           <Button
             onClick={handleResend}
-            disabled={resendState !== "idle"}
+            disabled={resendState === "sending" || resendState === "sent"}
             className="bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a] font-semibold"
           >
             {resendState === "sent"
               ? "Confirmation re-sent"
               : resendState === "sending"
                 ? "Re-sending…"
-                : "Re-send confirmation email"}
+                : resendState === "failed"
+                  ? "Couldn't send — try again"
+                  : "Re-send confirmation email"}
           </Button>
           <Link href={loginHref}>
             <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
