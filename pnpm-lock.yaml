@@ -53,6 +53,9 @@ importers:
       posthog-js:
         specifier: ^1.367.0
         version: 1.369.0
+      posthog-node:
+        specifier: ^5.41.0
+        version: 5.41.0
       prisma:
         specifier: ^5.22.0
         version: 5.22.0
@@ -743,8 +746,14 @@ packages:
   '@posthog/core@1.25.2':
     resolution: {integrity: sha512-h2FO7ut/BbfwpAXWpwdDHTzQgUo9ibDFEs6ZO+3cI3KPWQt5XwczK1OLAuPprcjm8T/jl0SH8jSFo5XdU4RbTg==}
 
+  '@posthog/core@1.40.2':
+    resolution: {integrity: sha512-H12j7O9iHGvpK9t2ko8W4pvfbV1pBDxrsWC1LA6yp2RhzwvC4T3sWhu+AekDQJSRSrJEWlB0t/Ueq9QhPSq7FQ==}
+
   '@posthog/types@1.369.0':
     resolution: {integrity: sha512-iFkLrg/+QRQHc8KSjO9parN6H3rftM2ld2sCJ/GeBRRO9MJYCdc6jXSFRgF7aGJPzb79syqksz+CrnBzdZnBKg==}
+
+  '@posthog/types@1.393.0':
+    resolution: {integrity: sha512-vzWeEJZ7ERQhFRoQYaP5jzN1JvIu46UJyHXsuv+dTGW2r3sMgREOhNxXLZjmFHwZ8/FOHQoyqqQmXTCXZSfMSg==}
 
   '@prisma/client@5.22.0':
     resolution: {integrity: sha512-M0SVXfyHnQREBKxCgyo7sffrKttwE6R8PMq330MIUF0pTwjUhLbW84pFDlf06B27XyCR++VtjugEnIHdr07SVA==}
@@ -2902,6 +2911,15 @@ packages:
   posthog-js@1.369.0:
     resolution: {integrity: sha512-fOJzwpCb/TWxJBsUNKJ5PhHNl0+X7zRrVTuUrIH+EfsIfxJGSkOa0lWPJJGr3xzg810JHCUpuhn5sFBBxfHqIQ==}
 
+  posthog-node@5.41.0:
+    resolution: {integrity: sha512-jOkX6THOr5WD+FGUEaTxekas8c7NOC3TqJ2Byfe2KMimQdL/F/osz17uSbkNzR4V9WFZoe8YaGP3Xp0EUpPKGg==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
+
   preact@10.29.1:
     resolution: {integrity: sha512-gQCLc/vWroE8lIpleXtdJhTFDogTdZG9AjMUpVkDf2iTCNwYNWA+u16dL41TqUDJO4gm2IgrcMv3uTpjd4Pwmg==}
 
@@ -3884,7 +3902,13 @@ snapshots:
 
   '@posthog/core@1.25.2': {}
 
+  '@posthog/core@1.40.2':
+    dependencies:
+      '@posthog/types': 1.393.0
+
   '@posthog/types@1.369.0': {}
+
+  '@posthog/types@1.393.0': {}
 
   '@prisma/client@5.22.0(prisma@5.22.0)':
     optionalDependencies:
@@ -6211,6 +6235,10 @@ snapshots:
       preact: 10.29.1
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.2.0
+
+  posthog-node@5.41.0:
+    dependencies:
+      '@posthog/core': 1.40.2
 
   preact@10.29.1: {}
 
