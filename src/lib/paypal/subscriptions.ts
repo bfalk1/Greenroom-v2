@@ -11,11 +11,12 @@
 
 import { prisma } from "@/lib/prisma";
 import { paypalFetch } from "@/lib/paypal/client";
+import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 
 const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
-  GA: process.env.PAYPAL_GA_PLAN_ID,
-  VIP: process.env.PAYPAL_VIP_PLAN_ID,
-  AA: process.env.PAYPAL_AA_PLAN_ID,
+  GA: process.env.PAYPAL_GA_PLAN_ID?.trim(),
+  VIP: process.env.PAYPAL_VIP_PLAN_ID?.trim(),
+  AA: process.env.PAYPAL_AA_PLAN_ID?.trim(),
 };
 
 // Discounted "lifetime VIP" plan for the /vip returning-subscriber offer. Same
@@ -23,7 +24,7 @@ const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
 // discount is a separate billing plan created in the PayPal dashboard at the
 // lifetime price ($11.99). Empty when not configured → the checkout route
 // fails closed rather than billing full price.
-const VIP_LIFETIME_PLAN_ID = process.env.PAYPAL_VIP_LIFETIME_PLAN_ID;
+const VIP_LIFETIME_PLAN_ID = process.env.PAYPAL_VIP_LIFETIME_PLAN_ID?.trim();
 
 export function paypalPlanIdForTier(tierName: string): string | null {
   return PLAN_ENV_BY_TIER[tierName] ?? null;
@@ -253,7 +254,10 @@ const MIRRORED_STATUSES = ["ACTIVE", "SUSPENDED", "CANCELLED", "EXPIRED"];
  * subscription can't be attributed (unknown plan / missing user / not yet
  * billed) or when the user's row is owned by a live Stripe subscription.
  */
-export async function syncPaypalSubscription(subscriptionId: string): Promise<{
+export async function syncPaypalSubscription(
+  subscriptionId: string,
+  via: "webhook" | "return" | "cron" | "reconcile" = "webhook"
+): Promise<{
   userId: string;
   tierId: string;
   creditsPerMonth: number;
@@ -343,6 +347,20 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
     remote.periodEnd ??
     new Date(remote.periodStart.getTime() + 1000 * 60 * 60 * 24 * 31);
 
+  // Attribution: the discounted lifetime plan is the only way this planId can
+  // appear, so it marks the row (and the analytics event) as a /vip
+  // conversion. Full-price plans stay unattributed rather than guessing.
+  const acquisitionSource =
+    VIP_LIFETIME_PLAN_ID && remote.planId === VIP_LIFETIME_PLAN_ID
+      ? "vip-lifetime"
+      : null;
+
+  // "First activation" = the row didn't exist or belonged to a different
+  // subscription; renewals and status syncs of the same sub don't re-fire the
+  // activation event below.
+  const isNewActivation =
+    isActive && (!existing || existing.paypalSubscriptionId !== subscriptionId);
+
   await prisma.subscription.upsert({
     where: { userId },
     update: {
@@ -350,6 +368,7 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
       provider: "paypal",
       paypalSubscriptionId: subscriptionId,
       stripeSubscriptionId: null,
+      ...(acquisitionSource ? { acquisitionSource } : {}),
       currentPeriodStart: remote.periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: !isActive,
@@ -359,6 +378,7 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
       tierId: tier.id,
       provider: "paypal",
       paypalSubscriptionId: subscriptionId,
+      acquisitionSource,
       currentPeriodStart: remote.periodStart,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: !isActive,
@@ -370,6 +390,42 @@ export async function syncPaypalSubscription(subscriptionId: string): Promise<{
       where: { id: userId },
       data: { subscriptionStatus: "active" },
     });
+  }
+
+  if (isNewActivation) {
+    // isNewActivation alone is a read-then-write check on `existing` (read
+    // before the upsert above), so the return route, ACTIVATED webhook, and
+    // SALE webhook — which all sync within moments of buyer approval — can
+    // each see the pre-upsert state and every one would fire. An
+    // "activation:<id>" marker (same table/pattern as the "sale:<id>" grant
+    // dedup) lets exactly one caller win the capture. Marker failure only
+    // skips analytics — it must never break the payment path.
+    const wonActivation = await prisma.paypalWebhookEvent
+      .create({
+        data: { id: `activation:${subscriptionId}`, type: "analytics-activation" },
+      })
+      .then(() => true)
+      .catch((error: unknown) => {
+        const isDuplicate =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          (error as { code?: string }).code === "P2002";
+        if (!isDuplicate) {
+          console.error("PayPal activation analytics marker failed:", error);
+        }
+        return false;
+      });
+    if (wonActivation) {
+      trackSubscriptionActivatedServer({
+        userId,
+        plan: tier.name,
+        provider: "paypal",
+        lifetime: acquisitionSource === "vip-lifetime",
+        source: acquisitionSource,
+        via,
+      });
+    }
   }
 
   return {
@@ -441,9 +497,10 @@ export async function grantPaypalSubscriptionCycle(params: {
  * SALE webhook covers transactions that appear later.
  */
 export async function activatePaypalSubscription(
-  subscriptionId: string
+  subscriptionId: string,
+  via: "webhook" | "return" | "cron" | "reconcile" = "webhook"
 ): Promise<"active" | "pending" | "unattributable"> {
-  const synced = await syncPaypalSubscription(subscriptionId);
+  const synced = await syncPaypalSubscription(subscriptionId, via);
 
   if (!synced) {
     const remote = await getPaypalSubscription(subscriptionId).catch(() => null);

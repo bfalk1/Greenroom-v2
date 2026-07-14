@@ -19,6 +19,12 @@ import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
   VIP_LIFETIME_OFFER,
 } from "@/lib/stripe/publicPriceConfig";
+import {
+  trackVipOfferViewed,
+  trackVipOfferUnlock,
+  trackVipPlanSelected,
+  trackVipLifetimeConfirmed,
+} from "@/lib/analytics";
 
 type Pkg = (typeof PUBLIC_SUBSCRIPTION_PACKAGES)[number];
 
@@ -72,9 +78,19 @@ export default function VipOfferPage() {
     fetch("/api/vip-offer")
       .then((r) => r.json())
       .then((d) => {
-        if (active) setUnlocked(Boolean(d?.unlocked));
+        if (!active) return;
+        const isUnlocked = Boolean(d?.unlocked);
+        setUnlocked(isUnlocked);
+        // Top of the VIP funnel — fired once per page load.
+        trackVipOfferViewed(isUnlocked ? "unlocked" : "gate");
       })
-      .catch(() => {})
+      .catch(() => {
+        // Offer-check failed → the gate UI is what renders. Still count the
+        // visit: this is the funnel's denominator, and silently dropping it
+        // undercounts exactly the "landed vs converted" number /vip exists
+        // to answer.
+        if (active) trackVipOfferViewed("gate");
+      })
       .finally(() => {
         if (active) setChecking(false);
       });
@@ -102,12 +118,21 @@ export default function VipOfferPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
+      trackVipOfferUnlock(
+        res.ok,
+        res.ok ? undefined : res.status === 429 ? "rate_limited" : "wrong_password"
+      );
       if (res.ok) {
         setUnlocked(true);
+      } else if (res.status === 429) {
+        // The per-IP limiter (10/min) — not a bad code. Saying "incorrect"
+        // here makes people retype the right code into a closed door.
+        toast.error("Too many attempts — wait a minute and try again.");
       } else {
         toast.error("Incorrect access code. Please try again.");
       }
     } catch {
+      trackVipOfferUnlock(false, "error");
       toast.error("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
@@ -126,25 +151,32 @@ export default function VipOfferPage() {
     // /login?redirect=/vip before the context resolved) gets bounced back to
     // login. Buttons are disabled while loading, but guard here too.
     if (userLoading) return;
-    if (!user) {
-      // New visitors create an account first; the redirect brings them back to
-      // /vip (still unlocked via the cookie) to finish. Returning subscribers
-      // who already have an account use the "Sign in" link on /signup, which
-      // preserves this same redirect.
-      toast.error("Create an account to claim this offer.");
-      window.location.href = "/signup?redirect=/vip";
-      return;
-    }
-    setLoadingPriceId(pkg.priceId);
     const query = lifetime
       ? "?tier=VIP&lifetime=1"
       : `?tier=${encodeURIComponent(pkg.tierName)}`;
+    if (!user) {
+      // New visitors create an account first. Deep-link the redirect straight
+      // to the discounted checkout — NOT back to /vip, which would make them
+      // re-scroll, re-click the plan, and re-accept the terms modal after
+      // signup (each redone step at their highest-intent moment sheds buyers).
+      // The lifetime discount doesn't depend on this hop: the server
+      // authorizes it from the unlock cookie. No toast here — a full-page
+      // navigation destroys it before it renders.
+      window.location.href = `/signup?redirect=${encodeURIComponent(
+        `/checkout${query}`
+      )}`;
+      return;
+    }
+    setLoadingPriceId(pkg.priceId);
     router.push(`/checkout${query}`);
   };
 
   // VIP runs through the lifetime-terms modal first; other tiers go straight to
   // checkout at their normal price.
   const handleSelect = (pkg: Pkg) => {
+    // VIP selection is the lifetime path (gated behind the terms modal); other
+    // tiers subscribe at normal price.
+    trackVipPlanSelected(pkg.tierName, pkg.tierName === "VIP");
     if (pkg.tierName === "VIP") {
       setShowTerms(true);
     } else {
@@ -154,6 +186,7 @@ export default function VipOfferPage() {
 
   const confirmLifetime = () => {
     setShowTerms(false);
+    trackVipLifetimeConfirmed();
     const vipPkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(
       (p) => p.tierName === "VIP"
     );

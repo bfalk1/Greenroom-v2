@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Layers, Sparkles, Coins, Users, ArrowRight } from "lucide-react";
 import { eurostile, display } from "@/lib/fonts";
+import { trackLandingCta } from "@/lib/analytics";
 
 const FEATURES = [
   {
@@ -151,12 +152,14 @@ export default function LandingPage() {
           <nav className="flex items-center gap-3 sm:gap-5">
             <Link
               href="/login"
+              onClick={() => trackLandingCta("nav_signin")}
               className="whitespace-nowrap text-sm font-medium text-[#a1a1a1] transition hover:text-white"
             >
               Sign in
             </Link>
             <Link
               href="/signup"
+              onClick={() => trackLandingCta("nav_join")}
               className="rounded-full bg-[#39b54a] px-5 py-2 text-sm font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_24px_rgba(0,255,136,0.45)]"
             >
               Join
@@ -211,6 +214,7 @@ export default function LandingPage() {
           >
             <Link
               href="/signup"
+              onClick={() => trackLandingCta("hero_signup")}
               className="group inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-8 py-4 text-base font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_36px_rgba(0,255,136,0.5)]"
             >
               Step inside
@@ -218,6 +222,7 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/explore"
+              onClick={() => trackLandingCta("hero_browse")}
               className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-8 py-4 text-base font-semibold text-white backdrop-blur-sm transition hover:border-white/40 hover:bg-white/10"
             >
               Browse samples
@@ -324,12 +329,17 @@ export default function LandingPage() {
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link
                 href="/signup"
+                onClick={() => trackLandingCta("final_signup")}
                 className="group inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-10 py-4 text-base font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_40px_rgba(0,255,136,0.55)]"
               >
                 Get started
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
-              <Link href="/login" className="text-sm font-medium text-[#a1a1a1] transition hover:text-white">
+              <Link
+                href="/login"
+                onClick={() => trackLandingCta("final_signin")}
+                className="text-sm font-medium text-[#a1a1a1] transition hover:text-white"
+              >
                 Already a creator? Sign in
               </Link>
             </div>

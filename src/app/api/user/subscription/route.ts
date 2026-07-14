@@ -24,11 +24,22 @@ export async function GET() {
       }),
     ]);
 
+    // Lifetime-offer eligibility (never PAID): no provider-backed subscription
+    // row. Computed here — from the row already loaded — so the checkout UI
+    // shows the same verdict the checkout APIs enforce (they share the rule
+    // via src/lib/lifetimeEligibility.ts). Beta comps have no row at all and
+    // stay eligible.
+    const lifetimeEligible =
+      !subscription ||
+      (!subscription.stripeSubscriptionId &&
+        !subscription.paypalSubscriptionId);
+
     if (!subscription) {
-      return NextResponse.json({ subscription: null });
+      return NextResponse.json({ subscription: null, lifetimeEligible });
     }
 
     return NextResponse.json({
+      lifetimeEligible,
       subscription: {
         tierName: subscription.tier.name,
         tierDisplayName: subscription.tier.displayName,

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
-import { trackPaywallViewed, trackSubscriptionActivated } from "@/lib/analytics";
+import { trackPaywallViewed, trackPricingPlanSelected } from "@/lib/analytics";
 import { toast } from "sonner";
 
 // PayPal subscriptions are gated separately from credit packs so packs-only
@@ -50,21 +50,25 @@ function PricingContent() {
 
   // Handle success/canceled URL params
   useEffect(() => {
-    if (searchParams.get("success") === "true") {
-      trackSubscriptionActivated("unknown");
-      toast.success("Subscription activated! Your credits are ready to use.");
-      // Clean URL
-      window.history.replaceState({}, "", "/marketplace");
-      window.location.href = "/marketplace";
+    // Legacy success/pending params (old Stripe success_url, stale links):
+    // forward to /checkout/complete, which VERIFIES the subscription before
+    // celebrating. The old toast here announced "credits ready" purely from
+    // the URL param — including to buyers whose webhook grant had failed.
+    // The authoritative subscription_activated event now fires server-side
+    // from the grant itself, so nothing is tracked here.
+    if (
+      searchParams.get("success") === "true" ||
+      searchParams.get("paypal_pending") === "true"
+    ) {
+      window.location.replace(
+        searchParams.get("paypal_pending") === "true"
+          ? "/checkout/complete?status=pending"
+          : "/checkout/complete"
+      );
+      return;
     }
     if (searchParams.get("canceled") === "true") {
       toast.info("Checkout canceled. No charges were made.");
-      window.history.replaceState({}, "", "/pricing");
-    }
-    if (searchParams.get("paypal_pending") === "true") {
-      toast.info(
-        "Subscription approved — PayPal is finalizing it. Your credits will appear in a moment."
-      );
       window.history.replaceState({}, "", "/pricing");
     }
     if (searchParams.get("paypal_revised") === "true") {
@@ -249,11 +253,16 @@ function PricingContent() {
                     middleware would bounce them to /marketplace and lose
                     the subscribe intent. */}
                 <Button
-                  onClick={() =>
-                    user || userError
-                      ? router.push(`/checkout?tier=${pkg.tierName}`)
-                      : router.push("/signup")
-                  }
+                  onClick={() => {
+                    const signedIn = Boolean(user || userError);
+                    trackPricingPlanSelected(pkg.tierName, {
+                      signedIn,
+                      destination: signedIn ? "checkout" : "signup",
+                    });
+                    router.push(
+                      signedIn ? `/checkout?tier=${pkg.tierName}` : "/signup"
+                    );
+                  }}
                   disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted

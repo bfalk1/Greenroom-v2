@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeRedirectPath } from "@/lib/safeRedirect";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -7,8 +8,8 @@ export async function updateSession(request: NextRequest) {
   });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
     {
       cookies: {
         getAll() {
@@ -98,6 +99,9 @@ export async function updateSession(request: NextRequest) {
     // session cookie. Each cron route verifies the secret itself and fails
     // closed when it's unset — session auth here would block every run.
     pathname.startsWith("/api/cron") ||
+    // Health/preflight endpoints authenticate with CRON_SECRET themselves
+    // (fail closed when unset) — session auth would block post-deploy checks.
+    pathname.startsWith("/api/health") ||
     // PayPal redirects the buyer here after approval. Deliberately public:
     // the grant is keyed to the stored order row / subscription custom_id
     // (not the session), so a missing cookie must not strand a paid order.
@@ -118,14 +122,22 @@ export async function updateSession(request: NextRequest) {
     // HMAC-signed cookie the checkout routes verify server-side.
     pathname.startsWith("/api/vip-offer");
 
-  // If user is logged in and on login/signup, redirect to marketplace.
-  // Must run BEFORE the isPublicPath early-return — /login and /signup are
-  // public paths, so the early-return would otherwise leave logged-in users
-  // staring at an auth form.
+  // If user is logged in and on login/signup, forward them along. A carried
+  // ?redirect (e.g. the /vip lifetime flow's /checkout deep link) wins over
+  // the default /marketplace — dropping it here silently strands a buyer who
+  // signed in from another tab mid-purchase. Must run BEFORE the isPublicPath
+  // early-return — /login and /signup are public paths, so the early-return
+  // would otherwise leave logged-in users staring at an auth form.
   if (user && (pathname === "/login" || pathname === "/signup")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/marketplace";
-    return NextResponse.redirect(url);
+    const carried = safeRedirectPath(
+      request.nextUrl.searchParams.get("redirect")
+    );
+    // An auth-page target would redirect straight back here — infinite loop.
+    const dest =
+      carried && !carried.startsWith("/login") && !carried.startsWith("/signup")
+        ? carried
+        : "/marketplace";
+    return NextResponse.redirect(new URL(dest, request.url));
   }
 
   if (isPublicPath) {
@@ -137,10 +149,17 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Protected routes — redirect to login if not authenticated
+  // Protected routes — redirect to login if not authenticated, carrying the
+  // full target (path + query) as ?redirect so login/signup can land the
+  // visitor back where they were headed. Critical for the VIP flow: a shared
+  // /checkout?tier=VIP&lifetime=1 link must survive the auth round-trip, not
+  // dump the buyer on a bare login form that forgets why they came.
   if (!user) {
     const url = request.nextUrl.clone();
+    const target = pathname + (request.nextUrl.search || "");
     url.pathname = "/login";
+    url.search = "";
+    url.searchParams.set("redirect", target);
     return NextResponse.redirect(url);
   }
 
