@@ -111,7 +111,13 @@ export default function CreatorApplicationPage() {
       setTimeout(() => setFileUploadProgress(0), 1000);
     } catch (error) {
       console.error("File upload error:", error);
-      toast.error("File upload failed. Please try again.");
+      // Surface the specific reason (e.g. "not a complete ZIP archive") — the
+      // applicant is the only one who can fix their file.
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "File upload failed. Please try again."
+      );
       setFileUploadProgress(0);
     } finally {
       setUploading(false);
