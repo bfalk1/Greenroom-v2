@@ -3,46 +3,30 @@
 import React, { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { trackSignup, trackSignupFailed } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Sparkles, Loader2 } from "lucide-react";
 import { safeRedirectPath } from "@/lib/safeRedirect";
-import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
+import {
+  SignupForm,
+  type InviteData,
+  type BetaInviteData,
+} from "@/components/auth/SignupForm";
 
-interface InviteData {
-  email: string;
-  artistName: string;
-}
-
-interface BetaInviteData {
-  email: string;
-  credits: number;
-}
-
-function SignupForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
-  const [resendState, setResendState] = useState<
-    "idle" | "sending" | "sent" | "failed"
-  >("idle");
-  const [invite, setInvite] = useState<InviteData | null>(null);
-  const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
+function SignupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [invite, setInvite] = useState<InviteData | null>(null);
+  const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
+  // Starts true when an invite token is present — verification kicks off on
+  // mount, and the submit button must not read "Sign Up" before it resolves.
+  const [inviteLoading, setInviteLoading] = useState(() =>
+    Boolean(searchParams.get("invite") || searchParams.get("beta"))
+  );
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Optional post-signup destination (e.g. the /vip lifetime flow sends
-  // ?redirect=/vip). Same-origin relative paths only, validated centrally.
+  // ?redirect=/checkout?tier=VIP&lifetime=1). Same-origin relative paths only,
+  // validated centrally.
   const safeRedirect = safeRedirectPath(searchParams.get("redirect"));
 
   // Check for invite token on mount (creator or beta invites)
@@ -51,13 +35,11 @@ function SignupForm() {
     const betaToken = searchParams.get("beta");
 
     if (betaToken) {
-      setInviteLoading(true);
       fetch(`/api/beta-invites/verify?token=${encodeURIComponent(betaToken)}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.valid && data.email) {
             setBetaInvite({ email: data.email, credits: data.credits });
-            setEmail(data.email);
           } else {
             setInviteError(data.error || "This beta invite link is invalid or expired.");
           }
@@ -74,7 +56,6 @@ function SignupForm() {
 
     if (!inviteToken) return;
 
-    setInviteLoading(true);
     fetch(`/api/invites/verify?token=${encodeURIComponent(inviteToken)}`)
       .then((res) => res.json())
       .then((data) => {
@@ -83,7 +64,6 @@ function SignupForm() {
             email: data.email,
             artistName: data.artistName || "Creator",
           });
-          setEmail(data.email);
         } else {
           setInviteError(data.error || "This invite link is invalid or expired.");
         }
@@ -97,192 +77,24 @@ function SignupForm() {
       });
   }, [searchParams, router]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  // Attributes the signup to a funnel — "vip" when the carried redirect points
+  // back into the lifetime-offer checkout.
+  const signupSource =
+    safeRedirect && /lifetime=1|\/vip/.test(safeRedirect) ? "vip" : undefined;
 
-    if (password !== confirmPassword) {
-      trackSignupFailed("password_mismatch");
-      setError("Passwords don't match");
-      return;
-    }
-
-    if (password.length < 6) {
-      trackSignupFailed("password_too_short");
-      setError("Password must be at least 6 characters");
-      return;
-    }
-
-    if (!termsAccepted) {
-      trackSignupFailed("terms_not_accepted");
-      setError("You must accept the Terms of Use and Privacy Policy");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const supabase = createClient();
-      const { error, data } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          // Carry the redirect through the email-confirmation path too, so the
-          // /callback route can land a confirmed user back on /vip.
-          emailRedirectTo: `${window.location.origin}/callback${
-            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
-          }`,
-        },
-      });
-
-      if (error) {
-        trackSignupFailed("provider_error");
-        setError(error.message);
-        return;
-      }
-
-      // Already-registered email: Supabase anti-enumeration returns success
-      // with a user whose identities are empty (and no session). The old
-      // behavior showed "Check Your Email" — a dead end, since no email comes.
-      // This audience skews toward past users, so say it straight and point
-      // them at sign-in with the redirect intact.
-      if (
-        !data.session &&
-        data.user &&
-        (data.user.identities?.length ?? 0) === 0
-      ) {
-        // Not lost traffic — a returning user on the wrong form. High volume
-        // here says past users are re-entering through signup, not login.
-        trackSignupFailed("already_registered");
-        setAlreadyRegistered(true);
-        return;
-      }
-
-      const signupSource =
-        safeRedirect && /lifetime=1|\/vip/.test(safeRedirect)
-          ? "vip"
-          : undefined;
-
-      // If session exists, email confirmation is off — redirect
-      if (data.session) {
-        await fetch("/api/user/me");
-        trackSignup(invite ? "invite" : betaInvite ? "invite" : "email", signupSource);
-        if (invite || betaInvite) {
-          // Onboarding honors ?redirect after submit, so the VIP intent
-          // survives the profile step instead of being discarded here.
-          router.push(
-            safeRedirect
-              ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
-              : "/onboarding"
-          );
-        } else {
-          router.push(safeRedirect ?? "/pricing?welcome=true");
-        }
-        return;
-      }
-
-      // Email confirmation is on — show check email screen
-      trackSignup(invite ? "invite" : betaInvite ? "invite" : "email", signupSource);
-      setSuccess(true);
-    } catch (err) {
-      console.error("Signup error:", err);
-      trackSignupFailed("error");
-      setError("Failed to create account. Please try again.");
-    } finally {
-      setLoading(false);
+  const handleSession = () => {
+    if (invite || betaInvite) {
+      // Onboarding honors ?redirect after submit, so a carried destination
+      // survives the profile step instead of being discarded here.
+      router.push(
+        safeRedirect
+          ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
+          : "/onboarding"
+      );
+    } else {
+      router.push(safeRedirect ?? "/pricing?welcome=true");
     }
   };
-
-  const loginHref = safeRedirect
-    ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
-    : "/login";
-
-  const handleResend = async () => {
-    setResendState("sending");
-    try {
-      const supabase = createClient();
-      // resend() reports failures via { error }, not by throwing — a rate
-      // limit or provider error must not show "re-sent".
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/callback${
-            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
-          }`,
-        },
-      });
-      setResendState(error ? "failed" : "sent");
-    } catch {
-      setResendState("failed");
-    }
-  };
-
-  if (alreadyRegistered) {
-    return (
-      <div className="w-full max-w-md text-center">
-        <img
-          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
-          alt="GREENROOM"
-          className="h-6 mx-auto mb-6"
-        />
-        <h1 className="text-3xl font-bold text-white mb-4">
-          You Already Have an Account
-        </h1>
-        <p className="text-[#a1a1a1] mb-6">
-          <span className="text-white font-medium">{email}</span> is already
-          registered. Sign in to continue
-          {safeRedirect ? " where you left off — your offer is waiting" : ""}.
-        </p>
-        <Link href={loginHref}>
-          <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
-            Sign In to Continue
-          </Button>
-        </Link>
-      </div>
-    );
-  }
-
-  if (success) {
-    return (
-      <div className="w-full max-w-md text-center">
-        <img
-          src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
-          alt="GREENROOM"
-          className="h-6 mx-auto mb-6"
-        />
-        <h1 className="text-3xl font-bold text-white mb-4">Check Your Email</h1>
-        <p className="text-[#a1a1a1] mb-2">
-          We sent a confirmation link to <span className="text-white font-medium">{email}</span>. Click it to activate your account
-          {safeRedirect ? " and pick up right where you left off" : ""}.
-        </p>
-        <p className="text-[#a1a1a1] text-sm mb-6">
-          Nothing arriving? Check your spam or junk folder — and open the link
-          on this device so it can sign you in here.
-        </p>
-        <div className="flex flex-col items-center gap-3">
-          <Button
-            onClick={handleResend}
-            disabled={resendState === "sending" || resendState === "sent"}
-            className="bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a] font-semibold"
-          >
-            {resendState === "sent"
-              ? "Confirmation re-sent"
-              : resendState === "sending"
-                ? "Re-sending…"
-                : resendState === "failed"
-                  ? "Couldn't send — try again"
-                  : "Re-send confirmation email"}
-          </Button>
-          <Link href={loginHref}>
-            <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold">
-              Back to Sign In
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   if (inviteError) {
     return (
@@ -307,174 +119,53 @@ function SignupForm() {
   }
 
   return (
-    <div className="w-full max-w-md">
-      {/* Logo */}
-      <div className="text-center mb-8">
-        <Link href="/" className="inline-block mb-6">
-          <img
-            src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
-            alt="GREENROOM"
-            className="h-6 mx-auto"
-          />
-        </Link>
-        <h1 className="text-3xl font-bold text-white mb-2">
-          {invite ? "Join as a Creator" : "Create Your Account"}
-        </h1>
-        <p className="text-[#a1a1a1]">
-          {invite
-            ? "Complete your creator account setup"
-            : "Join GREENROOM and start discovering samples"}
-        </p>
-      </div>
-
-      {/* Creator Invite Banner */}
-      {invite && (
-        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#39b54a]/10 to-[#2e9140]/10 border border-[#39b54a]/30">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-[#39b54a]" />
-            <span className="font-semibold text-[#39b54a]">Creator Invite</span>
+    <SignupForm
+      redirect={safeRedirect}
+      source={signupSource}
+      invite={invite}
+      betaInvite={betaInvite}
+      inviteLoading={inviteLoading}
+      onSession={handleSession}
+      screenLogo
+      header={
+        <>
+          {/* Logo */}
+          <div className="text-center mb-8">
+            <Link href="/" className="inline-block mb-6">
+              <img
+                src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
+                alt="GREENROOM"
+                className="h-6 mx-auto"
+              />
+            </Link>
+            <h1 className="text-3xl font-bold text-white mb-2">
+              {invite ? "Join as a Creator" : "Create Your Account"}
+            </h1>
+            <p className="text-[#a1a1a1]">
+              {invite
+                ? "Complete your creator account setup"
+                : "Join GREENROOM and start discovering samples"}
+            </p>
           </div>
-          <p className="text-sm text-[#a1a1a1] mb-1">
-            Welcome, <span className="text-white font-medium">{invite.artistName}</span>!
-          </p>
-          <p className="text-sm text-[#a1a1a1]">
-            Signing up as <span className="text-white font-medium">{invite.email}</span>
-          </p>
-        </div>
-      )}
 
-      {/* Error */}
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Hide email field if invite (email is pre-set for both creator and beta invites) */}
-        {!invite && !betaInvite && (
-          <div>
-            <label className="block text-sm font-medium text-white mb-2">
-              Email
-            </label>
-            <Input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-            />
-          </div>
-        )}
-
-        <div>
-          <label className="block text-sm font-medium text-white mb-2">
-            Password
-          </label>
-          <Input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-white mb-2">
-            Confirm Password
-          </label>
-          <Input
-            type="password"
-            required
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="••••••••"
-            className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-          />
-        </div>
-
-        {/* Terms Acceptance */}
-        <div className="flex items-start gap-3">
-          <Checkbox
-            checked={termsAccepted}
-            onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
-            className="mt-1"
-          />
-          <label className="text-sm text-[#a1a1a1]">
-            I agree to the{" "}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#39b54a] hover:underline"
-            >
-              User Terms of Use
-            </a>
-            {invite && (
-              <>
-                ,{" "}
-                <a
-                  href="/creator-terms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[#39b54a] hover:underline"
-                >
-                  Creator Terms of Use
-                </a>
-              </>
-            )}
-            {" "}and{" "}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#39b54a] hover:underline"
-            >
-              Privacy Policy
-            </a>
-            <span className="text-red-500"> *</span>
-          </label>
-        </div>
-
-        <Button
-          type="submit"
-          disabled={loading || inviteLoading || !termsAccepted}
-          className="w-full bg-[#39b54a] text-black hover:bg-[#2e9140] font-semibold py-3"
-        >
-          {loading
-            ? "Creating Account..."
-            : inviteLoading
-            ? "Verifying Invite..."
-            : invite
-            ? "Create Creator Account"
-            : "Sign Up"}
-        </Button>
-      </form>
-
-      {/* OAuth skips the whole email-confirmation round trip. Not offered for
-          invite signups — those must be created under the invited email. */}
-      {!invite && !betaInvite && (
-        <GoogleAuthButton redirect={safeRedirect} label="Sign up with Google" />
-      )}
-
-      <p className="text-center text-[#a1a1a1] text-sm mt-6">
-        Already have an account?{" "}
-        <Link
-          href={
-            safeRedirect
-              ? `/login?redirect=${encodeURIComponent(safeRedirect)}`
-              : "/login"
-          }
-          className="text-[#39b54a] hover:text-[#2e9140] font-medium"
-        >
-          Sign In
-        </Link>
-      </p>
-    </div>
+          {/* Creator Invite Banner */}
+          {invite && (
+            <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#39b54a]/10 to-[#2e9140]/10 border border-[#39b54a]/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="w-5 h-5 text-[#39b54a]" />
+                <span className="font-semibold text-[#39b54a]">Creator Invite</span>
+              </div>
+              <p className="text-sm text-[#a1a1a1] mb-1">
+                Welcome, <span className="text-white font-medium">{invite.artistName}</span>!
+              </p>
+              <p className="text-sm text-[#a1a1a1]">
+                Signing up as <span className="text-white font-medium">{invite.email}</span>
+              </p>
+            </div>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -491,7 +182,7 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#141414] to-[#0a0a0a] flex items-center justify-center px-4">
       <Suspense fallback={<SignupLoading />}>
-        <SignupForm />
+        <SignupPageContent />
       </Suspense>
     </div>
   );

@@ -66,11 +66,17 @@ function LoginForm() {
 
       // Check if profile is complete. Onboarding carries the redirect through
       // (it honors ?redirect after submit), so an incomplete profile delays
-      // the destination instead of discarding it.
+      // the destination instead of discarding it. EXCEPT mid-checkout: a
+      // buyer signing in from the checkout page (e.g. created inline there,
+      // never onboarded) goes straight back to their tier — profile
+      // completion happens post-purchase, same rule as /callback.
       const res = await fetch("/api/user/me");
       if (res.ok) {
         const data = await res.json();
-        if (!data.user.profile_completed) {
+        if (
+          !data.user.profile_completed &&
+          !safeRedirect?.startsWith("/checkout")
+        ) {
           router.push(
             safeRedirect
               ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
