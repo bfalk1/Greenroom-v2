@@ -8,7 +8,7 @@ import { trackSignup, trackSignupFailed } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Gift, Loader2 } from "lucide-react";
 import { safeRedirectPath } from "@/lib/safeRedirect";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 
@@ -19,6 +19,12 @@ interface InviteData {
 
 interface BetaInviteData {
   email: string;
+  credits: number;
+}
+
+interface ReferralData {
+  referrerName: string;
+  reward: "vip" | "credits";
   credits: number;
 }
 
@@ -38,12 +44,40 @@ function SignupForm() {
   const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [referral, setReferral] = useState<ReferralData | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // Optional post-signup destination (e.g. the /vip lifetime flow sends
   // ?redirect=/vip). Same-origin relative paths only, validated centrally.
   const safeRedirect = safeRedirectPath(searchParams.get("redirect"));
+
+  // Referral code from a shared link (/signup?ref=CODE). Verified below only
+  // to show the banner — an invalid code degrades to a normal signup rather
+  // than a dead end (unlike invites, a referral is a bonus, not a gate).
+  const referralCode = searchParams.get("ref");
+
+  // Verify the referral code so the banner can name the referrer. The fetch
+  // runs whenever a code is present; the banner itself is hidden when an invite
+  // is also present (invites carry their own banner). Redemption is independent
+  // of this and is driven server-side by the raw ?ref param / user_metadata.
+  useEffect(() => {
+    if (!referralCode) return;
+    fetch(`/api/referral/verify?code=${encodeURIComponent(referralCode)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.valid) {
+          setReferral({
+            referrerName: data.referrerName,
+            reward: data.reward === "vip" ? "vip" : "credits",
+            credits: data.credits,
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to verify referral code:", err);
+      });
+  }, [referralCode]);
 
   // Check for invite token on mount (creator or beta invites)
   useEffect(() => {
@@ -123,15 +157,30 @@ function SignupForm() {
 
     try {
       const supabase = createClient();
+      // Where to land after signup. A creator-referred user is sent to the VIP
+      // offer their account now unlocks (unless an explicit redirect was set) —
+      // the referral itself is redeemed server-side from ?ref / user_metadata.
+      const postSignupRedirect =
+        safeRedirect ?? (referral?.reward === "vip" ? "/vip" : null);
+      // Carry the redirect (and any referral code) through the
+      // email-confirmation path too, so the /callback route can land a
+      // confirmed user back on /vip and redeem the referral.
+      const callbackParams = new URLSearchParams();
+      if (postSignupRedirect) callbackParams.set("redirect", postSignupRedirect);
+      if (referralCode) callbackParams.set("ref", referralCode);
+      const callbackQuery = callbackParams.toString();
       const { error, data } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          // Carry the redirect through the email-confirmation path too, so the
-          // /callback route can land a confirmed user back on /vip.
           emailRedirectTo: `${window.location.origin}/callback${
-            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
+            callbackQuery ? `?${callbackQuery}` : ""
           }`,
+          // Belt-and-suspenders carrier for the referral code: user_metadata
+          // survives cross-device confirmation (where the link's PKCE
+          // exchange fails and the DB row is created by /api/user/me on the
+          // next sign-in instead of by /callback).
+          ...(referralCode ? { data: { referral_code: referralCode } } : {}),
         },
       });
 
@@ -158,10 +207,17 @@ function SignupForm() {
         return;
       }
 
+      // Attribute to the referral funnel off the raw ?ref param (what
+      // redemption actually uses), not the async-verified `referral` banner
+      // state — otherwise a slow/failed/rate-limited verify fetch would
+      // undercount referred signups that still redeem. Gated so an invite
+      // signup that also carries ?ref is still attributed to the invite.
       const signupSource =
         safeRedirect && /lifetime=1|\/vip/.test(safeRedirect)
           ? "vip"
-          : undefined;
+          : referralCode && !invite && !betaInvite
+            ? "referral"
+            : undefined;
 
       // If session exists, email confirmation is off — redirect
       if (data.session) {
@@ -171,12 +227,12 @@ function SignupForm() {
           // Onboarding honors ?redirect after submit, so the VIP intent
           // survives the profile step instead of being discarded here.
           router.push(
-            safeRedirect
-              ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
+            postSignupRedirect
+              ? `/onboarding?redirect=${encodeURIComponent(postSignupRedirect)}`
               : "/onboarding"
           );
         } else {
-          router.push(safeRedirect ?? "/pricing?welcome=true");
+          router.push(postSignupRedirect ?? "/pricing?welcome=true");
         }
         return;
       }
@@ -203,12 +259,18 @@ function SignupForm() {
       const supabase = createClient();
       // resend() reports failures via { error }, not by throwing — a rate
       // limit or provider error must not show "re-sent".
+      const resendParams = new URLSearchParams();
+      const resendRedirect =
+        safeRedirect ?? (referral?.reward === "vip" ? "/vip" : null);
+      if (resendRedirect) resendParams.set("redirect", resendRedirect);
+      if (referralCode) resendParams.set("ref", referralCode);
+      const resendQuery = resendParams.toString();
       const { error } = await supabase.auth.resend({
         type: "signup",
         email,
         options: {
           emailRedirectTo: `${window.location.origin}/callback${
-            safeRedirect ? `?redirect=${encodeURIComponent(safeRedirect)}` : ""
+            resendQuery ? `?${resendQuery}` : ""
           }`,
         },
       });
@@ -343,6 +405,39 @@ function SignupForm() {
         </div>
       )}
 
+      {/* Referral Banner (never shown alongside an invite banner) */}
+      {referral && !invite && !betaInvite && (
+        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#39b54a]/10 to-[#2e9140]/10 border border-[#39b54a]/30">
+          <div className="flex items-center gap-2 mb-2">
+            <Gift className="w-5 h-5 text-[#39b54a]" />
+            <span className="font-semibold text-[#39b54a]">
+              You&apos;ve Been Invited
+            </span>
+          </div>
+          <p className="text-sm text-[#a1a1a1]">
+            <span className="text-white font-medium">{referral.referrerName}</span>{" "}
+            invited you to GREENROOM.{" "}
+            {referral.reward === "vip" ? (
+              <>
+                Sign up to unlock the{" "}
+                <span className="text-white font-medium">
+                  VIP lifetime discount
+                </span>
+                .
+              </>
+            ) : (
+              <>
+                Subscribe to VIP and you&apos;ll both get{" "}
+                <span className="text-white font-medium">
+                  {referral.credits} free credits
+                </span>
+                .
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
       {/* Error */}
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
@@ -458,7 +553,11 @@ function SignupForm() {
       {/* OAuth skips the whole email-confirmation round trip. Not offered for
           invite signups — those must be created under the invited email. */}
       {!invite && !betaInvite && (
-        <GoogleAuthButton redirect={safeRedirect} label="Sign up with Google" />
+        <GoogleAuthButton
+          redirect={safeRedirect}
+          referralCode={referralCode}
+          label="Sign up with Google"
+        />
       )}
 
       <p className="text-center text-[#a1a1a1] text-sm mt-6">

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 // Nightly Stripe↔DB reconciliation. The webhook is the primary grant path,
 // but it is a single point of failure that has already failed silently once
@@ -76,6 +77,25 @@ async function reconcileOne(
       `subscription ${subscription.id}: cannot resolve tier (priceId=${priceId ?? "none"})`
     );
   }
+
+  // Backstop the referral reward independently of the credit-grant marker: a
+  // referred user who reached VIP (fresh checkout whose referral grant
+  // transiently failed, or a GA→VIP upgrade the webhooks didn't pay) is paid
+  // here on the nightly sweep, within the 30-day window. Runs BEFORE the
+  // already-granted early return so a healthy sub with an unpaid pending
+  // referral is still repaired. Idempotent — a no-op once rewarded / for
+  // non-referrals. The cron lists active + past_due subs; only ACTIVE ones pay
+  // (a past_due/dunning sub that recovers is caught by a later active sweep).
+  // The subscription's own creation time is the window reference, so a
+  // within-window activation caught only on a later sweep is still paid (not
+  // falsely expired against wall-clock).
+  await grantReferralRewardIfVip(
+    userId,
+    tier.name,
+    subscription.status === "active",
+    "reconcile",
+    new Date(subscription.created * 1000)
+  );
 
   const existing = await prisma.subscription.findUnique({
     where: { userId },
@@ -168,6 +188,8 @@ async function reconcileOne(
         source: acquisitionSource,
         via: "reconcile",
       });
+      // (The referral reward is granted unconditionally at the top of
+      // reconcileOne, so a healthy-but-unpaid pending referral is repaired too.)
     } catch (error) {
       if (
         typeof error === "object" &&

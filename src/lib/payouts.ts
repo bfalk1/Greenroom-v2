@@ -99,7 +99,39 @@ export async function getCreatorCreditsSpent(
     select: { creditsSpent: true },
   });
 
+  // No self-referred-buyer exclusion needed: a creator's referred users receive
+  // the VIP discount, NOT spendable credits, so there is no platform-gifted
+  // credit for a creator to funnel through their own catalog into payout cash.
   return purchases.reduce((sum, p) => sum + p.creditsSpent, 0);
+}
+
+/**
+ * Referral cash rewards earned by a creator (in cents), optionally scoped to a
+ * time window. This is the second component of a creator's total earnings —
+ * every unpaid-balance computation must be
+ *
+ *   catalog earnings (credits × rate) + referral cash − accounted payouts
+ *
+ * or referral rewards would never be paid out (or worse, a payout containing
+ * them would be deducted from future catalog earnings).
+ *
+ * The range scopes on rewardedAt — WHEN the cash was earned (the referred user
+ * activated VIP) — not the referral's createdAt (signup), so "this month's
+ * earnings" reflects rewards actually granted this month.
+ */
+export async function getCreatorReferralCashCents(
+  creatorId: string,
+  range?: { gte?: Date; lt?: Date; lte?: Date }
+): Promise<number> {
+  const agg = await prisma.referral.aggregate({
+    where: {
+      referrerId: creatorId,
+      referrerCashCents: { gt: 0 },
+      ...(range ? { rewardedAt: range } : {}),
+    },
+    _sum: { referrerCashCents: true },
+  });
+  return agg._sum.referrerCashCents ?? 0;
 }
 
 export type PayoutFeeConfig = {

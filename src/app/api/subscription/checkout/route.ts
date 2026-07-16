@@ -50,17 +50,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // Lifetime VIP offer (returning-subscriber /vip page). The discount is a
-    // Stripe coupon applied here on the server — NEVER trust the client flag
-    // alone. To qualify, ALL must hold: the request asked for lifetime, this
-    // browser unlocked the offer via the password gate (httpOnly cookie set by
-    // /api/vip-offer), the plan is VIP (the only tier it covers), and the coupon
-    // is configured. If lifetime was requested but any check fails, refuse
-    // rather than silently charging full price.
+    // Find or create the user in our DB (fetched before the lifetime gate so a
+    // referral-granted account unlock can authorize the discount).
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+    });
+
+    if (!dbUser) {
+      return NextResponse.json(
+        { error: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    // Lifetime VIP offer (returning-subscriber /vip page, or a creator-referred
+    // account). The discount is a Stripe coupon applied here on the server —
+    // NEVER trust the client flag alone. To qualify, ALL must hold: the request
+    // asked for lifetime, the offer is unlocked (either this browser cleared the
+    // password gate — httpOnly cookie set by /api/vip-offer — OR the account was
+    // granted the VIP offer via a creator referral), the plan is VIP (the only
+    // tier it covers), and the coupon is configured. Otherwise refuse rather
+    // than silently charging full price.
     let discountCoupon: string | null = null;
     if (lifetime === true) {
       const store = await cookies();
-      const unlocked = verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value);
+      const unlocked =
+        verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value) ||
+        dbUser.vipOfferUnlockedAt != null;
       const coupon = vipLifetimeCouponId();
 
       if (!unlocked) {
@@ -85,18 +101,6 @@ export async function POST(request: Request) {
         );
       }
       discountCoupon = coupon;
-    }
-
-    // Find or create the user in our DB
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-    });
-
-    if (!dbUser) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
     }
 
     // Cross-provider guard: a live PayPal subscription must not be joined by

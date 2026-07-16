@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { safeRedirectPath } from "@/lib/safeRedirect";
+import { recordReferralForNewUser } from "@/lib/referral";
+import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
@@ -154,6 +156,35 @@ export async function GET(request: Request) {
               reviewedAt: new Date(),
               termsAcceptedAt: new Date(),
             },
+          });
+        }
+      }
+
+      // Record a PENDING referral for a brand-new, email-verified account (a
+      // creator referral also unlocks the VIP discount here; rewards are paid
+      // only once the referred user activates a VIP subscription). The code
+      // rides the confirmation link (?ref= on emailRedirectTo / the OAuth
+      // redirectTo) with signup-time user_metadata as the fallback carrier
+      // (survives cross-device confirmation, where the link's PKCE exchange
+      // fails and the row is created by /api/user/me instead — that path reads
+      // the same metadata). recordReferralForNewUser never throws, and the
+      // referrals unique constraint makes replays no-ops.
+      if (isNewUser && emailConfirmed) {
+        const metadataCode = data.user.user_metadata?.referral_code;
+        const referralCode =
+          searchParams.get("ref") ??
+          (typeof metadataCode === "string" ? metadataCode : null);
+        const record = await recordReferralForNewUser({
+          code: referralCode,
+          newUserId: user.id,
+        });
+        if (record.recorded) {
+          trackReferralRecordedServer({
+            referredUserId: user.id,
+            referrerId: record.referrerId!,
+            referrerRole: record.referrerRole!,
+            referredVipOffer: record.referredVipOffer ?? false,
+            via: "callback",
           });
         }
       }

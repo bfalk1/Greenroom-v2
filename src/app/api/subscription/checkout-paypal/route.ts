@@ -57,14 +57,22 @@ export async function POST(request: Request) {
       );
     }
 
+    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!dbUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
     // Lifetime VIP offer — swap in the discounted PayPal plan, gated the SAME
-    // way as the Stripe path: the offer must be unlocked (httpOnly cookie set by
-    // /api/vip-offer), the tier must be VIP, and the discounted plan must be
-    // configured. Fail closed rather than billing the full price on a mismatch.
+    // way as the Stripe path: the offer must be unlocked (either the httpOnly
+    // cookie set by /api/vip-offer OR a creator-referral account grant), the
+    // tier must be VIP, and the discounted plan must be configured. Fail closed
+    // rather than billing the full price on a mismatch.
     let isLifetime = false;
     if (lifetime === true) {
       const store = await cookies();
-      const unlocked = verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value);
+      const unlocked =
+        verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value) ||
+        dbUser.vipOfferUnlockedAt != null;
       const lifetimePlan = paypalVipLifetimePlanId();
 
       if (!unlocked) {
@@ -90,11 +98,6 @@ export async function POST(request: Request) {
       }
       planId = lifetimePlan;
       isLifetime = true;
-    }
-
-    const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
-    if (!dbUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // One subscription per user across BOTH providers. An existing Stripe sub

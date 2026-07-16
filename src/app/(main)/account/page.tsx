@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { CreditPackages } from "@/components/account/CreditPackages";
+import { ReferralPanel } from "@/components/referral/ReferralPanel";
 import { ProfilePictureUpload } from "@/components/account/ProfilePictureUpload";
 import { BannerImageUpload } from "@/components/account/BannerImageUpload";
 import { SocialLinksEditor } from "@/components/account/SocialLinksEditor";
@@ -496,6 +497,9 @@ export default function AccountPage() {
         <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
           <CreditPackages />
         </div>
+
+        {/* Invite Friends (referral link) */}
+        <ReferralPanel variant="account" />
 
         {/* Subscription Section */}
         {subscription && (

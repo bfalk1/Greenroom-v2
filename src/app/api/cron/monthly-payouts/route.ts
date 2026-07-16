@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
+  getCreatorReferralCashCents,
   getPayoutFeeConfig,
   nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
@@ -94,19 +95,36 @@ export async function POST(request: NextRequest) {
         // counting only PAID would re-queue them and double-pay on approval.
         const accounted = await prisma.creatorPayout.findMany({
           where: { creatorId: creator.id, status: { in: ["PAID", "PENDING"] } },
-          select: { amountUsdCents: true, totalCreditsSpent: true },
+          select: {
+            amountUsdCents: true,
+            totalCreditsSpent: true,
+            referralBonusCents: true,
+          },
         });
         const accountedCents = accounted.reduce((s, p) => s + p.amountUsdCents, 0);
         const accountedCredits = accounted.reduce((s, p) => s + p.totalCreditsSpent, 0);
+        const accountedReferralCents = accounted.reduce(
+          (s, p) => s + p.referralBonusCents,
+          0
+        );
 
         const totalCredits = await getCreatorCreditsSpent(creator.id);
-        const totalEarningsCents = await calculateCreatorEarningsCents(
+        const catalogEarningsCents = await calculateCreatorEarningsCents(
           creator.id,
           totalCredits
         );
+        // Total earnings = catalog sales + referral cash rewards.
+        const referralCashCents = await getCreatorReferralCashCents(creator.id);
+        const totalEarningsCents = catalogEarningsCents + referralCashCents;
 
         const unpaidCents = computeUnpaidCents(totalEarningsCents, accountedCents);
         const unpaidCredits = Math.max(0, totalCredits - accountedCredits);
+        // Referral portion of this payout, for invoice itemization. Clamped to
+        // the row amount so the split can never exceed the gross.
+        const unpaidReferralCents = Math.min(
+          unpaidCents,
+          computeUnpaidCents(referralCashCents, accountedReferralCents)
+        );
 
         if (unpaidCents < MIN_PAYOUT_CENTS) {
           results.skippedBelowThreshold++;
@@ -122,6 +140,7 @@ export async function POST(request: NextRequest) {
             periodEnd,
             totalCreditsSpent: unpaidCredits,
             amountUsdCents: unpaidCents,
+            referralBonusCents: unpaidReferralCents,
             processingFeeCents: computeProcessingFeeCents(
               unpaidCents,
               feeConfig.feeBps,

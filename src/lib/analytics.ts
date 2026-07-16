@@ -60,6 +60,16 @@ export function trackLogout() {
   posthog.capture("logout");
 }
 
+// --- Referrals ---
+
+// Copy-link click on a referral panel. context distinguishes the user-facing
+// account panel from the creator earnings panel.
+export function trackReferralLinkCopied(
+  context: "account" | "creator_earnings"
+) {
+  posthog.capture("referral_link_copied", { context });
+}
+
 // --- Funnel: Signup → Purchase ---
 
 export function trackOnboardingStarted() {

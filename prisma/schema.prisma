@@ -28,6 +28,7 @@ enum CreditTransactionType {
   ADMIN_ADJUSTMENT
   UPGRADE_TOPUP
   REFUND
+  REFERRAL
 }
 
 enum SampleType {
@@ -119,6 +120,8 @@ model User {
   customPayoutRate   Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
   termsAcceptedAt    DateTime? @map("terms_accepted_at")
   emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
+  referralCode       String?   @unique @map("referral_code") // Personal referral code, allocated lazily on first use of the referral panel
+  vipOfferUnlockedAt DateTime? @map("vip_offer_unlocked_at") // Set when a creator referral grants this account the VIP lifetime discount; honored by checkout as an unlock (alongside the gr_vip_offer cookie). Permanent, never-paid eligibility still applies.
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -143,6 +146,8 @@ model User {
   betaInvitesSent      BetaInvite[]         @relation("BetaInvitedBy")
   betaInviteUsed       BetaInvite?          @relation("BetaInviteUsedBy")
   paypalOrders         PaypalOrder[]
+  referralsMade        Referral[]           @relation("Referrer")
+  referralUsed         Referral?            @relation("ReferredUser")
 
   @@map("users")
 }
@@ -483,6 +488,9 @@ model CreatorPayout {
   // GROSS earnings — this is what's deducted from the creator's unpaid balance.
   // The amount actually sent is amountUsdCents − processingFeeCents (net).
   amountUsdCents    Int          @map("amount_usd_cents")
+  // Portion of amountUsdCents that is referral cash rewards (not catalog
+  // sales), locked in at creation so the invoice can itemize it.
+  referralBonusCents Int         @default(0) @map("referral_bonus_cents")
   // Payment processing fee (covered by the creator), locked in at request time.
   processingFeeCents Int         @default(0) @map("processing_fee_cents")
   // Invoice number assigned when the payout is created (from payout_invoice_seq).
@@ -501,6 +509,53 @@ model CreatorPayout {
   @@index([creatorId])
   @@index([periodStart, periodEnd])
   @@map("creator_payouts")
+}
+
+// ─────────────────────────────────────────────
+// REFERRALS
+// ─────────────────────────────────────────────
+
+// One row per successful referral, created when the referred account is first
+// created with a verified email. The unique referredUserId is the exactly-once
+// guard: the two user-creation paths (/callback and /api/user/me) can race to
+// redeem for the same brand-new account, and only one insert wins. Reward
+// amounts are locked onto the row at redemption time — a CREATOR referrer's
+// cash reward is priced at their effective payout rate that day, so later rate
+// changes never alter what was granted. referrerCashCents feeds the payout
+// system's unpaid-balance math via getCreatorReferralCashCents (src/lib/payouts.ts).
+model Referral {
+  id                String   @id @default(uuid()) @db.Uuid
+  referrerId        String   @map("referrer_id") @db.Uuid
+  // Nullable + SetNull: this row is an earnings record (referrerCashCents feeds
+  // the payout math) and must outlive the referred account, so deleting the
+  // referred user can't claw already-earned cash out of future catalog sales.
+  // Postgres treats NULLs as distinct, so @unique still guards live redemptions.
+  referredUserId    String?  @unique @map("referred_user_id") @db.Uuid
+  // Credits granted to the referred (new) user.
+  referredCredits   Int      @default(0) @map("referred_credits")
+  // Credits granted to a USER (non-creator) referrer.
+  referrerCredits   Int      @default(0) @map("referrer_credits")
+  // Payout cash granted to a CREATOR referrer, in integer USD cents.
+  referrerCashCents Int      @default(0) @map("referrer_cash_cents")
+  // True when this is a creator referral — the referred user was granted the
+  // VIP lifetime unlock at signup (snapshots the referrer-was-a-creator decision
+  // so the reward type matches what the signup banner promised).
+  referredVipOffer  Boolean  @default(false) @map("referred_vip_offer")
+  // Rewards are earned only when the referred user activates a VIP subscription
+  // (within REFERRAL_REWARD_WINDOW_DAYS of signup). Null until that resolves;
+  // the amount fields above stay 0 while pending. Set once, terminally — the
+  // exactly-once guard for the reward grant across activation paths/retries.
+  rewardedAt        DateTime? @map("rewarded_at")
+  // Set when the reward was withheld ("expired" — VIP activation too late or
+  // never; "monthly_cap" — referrer over the cap, referred credits still granted).
+  referrerRewardSkippedReason String? @map("referrer_reward_skipped_reason")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  referrer User  @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred User? @relation("ReferredUser", fields: [referredUserId], references: [id], onDelete: SetNull)
+
+  @@index([referrerId, createdAt])
+  @@map("referrals")
 }
 
 // ─────────────────────────────────────────────

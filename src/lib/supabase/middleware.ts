@@ -117,6 +117,9 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify" ||
     pathname === "/api/beta-invites/verify" ||
+    // Referral banner on the (public) signup page — rate-limited, returns
+    // only a display name, never the referrer's email or id.
+    pathname === "/api/referral/verify" ||
     // VIP offer password gate — unauthenticated by design (a shared marketing
     // code, not account auth); the route rate-limits and the unlock is an
     // HMAC-signed cookie the checkout routes verify server-side.

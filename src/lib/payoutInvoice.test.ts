@@ -57,6 +57,38 @@ test("escapeHtml covers the five HTML metacharacters", () => {
   );
 });
 
+test("referral bonus renders as its own line and is split out of catalog earnings", () => {
+  const html = renderPayoutInvoiceHtml({
+    ...baseInvoice,
+    grossCents: 5705, // 5005 catalog + 700 referral
+    referralBonusCents: 700,
+  });
+  assert.ok(html.includes("Referral rewards"));
+  assert.ok(html.includes("$7.00")); // the referral line
+  assert.ok(html.includes("$50.05")); // catalog line = gross − bonus
+  assert.ok(html.includes("$57.05")); // gross total unchanged
+});
+
+test("catalog-only invoices (bonus absent or 0) render no referral line", () => {
+  assert.ok(!renderPayoutInvoiceHtml(baseInvoice).includes("Referral rewards"));
+  assert.ok(
+    !renderPayoutInvoiceHtml({ ...baseInvoice, referralBonusCents: 0 }).includes(
+      "Referral rewards"
+    )
+  );
+});
+
+test("a malformed bonus larger than gross is clamped, never a negative catalog line", () => {
+  const html = renderPayoutInvoiceHtml({
+    ...baseInvoice,
+    grossCents: 500,
+    referralBonusCents: 9999,
+  });
+  assert.ok(html.includes("Referral rewards"));
+  assert.ok(!html.includes("$-")); // no negative amounts anywhere
+  assert.ok(!html.includes("−$-"));
+});
+
 test("zero-fee invoices render a $0.00 deduction and net equals gross", () => {
   const html = renderPayoutInvoiceHtml({
     ...baseInvoice,
