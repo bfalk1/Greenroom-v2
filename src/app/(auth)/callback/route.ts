@@ -203,6 +203,13 @@ export async function GET(request: Request) {
             `${origin}/onboarding?creator=true${redirectQuery ? `&${redirectQuery}` : ""}`
           );
         }
+        // Mid-checkout signup (email confirmation or Google OAuth from the
+        // /checkout page): send the buyer straight back to their tier, not
+        // through onboarding — profile completion can happen post-purchase,
+        // and every extra step at the payment moment sheds buyers.
+        if (safeRedirect?.startsWith("/checkout")) {
+          return NextResponse.redirect(`${origin}${safeRedirect}`);
+        }
         return NextResponse.redirect(
           `${origin}/onboarding${redirectQuery ? `?${redirectQuery}` : ""}`
         );

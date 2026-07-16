@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
+import { SignupForm } from "@/components/auth/SignupForm";
 import { trackPaywallViewed, trackPricingPlanSelected } from "@/lib/analytics";
 import { toast } from "sonner";
 
@@ -34,7 +35,7 @@ function PricingContent() {
   // Which provider owns the user's current subscription (null = none) —
   // decides whether PayPal buttons subscribe, switch plans, or hide.
   const [subProvider, setSubProvider] = useState<string | null>(null);
-  const { user, loading: userLoading, error: userError } = useUser();
+  const { user, loading: userLoading, error: userError, refreshUser } = useUser();
   const searchParams = useSearchParams();
 
   const isWelcome = searchParams.get("welcome") === "true";
@@ -243,25 +244,18 @@ function PricingContent() {
                 </ul>
 
                 {/* Payment method is chosen on /checkout — one button here.
-                    /pricing is public but /checkout is login-walled, so
-                    anonymous visitors go create an account first (signup
-                    routes them back here via /pricing?welcome=true).
-                    userError means an AUTHENTICATED session whose
-                    /api/user/me load failed (see UserContext) — route those
-                    to /checkout like any signed-in user (its APIs auth via
-                    the session cookie), never to /signup, where the
-                    middleware would bounce them to /marketplace and lose
-                    the subscribe intent. */}
+                    /checkout is public: anonymous visitors sign up inline
+                    there with the tier they picked staying on screen, so
+                    everyone goes straight to /checkout?tier=X (the old
+                    signed-out bounce to /signup dropped the tier choice and
+                    was a major funnel exit). */}
                 <Button
                   onClick={() => {
-                    const signedIn = Boolean(user || userError);
                     trackPricingPlanSelected(pkg.tierName, {
-                      signedIn,
-                      destination: signedIn ? "checkout" : "signup",
+                      signedIn: Boolean(user || userError),
+                      destination: "checkout",
                     });
-                    router.push(
-                      signedIn ? `/checkout?tier=${pkg.tierName}` : "/signup"
-                    );
+                    router.push(`/checkout?tier=${pkg.tierName}`);
                   }}
                   disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
                   className={`w-full py-3 font-semibold ${
@@ -288,6 +282,37 @@ function PricingContent() {
             </div>
           ))}
         </div>
+
+        {/* Inline signup for signed-out visitors who aren't ready to pick a
+            plan yet (plan buttons already carry the tier into /checkout's own
+            signup step). On an immediate session the page continues in place:
+            the user context refreshes and the URL flips to ?welcome=true so
+            the welcome banner + "Choose Your Plan" heading take over. The
+            email-confirmation and Google paths ride the same redirect through
+            /callback. */}
+        {!user && !userLoading && !userError && (
+          <div className="mt-20 flex justify-center">
+            <SignupForm
+              redirect="/pricing?welcome=true"
+              source="pricing"
+              onSession={async () => {
+                await refreshUser();
+                router.replace("/pricing?welcome=true");
+              }}
+              header={
+                <div className="text-center mb-6">
+                  <h2 className="text-3xl font-bold text-white mb-2">
+                    Not ready to pick?
+                  </h2>
+                  <p className="text-[#a1a1a1]">
+                    Create your free account now and choose a plan whenever
+                    you&apos;re ready.
+                  </p>
+                </div>
+              }
+            />
+          </div>
+        )}
 
         {/* FAQ Section */}
         <div className="mt-20">

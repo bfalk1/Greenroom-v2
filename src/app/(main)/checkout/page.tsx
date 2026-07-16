@@ -15,6 +15,7 @@ import {
   taxCollectionEnabled,
 } from "@/lib/tax/canadaRates";
 import { useUser } from "@/lib/hooks/useUser";
+import { SignupForm } from "@/components/auth/SignupForm";
 import {
   trackSubscriptionCheckout,
   trackCheckoutViewed,
@@ -82,20 +83,29 @@ function CheckoutContent() {
     if (!pkg) router.replace("/pricing");
   }, [pkg, router]);
 
-  // checkout_viewed fires once, after the lifetime verdict resolves (so the
-  // event carries whether the buyer saw $11.99 or the ineligible fallback).
+  // Signed-out visitor: /checkout is public now, and the payment column
+  // renders the inline signup step instead. NOT the userError case — that's an
+  // authenticated session whose /api/user/me load failed (handled below).
+  const anonymous = !user && !userLoading && !userError;
+
+  // checkout_viewed fires once, after auth state and (for signed-in lifetime
+  // buyers) the eligibility verdict resolve — so the event carries whether the
+  // buyer saw $11.99 or the ineligible fallback. Anonymous visitors have no
+  // verdict (the eligibility API needs a session): fires with null.
   const viewTracked = useRef(false);
   useEffect(() => {
-    if (viewTracked.current || !pkg) return;
+    if (viewTracked.current || !pkg || userLoading) return;
     const lt = searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
-    if (lt && lifetimeEligible === null) return;
+    const anon = !user && !userError;
+    if (lt && !anon && lifetimeEligible === null) return;
     viewTracked.current = true;
     trackCheckoutViewed({
       tier: pkg.tierName,
       lifetime: lt,
       lifetimeEligible: lt ? lifetimeEligible : null,
+      signedIn: !anon,
     });
-  }, [pkg, searchParams, lifetimeEligible]);
+  }, [pkg, searchParams, lifetimeEligible, user, userLoading, userError]);
 
   useEffect(() => {
     if (!user) return;
@@ -156,11 +166,23 @@ function CheckoutContent() {
   // subscription_status flag — that flag is set by beta comps and has drifted
   // stale before, which wrongly showed full price to eligible buyers. While
   // the verdict is loading (null) the price area renders a skeleton.
+  // Anonymous visitors can't be checked (the API needs a session) but a
+  // brand-new account is never-paid by definition, so show the lifetime price;
+  // signing IN to an existing account re-resolves the real verdict, and the
+  // checkout APIs refuse (not full-charge) an unauthorized lifetime request.
   const isLifetime =
     searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
-  const applyLifetime = isLifetime && lifetimeEligible === true;
-  const lifetimeUndetermined = isLifetime && lifetimeEligible === null;
+  const lifetimeVerdict = anonymous ? true : lifetimeEligible;
+  const applyLifetime = isLifetime && lifetimeVerdict === true;
+  const lifetimeUndetermined = isLifetime && lifetimeVerdict === null;
   const price = applyLifetime ? VIP_LIFETIME_OFFER.lifetimePrice : pkg.price;
+
+  // Canonical self-URL, threaded through every auth round trip out of the
+  // inline signup step (Google OAuth, email confirmation, sign-in cross-link)
+  // so the buyer lands back here with tier/lifetime intact.
+  const selfPath = `/checkout?tier=${encodeURIComponent(pkg.tierName)}${
+    isLifetime ? "&lifetime=1" : ""
+  }`;
 
   // A live subscription pins the payment method to its own provider: PayPal
   // subs change plans via revise, Stripe subs via a new checkout session —
@@ -306,177 +328,205 @@ function CheckoutContent() {
         </Link>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-12 items-start">
-          {/* ——— Payment method ——— */}
+          {/* ——— Inline signup (signed out) / payment method ——— */}
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              {samePlan
-                ? "Your current plan"
-                : hasActiveSub
-                  ? "Change your plan"
-                  : "Complete your subscription"}
-            </h1>
-            <p className="text-[#a1a1a1] mb-8">
-              {samePlan
-                ? "You're already subscribed to this plan."
-                : hasActiveSub
-                  ? `Switching from ${sub!.tierName} — your new plan starts next billing cycle.`
-                  : "Choose how you'd like to pay. You can cancel anytime."}
-            </p>
-
-            {samePlan ? (
-              <Button
-                onClick={() => router.push("/account")}
-                className="bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a] font-semibold px-6"
-              >
-                Manage subscription
-              </Button>
+            {anonymous ? (
+              // Signed-out buyers create their account right here — the order
+              // summary stays alongside so the tier they picked never leaves
+              // the screen. With an immediate session the column re-renders
+              // into the payment chooser in place; the email-confirmation and
+              // Google paths round-trip through /callback back to selfPath.
+              <SignupForm
+                redirect={selfPath}
+                source="checkout"
+                onSession={async () => {
+                  await refreshUser();
+                }}
+                header={
+                  <>
+                    <h1 className="text-3xl font-bold text-white mb-2">
+                      Create your account
+                    </h1>
+                    <p className="text-[#a1a1a1] mb-8">
+                      Your {pkg.name} plan is saved — set up your account, then
+                      choose how to pay.
+                    </p>
+                  </>
+                }
+              />
             ) : (
               <>
-                <div className="space-y-3 mb-8" role="radiogroup" aria-label="Payment method">
-                  {cardAvailable && (
-                    <MethodCard
-                      selected={effectiveMethod === "card"}
-                      onSelect={() => {
-                        setMethod("card");
-                        trackCheckoutMethodSelected("card");
-                      }}
-                      locked={isStripeChange}
-                      title="Card"
-                      subtitle="Visa, Mastercard, Amex and more — via Stripe"
-                      icon={<CreditCard className="w-5 h-5" />}
-                    />
-                  )}
-                  {paypalAvailable && (
-                    <MethodCard
-                      selected={effectiveMethod === "paypal"}
-                      onSelect={() => {
-                        setMethod("paypal");
-                        trackCheckoutMethodSelected("paypal");
-                      }}
-                      locked={isPaypalSwitch}
-                      title="PayPal"
-                      subtitle={
-                        isPaypalSwitch
-                          ? "Your subscription is billed through PayPal"
-                          : "Pay with your PayPal account"
-                      }
-                      icon={<PaypalMark />}
-                    />
-                  )}
-                  {!cardAvailable && !paypalAvailable && (
-                    // Previously a silent dead end: no method cards, a
-                    // permanently disabled button, and no explanation.
-                    <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm">
-                      Payments are temporarily unavailable — nothing is wrong
-                      with your account, and nothing has been charged. Please
-                      try again shortly or contact support@greenroom.fm.
-                    </div>
-                  )}
-                </div>
+                <h1 className="text-3xl font-bold text-white mb-2">
+                  {samePlan
+                    ? "Your current plan"
+                    : hasActiveSub
+                      ? "Change your plan"
+                      : "Complete your subscription"}
+                </h1>
+                <p className="text-[#a1a1a1] mb-8">
+                  {samePlan
+                    ? "You're already subscribed to this plan."
+                    : hasActiveSub
+                      ? `Switching from ${sub!.tierName} — your new plan starts next billing cycle.`
+                      : "Choose how you'd like to pay. You can cancel anytime."}
+                </p>
 
-                {showTaxRegion && (
-                  <div className="mb-8">
-                    <label className="block text-sm font-medium text-white mb-1">
-                      Billing location
-                    </label>
-                    <p className="text-xs text-[#6a6a6a] mb-3">
-                      PayPal needs your region to apply the correct tax.
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <select
-                        aria-label="Country"
-                        value={country}
-                        onChange={(e) => {
-                          setCountry(e.target.value);
-                          setRegion("");
-                        }}
-                        className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] text-white px-4 py-3 text-sm focus:border-[#39b54a] focus:outline-none"
-                      >
-                        <option value="">Select country…</option>
-                        <option value="US">United States</option>
-                        <option value="CA">Canada</option>
-                        <option value="OTHER">Other</option>
-                      </select>
-                      {country === "CA" && (
-                        <select
-                          aria-label="Province"
-                          value={region}
-                          onChange={(e) => setRegion(e.target.value)}
-                          className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] text-white px-4 py-3 text-sm focus:border-[#39b54a] focus:outline-none"
-                        >
-                          <option value="">Select province…</option>
-                          {CA_PROVINCES.map((p) => (
-                            <option key={p.code} value={p.code}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
+                {samePlan ? (
+                  <Button
+                    onClick={() => router.push("/account")}
+                    className="bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#2a2a2a] font-semibold px-6"
+                  >
+                    Manage subscription
+                  </Button>
+                ) : (
+                  <>
+                    <div className="space-y-3 mb-8" role="radiogroup" aria-label="Payment method">
+                      {cardAvailable && (
+                        <MethodCard
+                          selected={effectiveMethod === "card"}
+                          onSelect={() => {
+                            setMethod("card");
+                            trackCheckoutMethodSelected("card");
+                          }}
+                          locked={isStripeChange}
+                          title="Card"
+                          subtitle="Visa, Mastercard, Amex and more — via Stripe"
+                          icon={<CreditCard className="w-5 h-5" />}
+                        />
+                      )}
+                      {paypalAvailable && (
+                        <MethodCard
+                          selected={effectiveMethod === "paypal"}
+                          onSelect={() => {
+                            setMethod("paypal");
+                            trackCheckoutMethodSelected("paypal");
+                          }}
+                          locked={isPaypalSwitch}
+                          title="PayPal"
+                          subtitle={
+                            isPaypalSwitch
+                              ? "Your subscription is billed through PayPal"
+                              : "Pay with your PayPal account"
+                          }
+                          icon={<PaypalMark />}
+                        />
+                      )}
+                      {!cardAvailable && !paypalAvailable && (
+                        // Previously a silent dead end: no method cards, a
+                        // permanently disabled button, and no explanation.
+                        <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm">
+                          Payments are temporarily unavailable — nothing is wrong
+                          with your account, and nothing has been charged. Please
+                          try again shortly or contact support@greenroom.fm.
+                        </div>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {subLoadError && (
-                  <div className="mb-4 p-3 rounded-lg bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm flex items-center justify-between gap-3">
-                    <span>
-                      We couldn&apos;t confirm your plan details — nothing has
-                      been charged.
-                    </span>
-                    <button
-                      onClick={() => window.location.reload()}
-                      className="shrink-0 underline font-semibold hover:text-white"
+                    {showTaxRegion && (
+                      <div className="mb-8">
+                        <label className="block text-sm font-medium text-white mb-1">
+                          Billing location
+                        </label>
+                        <p className="text-xs text-[#6a6a6a] mb-3">
+                          PayPal needs your region to apply the correct tax.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <select
+                            aria-label="Country"
+                            value={country}
+                            onChange={(e) => {
+                              setCountry(e.target.value);
+                              setRegion("");
+                            }}
+                            className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] text-white px-4 py-3 text-sm focus:border-[#39b54a] focus:outline-none"
+                          >
+                            <option value="">Select country…</option>
+                            <option value="US">United States</option>
+                            <option value="CA">Canada</option>
+                            <option value="OTHER">Other</option>
+                          </select>
+                          {country === "CA" && (
+                            <select
+                              aria-label="Province"
+                              value={region}
+                              onChange={(e) => setRegion(e.target.value)}
+                              className="rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] text-white px-4 py-3 text-sm focus:border-[#39b54a] focus:outline-none"
+                            >
+                              <option value="">Select province…</option>
+                              {CA_PROVINCES.map((p) => (
+                                <option key={p.code} value={p.code}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {subLoadError && (
+                      <div className="mb-4 p-3 rounded-lg bg-amber-950/30 border border-amber-900/40 text-amber-200 text-sm flex items-center justify-between gap-3">
+                        <span>
+                          We couldn&apos;t confirm your plan details — nothing has
+                          been charged.
+                        </span>
+                        <button
+                          onClick={() => window.location.reload()}
+                          className="shrink-0 underline font-semibold hover:text-white"
+                        >
+                          Reload
+                        </button>
+                      </div>
+                    )}
+
+                    {apiError && (
+                      <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
+                        {apiError}
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={handleContinue}
+                      disabled={
+                        submitting ||
+                        userLoading ||
+                        !subLoaded ||
+                        // Plan/eligibility state unknown (fetch failed) — never
+                        // let a buyer continue blind.
+                        subLoadError ||
+                        // Lifetime flow with the eligibility verdict still unknown:
+                        // the summary is a skeleton and the charge could silently
+                        // be full price.
+                        lifetimeUndetermined ||
+                        taxRegionIncomplete ||
+                        // No payable method at all (no Stripe price ID and PayPal
+                        // subs disabled) — reachable by direct URL even though
+                        // /pricing disables its button in this config.
+                        (!cardAvailable && !paypalAvailable)
+                      }
+                      className="w-full py-6 text-base font-semibold bg-[#39b54a] text-black hover:bg-[#2e9140]"
                     >
-                      Reload
-                    </button>
-                  </div>
+                      {submitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Redirecting...
+                        </>
+                      ) : hasActiveSub ? (
+                        `Switch to ${pkg.name}`
+                      ) : taxPercent > 0 ? (
+                        `Continue — $${(price + taxAmount).toFixed(2)}/month`
+                      ) : (
+                        `Continue — $${price}/month`
+                      )}
+                    </Button>
+
+                    <p className="text-xs text-[#6a6a6a] mt-4 text-center">
+                      You&apos;ll confirm on {effectiveMethod === "card" ? "Stripe" : "PayPal"}&apos;s
+                      secure page before anything is charged. Renews monthly, cancel
+                      anytime from your account.
+                    </p>
+                  </>
                 )}
-
-                {apiError && (
-                  <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-red-400 text-sm">
-                    {apiError}
-                  </div>
-                )}
-
-                <Button
-                  onClick={handleContinue}
-                  disabled={
-                    submitting ||
-                    userLoading ||
-                    !subLoaded ||
-                    // Plan/eligibility state unknown (fetch failed) — never
-                    // let a buyer continue blind.
-                    subLoadError ||
-                    // Lifetime flow with the eligibility verdict still unknown:
-                    // the summary is a skeleton and the charge could silently
-                    // be full price.
-                    lifetimeUndetermined ||
-                    taxRegionIncomplete ||
-                    // No payable method at all (no Stripe price ID and PayPal
-                    // subs disabled) — reachable by direct URL even though
-                    // /pricing disables its button in this config.
-                    (!cardAvailable && !paypalAvailable)
-                  }
-                  className="w-full py-6 text-base font-semibold bg-[#39b54a] text-black hover:bg-[#2e9140]"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Redirecting...
-                    </>
-                  ) : hasActiveSub ? (
-                    `Switch to ${pkg.name}`
-                  ) : taxPercent > 0 ? (
-                    `Continue — $${(price + taxAmount).toFixed(2)}/month`
-                  ) : (
-                    `Continue — $${price}/month`
-                  )}
-                </Button>
-
-                <p className="text-xs text-[#6a6a6a] mt-4 text-center">
-                  You&apos;ll confirm on {effectiveMethod === "card" ? "Stripe" : "PayPal"}&apos;s
-                  secure page before anything is charged. Renews monthly, cancel
-                  anytime from your account.
-                </p>
               </>
             )}
           </div>

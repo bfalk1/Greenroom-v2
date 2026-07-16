@@ -13,7 +13,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useUser } from "@/lib/hooks/useUser";
 import { eurostile, display } from "@/lib/fonts";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
@@ -63,7 +62,6 @@ function DemoVideo() {
 
 export default function VipOfferPage() {
   const router = useRouter();
-  const { user, loading: userLoading } = useUser();
   const [checking, setChecking] = useState(true);
   const [unlocked, setUnlocked] = useState(false);
   const [password, setPassword] = useState("");
@@ -146,27 +144,15 @@ export default function VipOfferPage() {
   // only a hint; the server re-verifies the cookie before discounting.
   const startCheckout = (pkg: Pkg, lifetime: boolean) => {
     if (!pkg.priceId) return;
-    // Don't treat an unresolved auth context as signed-out — otherwise a
-    // genuinely signed-in user (e.g. one who just returned from
-    // /login?redirect=/vip before the context resolved) gets bounced back to
-    // login. Buttons are disabled while loading, but guard here too.
-    if (userLoading) return;
+    // Signed-in or signed-out, everyone goes straight to /checkout — it's
+    // public now, and signed-out buyers create their account inline there
+    // with the discounted price staying on screen (the old detour through
+    // /signup redid steps at their highest-intent moment and shed buyers).
+    // The lifetime discount doesn't depend on auth state at this hop: the
+    // server authorizes it from the unlock cookie.
     const query = lifetime
       ? "?tier=VIP&lifetime=1"
       : `?tier=${encodeURIComponent(pkg.tierName)}`;
-    if (!user) {
-      // New visitors create an account first. Deep-link the redirect straight
-      // to the discounted checkout — NOT back to /vip, which would make them
-      // re-scroll, re-click the plan, and re-accept the terms modal after
-      // signup (each redone step at their highest-intent moment sheds buyers).
-      // The lifetime discount doesn't depend on this hop: the server
-      // authorizes it from the unlock cookie. No toast here — a full-page
-      // navigation destroys it before it renders.
-      window.location.href = `/signup?redirect=${encodeURIComponent(
-        `/checkout${query}`
-      )}`;
-      return;
-    }
     setLoadingPriceId(pkg.priceId);
     router.push(`/checkout${query}`);
   };
@@ -423,7 +409,7 @@ export default function VipOfferPage() {
 
                 <button
                   onClick={() => handleSelect(pkg)}
-                  disabled={isLoading || !pkg.priceId || userLoading}
+                  disabled={isLoading || !pkg.priceId}
                   className={`mt-7 flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-base font-bold transition disabled:opacity-50 ${
                     isVip
                       ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
