@@ -614,7 +614,7 @@ function CheckoutContent() {
                 )}
                 <div className="flex items-center justify-between font-mono text-[10px] tracking-[0.15em] text-[#6a6a6a] uppercase">
                   <span>Admit One</span>
-                  <span>${(price / pkg.credits).toFixed(4)}/credit</span>
+                  <span>{pkg.credits} credits/mo</span>
                 </div>
                 {/* Barcode */}
                 <div

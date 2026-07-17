@@ -213,8 +213,8 @@ export default function LandingPage() {
             }`}
           >
             <Link
-              href="/signup"
-              onClick={() => trackLandingCta("hero_signup")}
+              href="/pricing"
+              onClick={() => trackLandingCta("hero_pricing")}
               className="group inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-8 py-4 text-base font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_36px_rgba(0,255,136,0.5)]"
             >
               Step inside
@@ -328,8 +328,8 @@ export default function LandingPage() {
           <Reveal delay={240}>
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link
-                href="/signup"
-                onClick={() => trackLandingCta("final_signup")}
+                href="/pricing"
+                onClick={() => trackLandingCta("final_pricing")}
                 className="group inline-flex items-center gap-2 rounded-full bg-[#39b54a] px-10 py-4 text-base font-bold text-black transition hover:bg-[#2e9140] hover:shadow-[0_0_40px_rgba(0,255,136,0.55)]"
               >
                 Get started
