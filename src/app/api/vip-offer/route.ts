@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
+import { createClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
 import {
   VIP_OFFER_COOKIE,
   VIP_OFFER_COOKIE_MAX_AGE,
@@ -17,12 +19,32 @@ import {
 // server (never shipped to the client), and a successful match drops an httpOnly,
 // HMAC-signed cookie that the checkout route reads to authorize the discount.
 
-// GET — report whether this browser has already unlocked the offer. Lets the page
-// stay unlocked across reloads / a login round-trip without re-entering the code.
+// GET — report whether the offer is unlocked for this visitor. Unlocked when
+// EITHER this browser cleared the password gate (the httpOnly cookie, which
+// survives reloads / a login round-trip) OR the signed-in account was granted
+// the VIP offer via a creator referral (a permanent per-account entitlement).
 export async function GET() {
   const store = await cookies();
-  const unlocked = verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value);
-  return NextResponse.json({ unlocked });
+  if (verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value)) {
+    return NextResponse.json({ unlocked: true });
+  }
+
+  // Only pay for the account lookup when the cookie didn't already unlock.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { vipOfferUnlockedAt: true },
+    });
+    if (dbUser?.vipOfferUnlockedAt != null) {
+      return NextResponse.json({ unlocked: true });
+    }
+  }
+
+  return NextResponse.json({ unlocked: false });
 }
 
 // POST — verify the password and, on success, set the unlock cookie.

@@ -4,7 +4,7 @@ import React, { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Gift, Loader2 } from "lucide-react";
 import { safeRedirectPath } from "@/lib/safeRedirect";
 import {
   SignupForm,
@@ -12,11 +12,18 @@ import {
   type BetaInviteData,
 } from "@/components/auth/SignupForm";
 
+interface ReferralData {
+  referrerName: string;
+  reward: "vip" | "credits";
+  credits: number;
+}
+
 function SignupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [invite, setInvite] = useState<InviteData | null>(null);
   const [betaInvite, setBetaInvite] = useState<BetaInviteData | null>(null);
+  const [referral, setReferral] = useState<ReferralData | null>(null);
   // Starts true when an invite token is present — verification kicks off on
   // mount, and the submit button must not read "Sign Up" before it resolves.
   const [inviteLoading, setInviteLoading] = useState(() =>
@@ -28,6 +35,12 @@ function SignupPageContent() {
   // ?redirect=/checkout?tier=VIP&lifetime=1). Same-origin relative paths only,
   // validated centrally.
   const safeRedirect = safeRedirectPath(searchParams.get("redirect"));
+
+  // Referral code from a shared link (/signup?ref=CODE). Verified below only to
+  // show the banner — an invalid code degrades to a normal signup rather than a
+  // dead end (a referral is a bonus, not a gate). Redemption itself is driven
+  // server-side from the raw ?ref param / user_metadata, not this state.
+  const referralCode = searchParams.get("ref");
 
   // Check for invite token on mount (creator or beta invites)
   useEffect(() => {
@@ -77,22 +90,52 @@ function SignupPageContent() {
       });
   }, [searchParams, router]);
 
+  // Verify the referral code so the banner can name the referrer + reward. The
+  // banner is hidden when an invite is also present (invites carry their own).
+  useEffect(() => {
+    if (!referralCode) return;
+    fetch(`/api/referral/verify?code=${encodeURIComponent(referralCode)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.valid) {
+          setReferral({
+            referrerName: data.referrerName,
+            reward: data.reward === "vip" ? "vip" : "credits",
+            credits: data.credits,
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to verify referral code:", err);
+      });
+  }, [referralCode]);
+
+  // Where to land after signup. A creator-referred user is sent to the VIP
+  // offer their account now unlocks (unless an explicit redirect was set) — the
+  // referral itself is redeemed server-side from ?ref / user_metadata.
+  const postSignupRedirect =
+    safeRedirect ?? (referral?.reward === "vip" ? "/vip" : null);
+
   // Attributes the signup to a funnel — "vip" when the carried redirect points
-  // back into the lifetime-offer checkout.
+  // back into the lifetime-offer checkout, "referral" for a referral link.
   const signupSource =
-    safeRedirect && /lifetime=1|\/vip/.test(safeRedirect) ? "vip" : undefined;
+    safeRedirect && /lifetime=1|\/vip/.test(safeRedirect)
+      ? "vip"
+      : referralCode && !invite && !betaInvite
+        ? "referral"
+        : undefined;
 
   const handleSession = () => {
     if (invite || betaInvite) {
       // Onboarding honors ?redirect after submit, so a carried destination
       // survives the profile step instead of being discarded here.
       router.push(
-        safeRedirect
-          ? `/onboarding?redirect=${encodeURIComponent(safeRedirect)}`
+        postSignupRedirect
+          ? `/onboarding?redirect=${encodeURIComponent(postSignupRedirect)}`
           : "/onboarding"
       );
     } else {
-      router.push(safeRedirect ?? "/pricing?welcome=true");
+      router.push(postSignupRedirect ?? "/pricing?welcome=true");
     }
   };
 
@@ -120,10 +163,11 @@ function SignupPageContent() {
 
   return (
     <SignupForm
-      redirect={safeRedirect}
+      redirect={postSignupRedirect}
       source={signupSource}
       invite={invite}
       betaInvite={betaInvite}
+      referralCode={referralCode}
       inviteLoading={inviteLoading}
       onSession={handleSession}
       screenLogo
@@ -160,6 +204,39 @@ function SignupPageContent() {
               </p>
               <p className="text-sm text-[#a1a1a1]">
                 Signing up as <span className="text-white font-medium">{invite.email}</span>
+              </p>
+            </div>
+          )}
+
+          {/* Referral Banner (never shown alongside an invite banner) */}
+          {referral && !invite && !betaInvite && (
+            <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-[#39b54a]/10 to-[#2e9140]/10 border border-[#39b54a]/30">
+              <div className="flex items-center gap-2 mb-2">
+                <Gift className="w-5 h-5 text-[#39b54a]" />
+                <span className="font-semibold text-[#39b54a]">
+                  You&apos;ve Been Invited
+                </span>
+              </div>
+              <p className="text-sm text-[#a1a1a1]">
+                <span className="text-white font-medium">{referral.referrerName}</span>{" "}
+                invited you to GREENROOM.{" "}
+                {referral.reward === "vip" ? (
+                  <>
+                    Sign up to unlock the{" "}
+                    <span className="text-white font-medium">
+                      VIP lifetime discount
+                    </span>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Subscribe to VIP and you&apos;ll both get{" "}
+                    <span className="text-white font-medium">
+                      {referral.credits} free credits
+                    </span>
+                    .
+                  </>
+                )}
               </p>
             </div>
           )}

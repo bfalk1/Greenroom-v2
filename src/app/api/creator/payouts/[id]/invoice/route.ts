@@ -70,6 +70,7 @@ export async function GET(
       payeeEmail: payout.creator.email,
       totalCreditsSpent: payout.totalCreditsSpent,
       grossCents: payout.amountUsdCents,
+      referralBonusCents: payout.referralBonusCents,
       processingFeeCents: payout.processingFeeCents,
       issuedAt: payout.createdAt,
       periodStart: payout.periodStart,

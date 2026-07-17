@@ -15,6 +15,12 @@ export type PayoutInvoiceData = {
   totalCreditsSpent: number;
   /** Gross earnings in cents (what's deducted from the creator's balance). */
   grossCents: number;
+  /**
+   * Portion of grossCents that is referral cash rewards (locked onto the
+   * payout row at creation). Rendered as its own line item when positive;
+   * omit or 0 for catalog-only payouts.
+   */
+  referralBonusCents?: number;
   /** Processing fee in cents, covered by the creator. */
   processingFeeCents: number;
   issuedAt: Date;
@@ -50,6 +56,13 @@ export function renderPayoutInvoiceHtml(data: PayoutInvoiceData): string {
   const payeeName = escapeHtml(data.payeeName);
   const payeeEmail = escapeHtml(data.payeeEmail);
   const netCents = computeNetPayoutCents(data.grossCents, data.processingFeeCents);
+  // Split the gross into catalog earnings + referral rewards. Clamped so a
+  // malformed bonus can never push the catalog line negative.
+  const referralCents = Math.min(
+    Math.max(0, data.referralBonusCents ?? 0),
+    data.grossCents
+  );
+  const catalogCents = data.grossCents - referralCents;
   const statusLabel =
     data.status === "PAID"
       ? "Paid"
@@ -156,9 +169,20 @@ export function renderPayoutInvoiceHtml(data: PayoutInvoiceData): string {
             Creator earnings — ${data.totalCreditsSpent.toLocaleString("en-US")} credits
             <div class="sub">Sales of samples and presets during the invoice period</div>
           </td>
-          <td class="r">${usd(data.grossCents)}</td>
+          <td class="r">${usd(catalogCents)}</td>
         </tr>
-        <tr>
+        ${
+          referralCents > 0
+            ? `<tr>
+          <td>
+            Referral rewards
+            <div class="sub">Bonus for referred signups during the invoice period</div>
+          </td>
+          <td class="r">${usd(referralCents)}</td>
+        </tr>
+        `
+            : ""
+        }<tr>
           <td>
             Payment processing fee
             <div class="sub">Deducted from the payout — covered by the creator</div>

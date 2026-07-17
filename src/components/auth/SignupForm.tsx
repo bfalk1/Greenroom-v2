@@ -34,6 +34,7 @@ export function SignupForm({
   source,
   invite = null,
   betaInvite = null,
+  referralCode = null,
   inviteLoading = false,
   onSession,
   header,
@@ -47,6 +48,10 @@ export function SignupForm({
   source?: string;
   invite?: InviteData | null;
   betaInvite?: BetaInviteData | null;
+  // Referral code from a /signup?ref=CODE link. Carried into the confirmation
+  // callback (?ref) and signup user_metadata so the server can redeem the
+  // referral; also passed to Google OAuth. Null when not a referral signup.
+  referralCode?: string | null;
   inviteLoading?: boolean;
   // Called after signup returns an immediate session (email confirmation off).
   // The caller decides what happens — navigate, or stay put and refresh the
@@ -79,10 +84,15 @@ export function SignupForm({
     else if (betaInvite) setEmail(betaInvite.email);
   }, [invite, betaInvite]);
 
-  const emailRedirectTo = () =>
-    `${window.location.origin}/callback${
-      redirect ? `?redirect=${encodeURIComponent(redirect)}` : ""
-    }`;
+  const emailRedirectTo = () => {
+    // Carry the post-auth redirect AND any referral code through the
+    // confirmation link so /callback can land the user AND redeem the referral.
+    const params = new URLSearchParams();
+    if (redirect) params.set("redirect", redirect);
+    if (referralCode) params.set("ref", referralCode);
+    const q = params.toString();
+    return `${window.location.origin}/callback${q ? `?${q}` : ""}`;
+  };
 
   const loginHref = redirect
     ? `/login?redirect=${encodeURIComponent(redirect)}`
@@ -122,6 +132,11 @@ export function SignupForm({
           // /callback route can land a confirmed user back where they started
           // (e.g. /checkout with the tier intact).
           emailRedirectTo: emailRedirectTo(),
+          // Belt-and-suspenders carrier for the referral code: user_metadata
+          // survives cross-device confirmation (where the link's PKCE exchange
+          // fails and the DB row is created by /api/user/me on the next sign-in
+          // instead of by /callback — that path reads the same metadata).
+          ...(referralCode ? { data: { referral_code: referralCode } } : {}),
         },
       });
 
@@ -368,7 +383,11 @@ export function SignupForm({
       {/* OAuth skips the whole email-confirmation round trip. Not offered for
           invite signups — those must be created under the invited email. */}
       {!invite && !betaInvite && (
-        <GoogleAuthButton redirect={redirect} label="Sign up with Google" />
+        <GoogleAuthButton
+          redirect={redirect}
+          referralCode={referralCode}
+          label="Sign up with Google"
+        />
       )}
 
       <p className="text-center text-[#a1a1a1] text-sm mt-6">

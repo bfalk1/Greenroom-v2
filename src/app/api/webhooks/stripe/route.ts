@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -202,6 +203,19 @@ async function handleCheckoutCompleted(
     source: acquisitionSource,
     via: "webhook",
   });
+
+  // A VIP activation is the trigger that pays out a pending referral — only for
+  // a genuinely ACTIVE subscription. Idempotent and never throws — safe
+  // alongside the reconcile cron / a redelivered event. Pass the subscription's
+  // activation time so the reward window is measured against when VIP was
+  // reached, not when this grant happens to run.
+  await grantReferralRewardIfVip(
+    userId,
+    tier.name,
+    subscription.status === "active",
+    "webhook",
+    new Date(subscription.created * 1000)
+  );
 }
 
 async function handleInvoicePaid(
@@ -355,6 +369,19 @@ async function handleSubscriptionUpdated(
       }),
     ]);
   }
+
+  // A referred user who reaches VIP by UPGRADING (e.g. GA→VIP via the billing
+  // portal) never hits handleCheckoutCompleted, so pay a pending referral here
+  // too — but only if the sub is ACTIVE (a subscription.updated event can fire
+  // for an incomplete / past_due / canceling sub, which must NOT pay). Idempotent
+  // — a no-op for non-referrals / an already-rewarded referral / a non-VIP tier.
+  await grantReferralRewardIfVip(
+    user.id,
+    newTier.name,
+    subscription.status === "active",
+    "webhook",
+    new Date(subscription.created * 1000)
+  );
 }
 
 async function handleSubscriptionDeleted(

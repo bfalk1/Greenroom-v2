@@ -19,9 +19,13 @@ export function googleAuthEnabled(): boolean {
 
 export function GoogleAuthButton({
   redirect,
+  referralCode,
   label,
 }: {
   redirect: string | null;
+  // Referral code from /signup?ref= — OAuth has no signup metadata, so the
+  // code rides the /callback ?ref param instead (login renders no code).
+  referralCode?: string | null;
   label: string;
 }) {
   const [loading, setLoading] = useState(false);
@@ -32,11 +36,15 @@ export function GoogleAuthButton({
     setLoading(true);
     try {
       const supabase = createClient();
+      const callbackParams = new URLSearchParams();
+      if (redirect) callbackParams.set("redirect", redirect);
+      if (referralCode) callbackParams.set("ref", referralCode);
+      const callbackQuery = callbackParams.toString();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/callback${
-            redirect ? `?redirect=${encodeURIComponent(redirect)}` : ""
+            callbackQuery ? `?${callbackQuery}` : ""
           }`,
         },
       });

@@ -58,6 +58,78 @@ export function trackSubscriptionActivatedServer(props: {
   // activation marker), a dropped event is never re-emitted on webhook
   // retry. after() keeps the function alive for the send without adding
   // latency to the payment path; errors still never propagate into it.
+  flushAfterResponse(ph);
+}
+
+/**
+ * A referral was RECORDED at signup (pending — rewards wait for VIP activation).
+ * Fired from whichever user-creation path won the record race (/callback or
+ * /api/user/me), behind the referrals unique constraint so it happens once per
+ * referred account.
+ */
+export function trackReferralRecordedServer(props: {
+  referredUserId: string;
+  referrerId: string;
+  referrerRole: string;
+  referredVipOffer: boolean;
+  via: "callback" | "me";
+}) {
+  const ph = client();
+  if (!ph) return;
+  ph.capture({
+    distinctId: props.referredUserId,
+    event: "referral_recorded",
+    properties: {
+      referrer_id: props.referrerId,
+      referrer_role: props.referrerRole,
+      referred_vip_offer: props.referredVipOffer,
+      via: props.via,
+    },
+  });
+  flushAfterResponse(ph);
+}
+
+/**
+ * A referral's rewards were GRANTED when the referred user activated a VIP
+ * subscription. Fired from whichever activation path won the grant, behind the
+ * referral's rewardedAt terminal marker so it happens once. Two captures so
+ * both sides of the funnel are queryable per person.
+ */
+export function trackReferralRewardGrantedServer(props: {
+  referredUserId: string;
+  referrerId: string;
+  referredCredits: number;
+  referrerCredits: number;
+  referrerCashCents: number;
+  rewardSkippedReason?: string | null;
+  via: "webhook" | "reconcile" | "return" | "cron";
+}) {
+  const ph = client();
+  if (!ph) return;
+  ph.capture({
+    distinctId: props.referredUserId,
+    event: "referral_reward_granted_referred",
+    properties: {
+      referrer_id: props.referrerId,
+      referred_credits: props.referredCredits,
+      via: props.via,
+    },
+  });
+  ph.capture({
+    distinctId: props.referrerId,
+    event: "referral_reward_granted",
+    properties: {
+      referred_user_id: props.referredUserId,
+      reward_credits: props.referrerCredits,
+      reward_cash_cents: props.referrerCashCents,
+      reward_skipped_reason: props.rewardSkippedReason ?? null,
+      via: props.via,
+    },
+  });
+  flushAfterResponse(ph);
+}
+
+function flushAfterResponse(ph: PostHog) {
   try {
     after(async () => {
       await ph.flush().catch(() => {});

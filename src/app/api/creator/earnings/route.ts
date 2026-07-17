@@ -5,6 +5,7 @@ import {
   calculateCreatorEarningsCents,
   getCreatorEarningsInfo,
   getCreatorCreditsSpent,
+  getCreatorReferralCashCents,
   getPayoutFeeConfig,
 } from "@/lib/payouts";
 import { computeNetPayoutCents } from "@/lib/payoutMath";
@@ -91,17 +92,26 @@ export async function GET(_request: NextRequest) {
     // Total credits earned across the WHOLE catalog (samples + presets).
     const totalCreditsEarned = await getCreatorCreditsSpent(authUser.id);
 
-    // Calculate earnings using creator's effective payout rate
-    const totalEarningsCents = await calculateCreatorEarningsCents(
+    // Calculate earnings using creator's effective payout rate. Total
+    // earnings = catalog sales + referral cash rewards (same basis as the
+    // payout routes, so the displayed balance matches what gets paid).
+    const catalogEarningsCents = await calculateCreatorEarningsCents(
       authUser.id,
       totalCreditsEarned
     );
+    const referralCashCents = await getCreatorReferralCashCents(authUser.id);
+    const totalEarningsCents = catalogEarningsCents + referralCashCents;
 
-    // Calculate this month's earnings in cents
-    const thisMonthEarningsCents = await calculateCreatorEarningsCents(
+    // Calculate this month's earnings in cents (range-scoped for both parts)
+    const thisMonthCatalogCents = await calculateCreatorEarningsCents(
       authUser.id,
       thisMonthCredits
     );
+    const thisMonthReferralCents = await getCreatorReferralCashCents(
+      authUser.id,
+      { gte: startOfMonth }
+    );
+    const thisMonthEarningsCents = thisMonthCatalogCents + thisMonthReferralCents;
 
     // Get payout rate + processing fee info for display
     const [earningsInfo, feeConfig] = await Promise.all([
@@ -128,6 +138,7 @@ export async function GET(_request: NextRequest) {
         pendingPayout: pendingPayoutCents / 100,
         unpaidEarnings: (totalEarningsCents - totalPaidOutCents) / 100,
         thisMonthEarnings: thisMonthEarningsCents / 100,
+        referralEarnings: referralCashCents / 100,
       },
       payoutInfo: {
         centsPerCredit: earningsInfo.centsPerCredit,

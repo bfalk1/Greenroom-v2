@@ -12,6 +12,7 @@
 import { prisma } from "@/lib/prisma";
 import { paypalFetch } from "@/lib/paypal/client";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
   GA: process.env.PAYPAL_GA_PLAN_ID?.trim(),
@@ -70,6 +71,9 @@ export interface PaypalSubscription {
   planId: string | null;
   customId: string | null;
   approveUrl: string | null;
+  // Original subscription start (stable across renewals) — the reward-window
+  // reference for referrals, unlike periodStart which advances each cycle.
+  startTime: Date;
   periodStart: Date;
   periodEnd: Date | null;
 }
@@ -83,6 +87,7 @@ function toSubscription(sub: PaypalSubscriptionResponse): PaypalSubscription {
     approveUrl:
       sub.links?.find((l) => l.rel === "approve" || l.rel === "payer-action")
         ?.href ?? null,
+    startTime: new Date(sub.start_time ?? Date.now()),
     periodStart: new Date(
       sub.billing_info?.last_payment?.time ?? sub.start_time ?? Date.now()
     ),
@@ -392,6 +397,16 @@ export async function syncPaypalSubscription(
     });
   }
 
+  // Pay a pending referral whenever this sync leaves the user VIP-active — NOT
+  // just on first activation. This covers a GA→VIP revise (same subscription id,
+  // so isNewActivation is false) and acts as a retry on any later sync, since
+  // PayPal has no reconcile sweep that would otherwise repair a missed grant.
+  // remote.startTime (stable across renewals) is the window reference so a
+  // retry on the next SALE ~a month later isn't falsely expired. Idempotent.
+  // isActive (remote.status === "ACTIVE") is passed through as the hard
+  // active-subscription gate — the reward is never paid for an inactive sub.
+  await grantReferralRewardIfVip(userId, tier.name, isActive, via, remote.startTime);
+
   if (isNewActivation) {
     // isNewActivation alone is a read-then-write check on `existing` (read
     // before the upsert above), so the return route, ACTIVATED webhook, and
@@ -425,6 +440,7 @@ export async function syncPaypalSubscription(
         source: acquisitionSource,
         via,
       });
+      // (The referral reward is granted in the unconditional VIP block above.)
     }
   }
 

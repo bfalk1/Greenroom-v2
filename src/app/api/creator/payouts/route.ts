@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
+  getCreatorReferralCashCents,
   getPayoutFeeConfig,
   nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
@@ -109,10 +110,13 @@ export async function POST(_request: NextRequest) {
     const totalCreditsEarned = await getCreatorCreditsSpent(authUser.id);
 
     // Calculate earnings using creator's effective payout rate
-    const totalEarningsCents = await calculateCreatorEarningsCents(
+    const catalogEarningsCents = await calculateCreatorEarningsCents(
       authUser.id,
       totalCreditsEarned
     );
+    // Total earnings = catalog sales + referral cash rewards.
+    const referralCashCents = await getCreatorReferralCashCents(authUser.id);
+    const totalEarningsCents = catalogEarningsCents + referralCashCents;
 
     // Get total already paid out or pending
     const payoutAgg = await prisma.creatorPayout.aggregate({
@@ -120,11 +124,20 @@ export async function POST(_request: NextRequest) {
         creatorId: authUser.id,
         status: { in: ["PAID", "PENDING"] },
       },
-      _sum: { amountUsdCents: true },
+      _sum: { amountUsdCents: true, referralBonusCents: true },
     });
 
     const alreadyAccountedCents = payoutAgg._sum.amountUsdCents || 0;
     const unpaidCents = computeUnpaidCents(totalEarningsCents, alreadyAccountedCents);
+    // Referral portion of this payout, for invoice itemization. Clamped to the
+    // row amount so the split can never exceed the gross.
+    const unpaidReferralCents = Math.min(
+      unpaidCents,
+      computeUnpaidCents(
+        referralCashCents,
+        payoutAgg._sum.referralBonusCents || 0
+      )
+    );
 
     if (unpaidCents < MIN_PAYOUT_CENTS) {
       return NextResponse.json(
@@ -183,6 +196,7 @@ export async function POST(_request: NextRequest) {
         periodEnd,
         totalCreditsSpent: unpaidCredits,
         amountUsdCents: unpaidCents,
+        referralBonusCents: unpaidReferralCents,
         processingFeeCents,
         invoiceNumber,
         status: "PENDING",

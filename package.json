@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/payoutMath.test.ts src/lib/payoutInvoice.test.ts src/lib/tax/canadaRates.test.ts src/lib/zipIntegrity.test.ts",
+    "test": "tsx --test src/lib/payoutMath.test.ts src/lib/payoutInvoice.test.ts src/lib/tax/canadaRates.test.ts src/lib/zipIntegrity.test.ts src/lib/referralCode.test.ts",
     "postinstall": "prisma generate",
     "seed:creators": "npx tsx prisma/seed-creators.ts"
   },

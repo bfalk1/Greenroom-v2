@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { recordReferralForNewUser } from "@/lib/referral";
+import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -42,7 +44,32 @@ export async function GET() {
       });
     }
 
+    // Record (or re-attempt recording) a PENDING referral for this account.
+    // No credits are granted here — rewards wait for VIP activation — so there's
+    // nothing to reflect in the response. Idempotent via the referrals unique
+    // constraint, and never throws. Shared by the first-login create branch and
+    // the bounded retry below.
+    const tryRecordReferral = async () => {
+      const metadataCode = authUser.user_metadata?.referral_code;
+      const record = await recordReferralForNewUser({
+        code: typeof metadataCode === "string" ? metadataCode : null,
+        newUserId: user!.id,
+      });
+      if (record.recorded) {
+        trackReferralRecordedServer({
+          referredUserId: user!.id,
+          referrerId: record.referrerId!,
+          referrerRole: record.referrerRole!,
+          referredVipOffer: record.referredVipOffer ?? false,
+          via: "me",
+        });
+      }
+    };
+
+    let justCreated = false;
+
     if (!user) {
+      justCreated = true;
       // First time login — create user record
       // Check for pending invite first
       let role: "USER" | "CREATOR" = "USER";
@@ -153,6 +180,14 @@ export async function GET() {
           },
         });
       }
+
+      // Record a pending referral for a brand-new, email-verified account. This
+      // path covers signups whose /callback exchange never ran (cross-device
+      // confirmation, OAuth-return races) — the code was stashed in
+      // user_metadata at signUp time.
+      if (emailConfirmed) {
+        await tryRecordReferral();
+      }
     } else if (user.role === "USER" && authUser.email && emailConfirmed) {
       // Existing user - check if they have a pending invite to upgrade.
       // Case-insensitive so a mixed-case invite row still matches the lowercased
@@ -238,6 +273,29 @@ export async function GET() {
             where: { id: betaInvite.id },
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
+        }
+      }
+    }
+
+    // Retry recording a referral that was missed when the account was created
+    // (a transient DB error, or a /callback whose code-exchange failed so the
+    // row was created here without carrying ?ref). Bounded to young accounts and
+    // gated on the metadata code + absence of an existing referral row, so it
+    // costs nothing for the overwhelming majority of /me calls. Skipped when
+    // this request just created the row (already attempted above). Idempotent
+    // via the referrals unique constraint.
+    if (!justCreated && emailConfirmed) {
+      const metadataCode = authUser.user_metadata?.referral_code;
+      if (typeof metadataCode === "string" && metadataCode) {
+        const RECORD_RETRY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+        const withinWindow =
+          Date.now() - user.createdAt.getTime() < RECORD_RETRY_WINDOW_MS;
+        if (withinWindow) {
+          const alreadyRecorded = await prisma.referral.findUnique({
+            where: { referredUserId: user.id },
+            select: { id: true },
+          });
+          if (!alreadyRecorded) await tryRecordReferral();
         }
       }
     }

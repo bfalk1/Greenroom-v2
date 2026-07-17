@@ -16,6 +16,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { EarningsChart } from "@/components/creator/EarningsChart";
 import { PayoutProgress } from "@/components/creator/PayoutProgress";
+import { ReferralPanel } from "@/components/referral/ReferralPanel";
 
 interface EarningsStats {
   totalEarnings: number;
@@ -330,6 +331,9 @@ export default function CreatorEarningsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Invite Friends (referral link — creators earn payout cash) */}
+        <ReferralPanel variant="creator" />
 
         {/* Payouts History */}
         {payouts.length > 0 && (
