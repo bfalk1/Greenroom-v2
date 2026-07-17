@@ -42,6 +42,13 @@ function CompleteContent() {
   // has an ACTIVE row with the OLD tier, so "any active subscription" would
   // instantly celebrate the wrong plan — require the tier to match when known.
   const expectedTier = searchParams.get("tier");
+  // Per-transaction token: Stripe's success_url carries session_id, the
+  // PayPal return route forwards txn. Only a landing that came from a real
+  // provider redirect has one — it gates the Meta Pixel Purchase so visits
+  // that merely OBSERVE an active subscription (bookmark, synced history, the
+  // legacy /pricing?success=true forward) can't emit a conversion.
+  const transactionId =
+    searchParams.get("session_id") || searchParams.get("txn");
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +81,9 @@ function CompleteContent() {
               initialStatus: hint,
               outcome: "confirmed",
               secondsToConfirm: Math.round((Date.now() - startedAt) / 1000),
+              tier: data.subscription.tierName,
+              valueUsdCents: data.subscription.priceUsdCents ?? null,
+              transactionId,
             });
             return;
           }

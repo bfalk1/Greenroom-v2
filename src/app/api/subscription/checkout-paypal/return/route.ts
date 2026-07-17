@@ -15,9 +15,13 @@ export const dynamic = "force-dynamic";
 // ready while the webhook was failing).
 export async function GET(request: Request) {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://greenroom.fm").trim();
-  const complete = (status: string) =>
+  // txn mirrors Stripe's session_id param: /checkout/complete only fires the
+  // Meta Pixel Purchase (and dedupes it) on a per-transaction token, so a
+  // bookmarked/forwarded visit without one can never send a false conversion.
+  const complete = (status: string, txn?: string) =>
     NextResponse.redirect(
-      `${appUrl}/checkout/complete?provider=paypal&status=${status}`
+      `${appUrl}/checkout/complete?provider=paypal&status=${status}` +
+        (txn ? `&txn=${encodeURIComponent(txn)}` : "")
     );
 
   try {
@@ -41,17 +45,17 @@ export async function GET(request: Request) {
     const result = await activatePaypalSubscription(subscriptionId, "return");
 
     if (result === "active") {
-      return complete("active");
+      return complete("active", subscriptionId);
     }
 
     if (result === "pending") {
       // Approved but PayPal hasn't flipped it ACTIVE yet — the ACTIVATED
       // webhook finishes the job within moments; /checkout/complete polls
       // until the row appears.
-      return complete("pending");
+      return complete("pending", subscriptionId);
     }
 
-    return complete("error");
+    return complete("error", subscriptionId);
   } catch (error) {
     console.error("Error completing PayPal subscription:", error);
     return complete("error");

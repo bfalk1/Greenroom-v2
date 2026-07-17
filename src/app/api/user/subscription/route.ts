@@ -50,6 +50,11 @@ export async function GET() {
         currentPeriodEnd: subscription.currentPeriodEnd.toISOString(),
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         creditsPerMonth: subscription.tier.creditsPerMonth,
+        // Tier LIST price — feeds the Meta Pixel Purchase value on
+        // /checkout/complete. Discounted subs (vip-lifetime) report list
+        // price; ad traffic never hits the password-gated /vip funnel, so
+        // ROAS math stays honest where it matters.
+        priceUsdCents: subscription.tier.priceUsdCents,
       },
     });
   } catch (error) {
