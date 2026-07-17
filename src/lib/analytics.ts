@@ -1,4 +1,12 @@
 import posthog from "posthog-js";
+import { metaTrack, metaTrackOnce } from "./metaPixel";
+
+// Some funnel functions below ALSO send a Meta Pixel standard event
+// (src/lib/metaPixel.ts) so Facebook ads can attribute and optimize against
+// them. PostHog stays the source of truth for funnel analysis; the pixel gets
+// only the standard-event ladder Meta optimizes on: CompleteRegistration →
+// InitiateCheckout → AddPaymentInfo → Purchase (PageViews fire from
+// src/components/providers/MetaPixel.tsx).
 
 // --- Identity lifecycle ---
 
@@ -38,6 +46,10 @@ export function trackSignup(method: "email" | "invite", source?: string) {
   // landed→subscribed question can be segmented at the signup step instead of
   // only at the endpoints.
   posthog.capture("signup", { method, ...(source ? { source } : {}) });
+  metaTrack("CompleteRegistration", {
+    content_name: source ?? method,
+    status: true,
+  });
 }
 
 // Signup-step leaks: client validation, provider rejections, and the
@@ -103,6 +115,10 @@ export function trackSubscriptionCheckout(
     lifetime: opts?.lifetime ?? false,
     payment_method: opts?.method,
   });
+  metaTrack("AddPaymentInfo", {
+    content_category: "subscription",
+    content_name: plan,
+  });
 }
 
 // NOTE: subscription_activated is captured SERVER-side only (see
@@ -156,6 +172,10 @@ export function trackCheckoutViewed(props: {
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
+  metaTrack("InitiateCheckout", {
+    content_category: "subscription",
+    content_name: props.lifetime ? `${props.tier}-lifetime` : props.tier,
+  });
 }
 
 export function trackCheckoutMethodSelected(method: "card" | "paypal") {
@@ -185,6 +205,12 @@ export function trackCheckoutCompleteOutcome(props: {
   initialStatus: string | null;
   outcome: "confirmed" | "timeout" | "error";
   secondsToConfirm?: number;
+  // Meta Pixel Purchase inputs, present when the verified subscription row is
+  // in hand: tier name, tier list price, and the provider's per-transaction
+  // token (Stripe checkout-session id / PayPal subscription id).
+  tier?: string | null;
+  valueUsdCents?: number | null;
+  transactionId?: string | null;
 }) {
   posthog.capture("checkout_complete_outcome", {
     provider: props.provider,
@@ -192,6 +218,26 @@ export function trackCheckoutCompleteOutcome(props: {
     outcome: props.outcome,
     seconds_to_confirm: props.secondsToConfirm,
   });
+  // Meta Purchase is the one conversion that MUST fire client-side even
+  // though activation is verified server-side: the pixel needs the buyer's
+  // browser (its _fbp/_fbc cookies) to attribute the ad click. This does not
+  // violate the server-only rule for subscription_activated above — different
+  // destination, different event. It requires the provider redirect's
+  // transaction token and dedupes on it: refreshes of the same completion
+  // re-verify the same token (suppressed), while a later re-subscription or a
+  // second buyer on a shared browser gets a new token (fires), and a visit
+  // with no token — one that merely observed an active sub — never fires.
+  // Timeouts under-count here by design; the Conversions API is the eventual
+  // fix for that.
+  if (props.outcome === "confirmed" && props.tier && props.transactionId) {
+    metaTrackOnce(`purchase:${props.transactionId}`, "Purchase", {
+      content_category: "subscription",
+      content_name: props.tier,
+      content_type: "product",
+      value: (props.valueUsdCents ?? 0) / 100,
+      currency: "USD",
+    });
+  }
 }
 
 // --- Funnel: Browse → Play → Buy ---
