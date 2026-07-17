@@ -1,4 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
+import {
+  hasZipLocalHeader,
+  hasZipEocd,
+  ZIP_EOCD_SCAN_BYTES,
+} from "@/lib/zipIntegrity";
 
 /**
  * Cheap client-side check that a File really is a RIFF/WAVE file (same magic
@@ -170,6 +175,25 @@ export async function uploadPresetFiles(
 }
 
 /**
+ * Cheap client-side check that a File is a complete ZIP archive: local-file-
+ * header magic at the front AND an End of Central Directory record at the
+ * back. A ZIP selected while it is still being compressed or synced down from
+ * cloud storage has a valid front but no EOCD (a real applicant upload failed
+ * exactly this way), and no archive tool can open it. Reads only the first 4
+ * bytes and the last ~64KB, so it is instant even on a 50MB file.
+ */
+export async function looksLikeZip(file: File): Promise<boolean> {
+  if (file.size < 52) return false; // smaller than one entry + EOCD
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  if (!hasZipLocalHeader(head)) return false;
+  const tailLen = Math.min(file.size, ZIP_EOCD_SCAN_BYTES);
+  const tail = new Uint8Array(
+    await file.slice(file.size - tailLen).arrayBuffer()
+  );
+  return hasZipEocd(tail);
+}
+
+/**
  * Upload a creator-application ZIP DIRECTLY to Supabase Storage via a signed
  * upload URL (bypasses Vercel's 4.5MB function body limit). Returns the same
  * `{ path, fileName }` the old multipart route returned.
@@ -177,6 +201,14 @@ export async function uploadPresetFiles(
 export async function uploadApplicationZip(
   zipFile: File
 ): Promise<{ path: string; fileName: string }> {
+  // Fail fast on incomplete/corrupt archives — the moderator's download would
+  // be unopenable, and the applicant is the only one who can fix the file.
+  if (!(await looksLikeZip(zipFile))) {
+    throw new Error(
+      `"${zipFile.name}" is not a complete ZIP archive. If it was just created or lives in cloud storage (iCloud/Dropbox/OneDrive), wait for it to finish compressing or syncing, then try again.`
+    );
+  }
+
   const mintRes = await fetch("/api/upload/application", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

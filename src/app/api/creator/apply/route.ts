@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { removeObject, verifyStoredZip } from "@/lib/storageValidate";
 
 // GET /api/creator/apply — return user's existing application (if any)
 export async function GET() {
@@ -40,6 +41,28 @@ export async function POST(req: NextRequest) {
       { error: "Artist name and sample ZIP are required" },
       { status: 400 }
     );
+  }
+
+  // The path is minted by /api/upload/application under the caller's own user
+  // id; reject references outside it so one user can't submit another's object.
+  if (
+    typeof sampleZipUrl !== "string" ||
+    !sampleZipUrl.startsWith(`${user.id}/`)
+  ) {
+    return NextResponse.json(
+      { error: "Invalid sample ZIP reference" },
+      { status: 400 }
+    );
+  }
+
+  // The browser PUT the ZIP straight to storage (signed URL), so this is the
+  // first server-side look at the bytes. Reject incomplete/corrupt archives
+  // now — otherwise the application is accepted and the moderator discovers an
+  // unopenable download days later, with the applicant long gone.
+  const zipCheck = await verifyStoredZip("applications", sampleZipUrl);
+  if (!zipCheck.ok) {
+    await removeObject("applications", sampleZipUrl);
+    return NextResponse.json({ error: zipCheck.error }, { status: 400 });
   }
 
   // Check for existing pending or approved application

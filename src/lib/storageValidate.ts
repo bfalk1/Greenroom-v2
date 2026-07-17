@@ -19,9 +19,15 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isWavBuffer, validateRasterImage } from "@/lib/upload";
+import {
+  hasZipLocalHeader,
+  hasZipEocd,
+  ZIP_EOCD_SCAN_BYTES,
+} from "@/lib/zipIntegrity";
 
 const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
+const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 
 function admin(): SupabaseClient {
   return createClient(
@@ -89,6 +95,35 @@ async function readHead(
   return { head, size };
 }
 
+/**
+ * Fetch the byte range [start, end] of a stored object via a signed URL. If
+ * the server ignores Range and returns the whole body (200), the requested
+ * range here always runs to the object's end, so the buffer's tail is the
+ * wanted slice either way. Callers cap object size first, so the 200 fallback
+ * never buffers more than the relevant MAX_*_BYTES.
+ */
+async function readRange(
+  bucket: string,
+  path: string,
+  start: number,
+  end: number
+): Promise<Buffer | null> {
+  const client = admin();
+  const { data: signed, error } = await client.storage
+    .from(bucket)
+    .createSignedUrl(path, 60);
+  if (error || !signed) return null;
+
+  const res = await fetch(signed.signedUrl, {
+    headers: { Range: `bytes=${start}-${end}` },
+  });
+  if (!res.ok && res.status !== 206) return null;
+
+  const body = Buffer.from(await res.arrayBuffer());
+  const want = end - start + 1;
+  return body.length > want ? body.subarray(body.length - want) : body;
+}
+
 /** Remove an object (best-effort cleanup of an invalid/orphaned upload). */
 export async function removeObject(bucket: string, path: string): Promise<void> {
   try {
@@ -111,6 +146,41 @@ export async function verifyStoredWav(
   }
   if (r.size > MAX_AUDIO_BYTES) {
     return { ok: false, error: "Audio file must be under 50MB" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Confirm a stored object is a complete, openable ZIP within the size limit:
+ * local-file-header magic at the front AND an End of Central Directory record
+ * in the trailing ~64KB. Catches archives that were truncated on the
+ * uploader's disk (file selected mid-compression or mid-cloud-sync) — those
+ * upload "successfully" but no archive tool can open them. Reads only the
+ * head and tail byte ranges, never the whole object.
+ */
+export async function verifyStoredZip(
+  bucket: string,
+  path: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const r = await readHead(bucket, path, 4);
+  if (!r) return { ok: false, error: "Uploaded ZIP could not be verified" };
+  if (r.size === 0) return { ok: false, error: "ZIP file is empty" };
+  if (r.size > MAX_ZIP_BYTES) {
+    return { ok: false, error: "ZIP file must be under 50MB" };
+  }
+  if (!hasZipLocalHeader(r.head)) {
+    return { ok: false, error: "File is not a ZIP archive" };
+  }
+
+  const tailStart = Math.max(0, r.size - ZIP_EOCD_SCAN_BYTES);
+  const tail = await readRange(bucket, path, tailStart, r.size - 1);
+  if (!tail) return { ok: false, error: "Uploaded ZIP could not be verified" };
+  if (!hasZipEocd(tail)) {
+    return {
+      ok: false,
+      error:
+        "The ZIP archive is incomplete or corrupted (it may have still been compressing or syncing when selected). Re-create the ZIP and upload it again.",
+    };
   }
   return { ok: true };
 }

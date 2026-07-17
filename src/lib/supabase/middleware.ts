@@ -85,7 +85,10 @@ export async function updateSession(request: NextRequest) {
   // /explore and /pricing are public so the landing page's "Browse samples"
   // and pricing links work for anonymous visitors; both pages already render
   // a logged-out variant (signup CTAs) and their write actions require auth.
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/explore", "/pricing", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
+  // /checkout (exact — NOT /checkout/complete) is public so an anonymous buyer
+  // keeps the tier they picked and signs up inline on the page; the checkout
+  // APIs it calls all still require a session.
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/explore", "/pricing", "/checkout", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||

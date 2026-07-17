@@ -32,9 +32,11 @@ export function trackLandingCta(cta: string) {
 // --- Auth ---
 
 export function trackSignup(method: "email" | "invite", source?: string) {
-  // source attributes the signup to a funnel (e.g. "vip" for the lifetime
-  // offer) so the 267-landed→N-subscribed question can be segmented at the
-  // signup step instead of only at the endpoints.
+  // source attributes the signup to a funnel — "vip" for the lifetime offer's
+  // standalone /signup path, "checkout" for the signup step embedded on
+  // /checkout, "pricing" for the one embedded on /pricing — so the
+  // landed→subscribed question can be segmented at the signup step instead of
+  // only at the endpoints.
   posthog.capture("signup", { method, ...(source ? { source } : {}) });
 }
 
@@ -84,10 +86,10 @@ export function trackPaywallViewed(redirectFrom?: string) {
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
-// Plan click on /pricing. destination captures the anonymous-intent leak:
-// signed-out clickers bounce to /signup and their tier choice is dropped, so
-// signed_in=false + destination=signup marks funnel exits the checkout events
-// can never see. (/vip has its own vip_plan_selected.)
+// Plan click on /pricing. Signed-out clickers now go to /checkout too (signup
+// is inline there), so destination is always "checkout" going forward — the
+// union keeps the type honest about historical "signup" events, which marked
+// the old anonymous-intent leak. (/vip has its own vip_plan_selected.)
 export function trackPricingPlanSelected(
   tier: string,
   opts: { signedIn: boolean; destination: "checkout" | "signup" }
@@ -150,15 +152,19 @@ export function trackVipLifetimeConfirmed() {
 
 // --- Funnel: checkout page ---
 
+// signed_in=false is the new anonymous entry (inline signup step showing);
+// lifetime_eligible is null there — the eligibility API needs a session.
 export function trackCheckoutViewed(props: {
   tier: string;
   lifetime: boolean;
   lifetimeEligible: boolean | null;
+  signedIn: boolean;
 }) {
   posthog.capture("checkout_viewed", {
     tier: props.tier,
     lifetime: props.lifetime,
     lifetime_eligible: props.lifetimeEligible,
+    signed_in: props.signedIn,
   });
 }
 
