@@ -32,7 +32,7 @@ export function resetAnalytics() {
 // --- Funnel: Landing ---
 
 // Which landing-page CTA converts. cta values: nav_join, nav_signin,
-// hero_signup, hero_browse, final_signup, final_signin.
+// hero_pricing, hero_browse, final_pricing, final_signin.
 export function trackLandingCta(cta: string) {
   posthog.capture("landing_cta_clicked", { cta });
 }

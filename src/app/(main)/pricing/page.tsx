@@ -273,10 +273,8 @@ function PricingContent() {
                         : "Subscribe Now"}
                 </Button>
 
-                {/* Price per credit */}
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">
-                  ${(pkg.price / pkg.credits).toFixed(4)} per credit • Billed
-                  monthly
+                  Billed monthly
                 </p>
               </div>
             </div>
