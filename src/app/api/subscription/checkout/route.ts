@@ -7,6 +7,11 @@ import { stripe } from "@/lib/stripe/client";
 import { stripeTaxCheckoutParams, tierNameForStripePrice } from "@/lib/stripe/config";
 import { VIP_OFFER_COOKIE, vipLifetimeCouponId, verifyVipUnlock } from "@/lib/vipOffer";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
+import {
+  capiAttributionFromRequest,
+  capiAttributionToMetadata,
+  metaCapiAddPaymentInfo,
+} from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
   try {
@@ -71,11 +76,12 @@ export async function POST(request: Request) {
     // granted the VIP offer via a creator referral), the plan is VIP (the only
     // tier it covers), and the coupon is configured. Otherwise refuse rather
     // than silently charging full price.
+    const cookieStore = await cookies();
+
     let discountCoupon: string | null = null;
     if (lifetime === true) {
-      const store = await cookies();
       const unlocked =
-        verifyVipUnlock(store.get(VIP_OFFER_COOKIE)?.value) ||
+        verifyVipUnlock(cookieStore.get(VIP_OFFER_COOKIE)?.value) ||
         dbUser.vipOfferUnlockedAt != null;
       const coupon = vipLifetimeCouponId();
 
@@ -167,7 +173,16 @@ export async function POST(request: Request) {
     // Attribution rides on BOTH the session metadata (what the webhook's
     // checkout.session.completed handler reads) and the subscription's own
     // metadata (survives if the sub is ever re-linked outside the session).
+    // The capi* keys carry the buyer's browser signals (_fbp/_fbc cookies,
+    // IP, user agent) to the server-side Meta CAPI Purchase fired at
+    // activation — this request is the last moment they exist; the webhook
+    // and reconcile cron only ever see provider-originated requests.
     const acquisitionSource = discountCoupon ? "vip-lifetime" : null;
+    const capiAttribution = capiAttributionFromRequest(
+      request,
+      (name) => cookieStore.get(name)?.value
+    );
+    const capiMetadata = capiAttributionToMetadata(capiAttribution);
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       mode: "subscription",
@@ -175,11 +190,13 @@ export async function POST(request: Request) {
       metadata: {
         userId: dbUser.id,
         ...(acquisitionSource ? { acquisitionSource } : {}),
+        ...capiMetadata,
       },
       subscription_data: {
         metadata: {
           userId: dbUser.id,
           ...(acquisitionSource ? { acquisitionSource } : {}),
+          ...capiMetadata,
         },
       },
       // Coupon (lifetime VIP) + tax coexist: Stripe applies exclusive tax on
@@ -192,7 +209,18 @@ export async function POST(request: Request) {
         : `${appUrl}/pricing?canceled=true`,
     });
 
-    return NextResponse.json({ url: session.url });
+    // Server-side AddPaymentInfo (CAPI): the buyer just committed to Stripe.
+    // The returned eventId goes back to the client so its pixel AddPaymentInfo
+    // fires with the same eventID and Meta counts the two as one.
+    const metaEventId = metaCapiAddPaymentInfo({
+      userId: dbUser.id,
+      email: dbUser.email,
+      tier: tier.name,
+      transactionId: session.id,
+      attribution: capiAttribution,
+    });
+
+    return NextResponse.json({ url: session.url, metaEventId });
   } catch (error) {
     // Stripe config errors deserve distinct, actionable responses: an expired
     // lifetime coupon or a bad/archived price ID looks like a permanent

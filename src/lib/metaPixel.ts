@@ -34,6 +34,15 @@ export function metaPixelId(): string | undefined {
   return process.env.NEXT_PUBLIC_META_PIXEL_ID?.trim() || undefined;
 }
 
+// The Purchase event id, shared verbatim by the browser pixel (eventID) and
+// the server-side Conversions API (event_id) — Meta dedups the two channels
+// only on an exact byte match, so both sides derive it here. transactionId is
+// the provider's per-transaction token: Stripe checkout-session id (cs_...)
+// or PayPal subscription id (I-...).
+export function purchaseEventId(transactionId: string): string {
+  return `purchase:${transactionId}`;
+}
+
 // Programmatic equivalent of Meta's inline base-code snippet: install the fbq
 // stub (which queues calls until fbevents.js loads and replays them), inject
 // the script, and bind the pixel ID. Idempotent — remounts and dev fast
@@ -77,13 +86,22 @@ export function metaPageView() {
   fbq("track", "PageView");
 }
 
+// eventID (optional) is Meta's browser↔server dedup handle: when the
+// Conversions API sends the same event server-side (src/lib/metaCapiServer.ts),
+// both carry one shared id and Meta counts them as a single conversion.
+// It must BYTE-match the server's event_id — same casing, same prefix.
 export function metaTrack(
   event: MetaStandardEvent,
-  params?: Record<string, unknown>
+  params?: Record<string, unknown>,
+  eventID?: string
 ) {
   const fbq = initMetaPixel();
   if (!fbq) return;
-  fbq("track", event, params);
+  if (eventID) {
+    fbq("track", event, params, { eventID });
+  } else {
+    fbq("track", event, params);
+  }
 }
 
 // Once-per-browser variant for conversion events that a page refresh would
@@ -95,6 +113,10 @@ export function metaTrack(
 // a stable trait like the tier name — a coarse key permanently suppresses
 // later legitimate conversions (re-subscribe after cancel, second account on
 // a shared browser) from this browser.
+// The dedupeKey doubles as the Meta eventID: it is already per-transaction,
+// and the server-side Conversions API Purchase uses the same
+// `purchase:<transactionId>` string as its event_id, so Meta dedups the two
+// channels even when localStorage was unavailable and this fired a repeat.
 export function metaTrackOnce(
   dedupeKey: string,
   event: MetaStandardEvent,
@@ -110,5 +132,23 @@ export function metaTrackOnce(
     // Storage unavailable (private mode / blocked): fire anyway — a possible
     // duplicate beats silently dropping the conversion.
   }
-  fbq("track", event, params);
+  fbq("track", event, params, { eventID: dedupeKey });
+}
+
+// Hand a conversion's ownership to the Conversions API WITHOUT firing the
+// pixel: sets the same localStorage marker metaTrackOnce checks. Used when
+// /checkout/complete times out — the server will fire the CAPI Purchase at
+// activation, and a buyer revisiting the same completion URL days later
+// (outside Meta's 48h event_id dedup window) must not add a second,
+// undeduplicatable browser Purchase on top of it.
+export function metaSuppressOnce(dedupeKey: string) {
+  try {
+    window.localStorage.setItem(
+      `metapixel:once:${dedupeKey}`,
+      new Date().toISOString()
+    );
+  } catch {
+    // Storage unavailable — nothing to suppress with; accept the small
+    // double-count risk rather than throwing in the completion flow.
+  }
 }

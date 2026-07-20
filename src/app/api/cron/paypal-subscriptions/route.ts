@@ -59,7 +59,29 @@ async function runSweep(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true, expired: expired.length });
+    // Age-bound the checkout_attributions rows (fbp/fbc cookies, IP, user
+    // agent captured at PayPal checkout for the Meta CAPI Purchase). Consumed
+    // or abandoned, a row is useless once the activation window is long past —
+    // 60 days comfortably covers the 30-day referral/activation window plus
+    // webhook redelivery lag. Best-effort: retention hygiene must never fail
+    // the expiry sweep above.
+    const purgedAttributions = await prisma.checkoutAttribution
+      .deleteMany({
+        where: {
+          createdAt: { lt: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000) },
+        },
+      })
+      .then((r) => r.count)
+      .catch((error) => {
+        console.error("checkout_attributions sweep failed:", error);
+        return 0;
+      });
+
+    return NextResponse.json({
+      ok: true,
+      expired: expired.length,
+      purgedAttributions,
+    });
   } catch (error) {
     console.error("PayPal subscription expiry cron failed:", error);
     return NextResponse.json({ error: "Cron failed" }, { status: 500 });

@@ -284,7 +284,13 @@ function CheckoutContent() {
         trackSubscriptionCheckout(
           pkg.name,
           effectiveMethod === "card" ? pkg.priceId : `paypal-${pkg.tierName}`,
-          { tier: pkg.tierName, lifetime: applyLifetime, method: effectiveMethod }
+          {
+            tier: pkg.tierName,
+            lifetime: applyLifetime,
+            method: effectiveMethod,
+            metaEventId:
+              typeof data.metaEventId === "string" ? data.metaEventId : undefined,
+          }
         );
         window.location.href = data.url;
         return;

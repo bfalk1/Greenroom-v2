@@ -148,6 +148,7 @@ model User {
   paypalOrders         PaypalOrder[]
   referralsMade        Referral[]           @relation("Referrer")
   referralUsed         Referral?            @relation("ReferredUser")
+  checkoutAttributions CheckoutAttribution[]
 
   @@map("users")
 }
@@ -630,6 +631,29 @@ model PaypalOrder {
   @@index([userId])
   @@index([captureId])
   @@map("paypal_orders")
+}
+
+// Browser signals captured at PayPal subscription-checkout time so the
+// server-side Meta CAPI Purchase — usually fired from a PayPal webhook that
+// carries no browser context — can attribute the conversion (fbp/fbc cookies,
+// IP, user agent). Stripe needs no row: its signals ride the checkout
+// session's / subscription's own metadata. Keyed by the provider transaction
+// token (PayPal subscription id), the same token the browser pixel keys its
+// Purchase eventID on.
+model CheckoutAttribution {
+  id             String   @id // provider transaction token (PayPal subscription id)
+  userId         String   @map("user_id") @db.Uuid
+  fbp            String?
+  fbc            String?
+  clientIp       String?  @map("client_ip")
+  userAgent      String?  @map("user_agent")
+  eventSourceUrl String?  @map("event_source_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("checkout_attributions")
 }
 
 // ─────────────────────────────────────────────

@@ -13,6 +13,10 @@ import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
+import {
+  capiAttributionFromRequest,
+  metaCapiAddPaymentInfo,
+} from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
   try {
@@ -197,7 +201,48 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ url: subscription.approveUrl });
+    // Persist the buyer's browser signals keyed by the PayPal subscription id
+    // so the server-side Meta CAPI Purchase (fired at activation, usually
+    // from a PayPal webhook with no browser context) can attribute the
+    // conversion. Unlike Stripe there is no metadata bag — custom_id already
+    // carries the bare userId and the sync path parses it as such. Best
+    // effort: attribution is not worth failing a checkout the buyer is about
+    // to approve.
+    const store = await cookies();
+    const capiAttribution = capiAttributionFromRequest(
+      request,
+      (name) => store.get(name)?.value
+    );
+    try {
+      await prisma.checkoutAttribution.create({
+        data: {
+          id: subscription.id,
+          userId: dbUser.id,
+          fbp: capiAttribution.fbp,
+          fbc: capiAttribution.fbc,
+          clientIp: capiAttribution.clientIp,
+          userAgent: capiAttribution.clientUserAgent,
+          eventSourceUrl: capiAttribution.eventSourceUrl,
+        },
+      });
+    } catch (attributionError) {
+      console.error(
+        `Failed to record checkout attribution for PayPal subscription ${subscription.id}:`,
+        attributionError
+      );
+    }
+
+    // Server-side AddPaymentInfo (CAPI); the returned eventId lets the
+    // client's pixel AddPaymentInfo dedupe against it.
+    const metaEventId = metaCapiAddPaymentInfo({
+      userId: dbUser.id,
+      email: dbUser.email,
+      tier: tier.name,
+      transactionId: subscription.id,
+      attribution: capiAttribution,
+    });
+
+    return NextResponse.json({ url: subscription.approveUrl, metaEventId });
   } catch (error) {
     console.error("Error creating PayPal subscription checkout:", error);
     return NextResponse.json(

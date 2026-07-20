@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Check, Loader2 } from "lucide-react";
 import { trackCheckoutCompleteOutcome } from "@/lib/analytics";
+import { metaSuppressOnce, purchaseEventId } from "@/lib/metaPixel";
 
 // Post-payment landing for BOTH providers (Stripe success_url and the PayPal
 // return route). Unlike the old /pricing?success=true toast — which announced
@@ -82,7 +83,10 @@ function CompleteContent() {
               outcome: "confirmed",
               secondsToConfirm: Math.round((Date.now() - startedAt) / 1000),
               tier: data.subscription.tierName,
-              valueUsdCents: data.subscription.priceUsdCents ?? null,
+              valueUsdCents:
+                data.subscription.chargedUsdCents ??
+                data.subscription.priceUsdCents ??
+                null,
               transactionId,
             });
             return;
@@ -99,6 +103,15 @@ function CompleteContent() {
           initialStatus: hint,
           outcome: hint === "error" ? "error" : "timeout",
         });
+        // Ownership of this conversion passes to the Conversions API: the
+        // server fires Purchase from the grant whenever activation lands.
+        // Mark the transaction so a revisit of this URL after the sub
+        // activates — possibly days later, outside Meta's 48h dedup window —
+        // can't add a second browser Purchase. If activation never happens,
+        // nothing fires anywhere and the marker suppresses nothing real.
+        if (transactionId) {
+          metaSuppressOnce(purchaseEventId(transactionId));
+        }
         return;
       }
       timer = setTimeout(poll, POLL_INTERVAL_MS);

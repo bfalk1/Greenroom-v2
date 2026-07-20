@@ -12,7 +12,9 @@
 import { prisma } from "@/lib/prisma";
 import { paypalFetch } from "@/lib/paypal/client";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import { metaCapiPurchase } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
+import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
 
 const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
   GA: process.env.PAYPAL_GA_PLAN_ID?.trim(),
@@ -441,6 +443,37 @@ export async function syncPaypalSubscription(
         via,
       });
       // (The referral reward is granted in the unconditional VIP block above.)
+
+      // Server-side Meta CAPI Purchase — same exactly-once winner. The
+      // browser pixel keys its Purchase on the txn param of
+      // /checkout/complete, which for PayPal IS this subscription id, so
+      // event ids line up. Browser signals come from the row the checkout
+      // route persisted; a missing row (pre-CAPI checkouts, failed insert)
+      // degrades to a skipped send, never a thrown error — this runs inside
+      // webhook handlers where a throw means provider redelivery loops.
+      const attribution = await prisma.checkoutAttribution
+        .findUnique({ where: { id: subscriptionId } })
+        .catch(() => null);
+      metaCapiPurchase({
+        userId,
+        email: user.email,
+        tier: tier.name,
+        // The discounted lifetime plan charges $11.99, which no DB row
+        // records (the discount lives in the PayPal plan itself) — the
+        // display config mirrors it and is the best server-side source.
+        valueUsdCents:
+          acquisitionSource === "vip-lifetime"
+            ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
+            : tier.priceUsdCents,
+        transactionId: subscriptionId,
+        attribution: {
+          fbp: attribution?.fbp,
+          fbc: attribution?.fbc,
+          clientIp: attribution?.clientIp,
+          clientUserAgent: attribution?.userAgent,
+          eventSourceUrl: attribution?.eventSourceUrl,
+        },
+      });
     }
   }
 
