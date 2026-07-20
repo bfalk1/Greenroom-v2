@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import {
+  capiAttributionFromMetadata,
+  metaCapiPurchase,
+} from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 // Nightly Stripe↔DB reconciliation. The webhook is the primary grant path,
@@ -190,6 +194,45 @@ async function reconcileOne(
       });
       // (The referral reward is granted unconditionally at the top of
       // reconcileOne, so a healthy-but-unpaid pending referral is repaired too.)
+
+      // Server-side Meta CAPI Purchase for the repair path. The browser
+      // pixel keys on the checkout-session id, so recover it from Stripe
+      // (one extra call, repair-path only); if the sub somehow has no
+      // session, fall back to the sub id — dedup is moot then anyway, since
+      // a webhook-missed activation means /checkout/complete timed out and
+      // the browser Purchase never fired. Wrapped so a Meta/Stripe lookup
+      // hiccup can't fail an otherwise-successful repair (the catch below
+      // rethrows non-P2002 errors as repair failures).
+      try {
+        const [userRow, sessions] = await Promise.all([
+          prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true },
+          }),
+          stripe.checkout.sessions.list({
+            subscription: subscription.id,
+            limit: 1,
+          }),
+        ]);
+        const originSession = sessions.data[0] ?? null;
+        metaCapiPurchase({
+          userId,
+          email: userRow?.email,
+          tier: tier.name,
+          valueUsdCents: originSession?.amount_total ?? tier.priceUsdCents,
+          currency: originSession?.currency,
+          transactionId: originSession?.id ?? subscription.id,
+          attribution: capiAttributionFromMetadata({
+            ...(originSession?.metadata ?? {}),
+            ...subscription.metadata,
+          }),
+        });
+      } catch (capiError) {
+        console.error(
+          `[stripe-reconcile] CAPI Purchase for ${subscription.id} not sent:`,
+          capiError
+        );
+      }
     } catch (error) {
       if (
         typeof error === "object" &&

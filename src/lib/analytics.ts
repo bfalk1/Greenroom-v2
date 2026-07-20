@@ -1,5 +1,5 @@
 import posthog from "posthog-js";
-import { metaTrack, metaTrackOnce } from "./metaPixel";
+import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
 
 // Some funnel functions below ALSO send a Meta Pixel standard event
 // (src/lib/metaPixel.ts) so Facebook ads can attribute and optimize against
@@ -116,7 +116,16 @@ export function trackPricingPlanSelected(
 export function trackSubscriptionCheckout(
   plan: string,
   priceId: string,
-  opts?: { tier?: string; lifetime?: boolean; method?: string }
+  opts?: {
+    tier?: string;
+    lifetime?: boolean;
+    method?: string;
+    // Returned by the checkout API, which fired the same AddPaymentInfo
+    // server-side via the Conversions API — passing it as the pixel eventID
+    // makes Meta count the two as one. Absent (revise flow, older responses)
+    // the pixel event just stands alone.
+    metaEventId?: string;
+  }
 ) {
   posthog.capture("subscription_checkout", {
     plan,
@@ -125,10 +134,14 @@ export function trackSubscriptionCheckout(
     lifetime: opts?.lifetime ?? false,
     payment_method: opts?.method,
   });
-  metaTrack("AddPaymentInfo", {
-    content_category: "subscription",
-    content_name: plan,
-  });
+  metaTrack(
+    "AddPaymentInfo",
+    {
+      content_category: "subscription",
+      content_name: plan,
+    },
+    opts?.metaEventId
+  );
 }
 
 // NOTE: subscription_activated is captured SERVER-side only (see
@@ -240,7 +253,7 @@ export function trackCheckoutCompleteOutcome(props: {
   // Timeouts under-count here by design; the Conversions API is the eventual
   // fix for that.
   if (props.outcome === "confirmed" && props.tier && props.transactionId) {
-    metaTrackOnce(`purchase:${props.transactionId}`, "Purchase", {
+    metaTrackOnce(purchaseEventId(props.transactionId), "Purchase", {
       content_category: "subscription",
       content_name: props.tier,
       content_type: "product",

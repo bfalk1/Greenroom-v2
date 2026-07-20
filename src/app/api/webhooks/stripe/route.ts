@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
+import {
+  capiAttributionFromMetadata,
+  metaCapiPurchase,
+} from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
 
@@ -202,6 +206,23 @@ async function handleCheckoutCompleted(
     lifetime: acquisitionSource === "vip-lifetime",
     source: acquisitionSource,
     via: "webhook",
+  });
+
+  // Server-side Meta CAPI Purchase — same exactly-once slot. The browser
+  // pixel keys its Purchase on the checkout-session id (the success_url's
+  // session_id param), so the SESSION id is the event_id here, not the
+  // subscription id — dedup silently breaks otherwise. Browser match signals
+  // come back from the metadata the checkout route stashed; the charged
+  // amount (post-coupon, pre-anything-else the tier table doesn't know) is
+  // the session's amount_total.
+  metaCapiPurchase({
+    userId,
+    email: session.customer_details?.email ?? undefined,
+    tier: tier.name,
+    valueUsdCents: session.amount_total ?? tier.priceUsdCents,
+    currency: session.currency,
+    transactionId: session.id,
+    attribution: capiAttributionFromMetadata(session.metadata ?? undefined),
   });
 
   // A VIP activation is the trigger that pays out a pending referral — only for
