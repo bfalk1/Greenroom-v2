@@ -99,11 +99,20 @@ function CheckoutContent() {
     const anon = !user && !userError;
     if (lt && !anon && lifetimeEligible === null) return;
     viewTracked.current = true;
+    // The price on screen at this moment — same rule as the render's
+    // applyLifetime below (anonymous lifetime visitors see the discounted
+    // price optimistically; the guard above already waited out a signed-in
+    // buyer's pending verdict).
+    const shownPrice =
+      lt && (anon || lifetimeEligible === true)
+        ? VIP_LIFETIME_OFFER.lifetimePrice
+        : pkg.price;
     trackCheckoutViewed({
       tier: pkg.tierName,
       lifetime: lt,
       lifetimeEligible: lt ? lifetimeEligible : null,
       signedIn: !anon,
+      valueUsdCents: Math.round(shownPrice * 100),
     });
   }, [pkg, searchParams, lifetimeEligible, user, userLoading, userError]);
 
@@ -288,6 +297,7 @@ function CheckoutContent() {
             tier: pkg.tierName,
             lifetime: applyLifetime,
             method: effectiveMethod,
+            valueUsdCents: Math.round(price * 100),
             metaEventId:
               typeof data.metaEventId === "string" ? data.metaEventId : undefined,
           }

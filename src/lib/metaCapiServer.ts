@@ -216,6 +216,11 @@ export function metaCapiAddPaymentInfo(props: {
   userId: string;
   email?: string | null;
   tier: string;
+  // The price the buyer committed to (lifetime discount applied), in cents.
+  // Meta flags commerce events without a numeric value + ISO currency, and
+  // the pixel copy of this event now carries them — keep the two channels
+  // reporting the same amount.
+  valueUsdCents?: number | null;
   transactionId: string;
   attribution: CapiAttribution;
 }): string {
@@ -230,6 +235,14 @@ export function metaCapiAddPaymentInfo(props: {
     customData: {
       content_category: "subscription",
       content_name: props.tier,
+      ...(typeof props.valueUsdCents === "number"
+        ? {
+            content_type: "product",
+            contents: [{ id: props.tier, quantity: 1 }],
+            value: props.valueUsdCents / 100,
+            currency: "USD",
+          }
+        : {}),
     },
   });
   return eventId;

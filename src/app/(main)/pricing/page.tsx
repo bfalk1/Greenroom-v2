@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,11 @@ import { Check, Zap, Loader2 } from "lucide-react";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
 import { SignupForm } from "@/components/auth/SignupForm";
-import { trackPaywallViewed, trackPricingPlanSelected } from "@/lib/analytics";
+import {
+  trackPaywallViewed,
+  trackPricingPlanSelected,
+  trackPricingViewed,
+} from "@/lib/analytics";
 import { toast } from "sonner";
 
 // PayPal subscriptions are gated separately from credit packs so packs-only
@@ -48,6 +52,15 @@ function PricingContent() {
     const redirectFrom = searchParams.get("redirect") || undefined;
     trackPaywallViewed(redirectFrom);
   }, [searchParams, user]);
+
+  // Meta ViewContent — every visitor, signed in or not (ad-clickers land here
+  // anonymous), once per mount (ref-guarded against StrictMode double-fire).
+  const contentViewTracked = useRef(false);
+  useEffect(() => {
+    if (contentViewTracked.current) return;
+    contentViewTracked.current = true;
+    trackPricingViewed();
+  }, []);
 
   // Handle success/canceled URL params
   useEffect(() => {

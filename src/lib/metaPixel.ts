@@ -25,6 +25,7 @@ declare global {
 // here (custom events need fbq("trackCustom", ...) and can't be optimization
 // goals directly).
 export type MetaStandardEvent =
+  | "ViewContent" // /pricing rendered (the plan listing is the product view)
   | "CompleteRegistration" // signup succeeded
   | "InitiateCheckout" // /checkout rendered
   | "AddPaymentInfo" // buyer committed to a provider (checkout API called)

@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "crypto";
+import { createServer } from "node:http";
 import {
   buildCapiEvent,
   capiAttributionFromRequest,
   hashEmail,
+  metaCapiAddPaymentInfo,
   sha256Lower,
 } from "./metaCapiServer";
 import { purchaseEventId } from "./metaPixel";
@@ -150,4 +152,68 @@ test("buildCapiEvent falls back to the app checkout URL when no referer was capt
   assert.ok(event);
   // event_source_url is required for website events — absence would 400.
   assert.match(String(event.event_source_url), /\/checkout$/);
+});
+
+test("metaCapiAddPaymentInfo reports a numeric value + ISO currency (Meta flags value-less commerce events)", async () => {
+  // Integration-style: point the sender at a local stub via META_GRAPH_API_BASE
+  // (the documented test seam) and assert what actually goes over the wire —
+  // the value/currency composition lives inside the send, not in buildCapiEvent.
+  const bodies: { data: Record<string, unknown>[] }[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      bodies.push(JSON.parse(raw));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ events_received: 1 }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const prev = {
+    pixel: process.env.NEXT_PUBLIC_META_PIXEL_ID,
+    token: process.env.META_CAPI_ACCESS_TOKEN,
+    base: process.env.META_GRAPH_API_BASE,
+  };
+  process.env.NEXT_PUBLIC_META_PIXEL_ID = "1234567890";
+  process.env.META_CAPI_ACCESS_TOKEN = "test-token";
+  process.env.META_GRAPH_API_BASE = `http://127.0.0.1:${address.port}`;
+  try {
+    const eventId = metaCapiAddPaymentInfo({
+      userId: "user-1",
+      email: "buyer@example.com",
+      tier: "VIP",
+      valueUsdCents: 1799,
+      transactionId: "cs_test_addpay",
+      attribution: { clientUserAgent: UA, fbp: "fb.1.123.456" },
+    });
+    assert.equal(eventId, "addpayment:cs_test_addpay");
+    // Fire-and-forget send: outside a Next request scope it dispatches
+    // immediately — wait for the stub to receive it.
+    const deadline = Date.now() + 3000;
+    while (bodies.length < 1 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(bodies.length, 1, "stub never received the CAPI send");
+    const event = bodies[0].data[0] as {
+      event_name: string;
+      custom_data: Record<string, unknown>;
+    };
+    assert.equal(event.event_name, "AddPaymentInfo");
+    // Numeric dollars + ISO-4217 code — the exact shape Events Manager
+    // demands; a string like "$17.99" or a word like "Canadian" is malformed.
+    assert.equal(event.custom_data.value, 17.99);
+    assert.equal(event.custom_data.currency, "USD");
+    assert.deepEqual(event.custom_data.contents, [{ id: "VIP", quantity: 1 }]);
+    assert.equal(event.custom_data.content_name, "VIP");
+  } finally {
+    if (prev.pixel === undefined) delete process.env.NEXT_PUBLIC_META_PIXEL_ID;
+    else process.env.NEXT_PUBLIC_META_PIXEL_ID = prev.pixel;
+    if (prev.token === undefined) delete process.env.META_CAPI_ACCESS_TOKEN;
+    else process.env.META_CAPI_ACCESS_TOKEN = prev.token;
+    if (prev.base === undefined) delete process.env.META_GRAPH_API_BASE;
+    else process.env.META_GRAPH_API_BASE = prev.base;
+    server.close();
+  }
 });
