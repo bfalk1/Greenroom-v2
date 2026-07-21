@@ -1,12 +1,18 @@
 import posthog from "posthog-js";
 import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
+import { PUBLIC_SUBSCRIPTION_PACKAGES } from "./stripe/publicPriceConfig";
 
 // Some funnel functions below ALSO send a Meta Pixel standard event
 // (src/lib/metaPixel.ts) so Facebook ads can attribute and optimize against
 // them. PostHog stays the source of truth for funnel analysis; the pixel gets
-// only the standard-event ladder Meta optimizes on: CompleteRegistration →
-// InitiateCheckout → AddPaymentInfo → Purchase (PageViews fire from
-// src/components/providers/MetaPixel.tsx).
+// only the standard-event ladder Meta optimizes on: ViewContent →
+// CompleteRegistration → InitiateCheckout → AddPaymentInfo → Purchase
+// (PageViews fire from src/components/providers/MetaPixel.tsx).
+//
+// Commerce events (InitiateCheckout / AddPaymentInfo / Purchase) must carry a
+// NUMERIC `value` plus an ISO-4217 `currency` — Events Manager flags every
+// event missing them ("price parameter missing"), and value optimization
+// can't train without them. All prices on this site are USD.
 
 // --- Identity lifecycle ---
 
@@ -98,6 +104,25 @@ export function trackPaywallViewed(redirectFrom?: string) {
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
+// Meta-only ViewContent for /pricing: the plan listing is this funnel's
+// product view, and ad-clickers land on it anonymous — so unlike
+// paywall_viewed (signed-in only, a PostHog conversion metric) this fires for
+// EVERY visitor and only to the pixel. Fills the PageView→InitiateCheckout
+// gap in Meta's event ladder; pixel-only by design (single-channel events
+// need no CAPI twin/dedup — see docs/meta-capi-runbook.md).
+export function trackPricingViewed() {
+  metaTrack("ViewContent", {
+    content_category: "subscription",
+    content_type: "product",
+    content_ids: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => p.tierName),
+    contents: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => ({
+      id: p.tierName,
+      quantity: 1,
+      item_price: p.price,
+    })),
+  });
+}
+
 // Plan click on /pricing. Signed-out clickers now go to /checkout too (signup
 // is inline there), so destination is always "checkout" going forward — the
 // union keeps the type honest about historical "signup" events, which marked
@@ -120,6 +145,8 @@ export function trackSubscriptionCheckout(
     tier?: string;
     lifetime?: boolean;
     method?: string;
+    // The price the buyer committed to (discount applied), in cents.
+    valueUsdCents?: number;
     // Returned by the checkout API, which fired the same AddPaymentInfo
     // server-side via the Conversions API — passing it as the pixel eventID
     // makes Meta count the two as one. Absent (revise flow, older responses)
@@ -139,6 +166,14 @@ export function trackSubscriptionCheckout(
     {
       content_category: "subscription",
       content_name: plan,
+      ...(typeof opts?.valueUsdCents === "number"
+        ? {
+            content_type: "product",
+            contents: [{ id: opts.tier ?? plan, quantity: 1 }],
+            value: opts.valueUsdCents / 100,
+            currency: "USD",
+          }
+        : {}),
     },
     opts?.metaEventId
   );
@@ -188,6 +223,11 @@ export function trackCheckoutViewed(props: {
   lifetime: boolean;
   lifetimeEligible: boolean | null;
   signedIn: boolean;
+  // The price the buyer is being shown at render, in cents (lifetime discount
+  // applied when the page is applying it). An estimate is fine here — the
+  // exact charge rides on AddPaymentInfo/Purchase — but the field itself is
+  // required: see the commerce-events note at the top of this file.
+  valueUsdCents: number;
 }) {
   posthog.capture("checkout_viewed", {
     tier: props.tier,
@@ -198,6 +238,10 @@ export function trackCheckoutViewed(props: {
   metaTrack("InitiateCheckout", {
     content_category: "subscription",
     content_name: props.lifetime ? `${props.tier}-lifetime` : props.tier,
+    content_type: "product",
+    contents: [{ id: props.tier, quantity: 1 }],
+    value: props.valueUsdCents / 100,
+    currency: "USD",
   });
 }
 

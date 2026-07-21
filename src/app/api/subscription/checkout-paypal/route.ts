@@ -10,6 +10,7 @@ import {
 } from "@/lib/paypal/subscriptions";
 import { resolveCanadaTax, taxCollectionEnabled } from "@/lib/tax/canadaRates";
 import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
+import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     // come from our env mapping — never from the client.
     const tier = await prisma.subscriptionTier.findFirst({
       where: { name: tierName, isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, priceUsdCents: true },
     });
     let planId = tier ? paypalPlanIdForTier(tier.name) : null;
 
@@ -238,6 +239,12 @@ export async function POST(request: Request) {
       userId: dbUser.id,
       email: dbUser.email,
       tier: tier.name,
+      // Lifetime rides a dedicated discounted PayPal plan whose charge no DB
+      // row records — the display config mirrors it (same source the PayPal
+      // activation's metaCapiPurchase uses).
+      valueUsdCents: isLifetime
+        ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
+        : tier.priceUsdCents,
       transactionId: subscription.id,
       attribution: capiAttribution,
     });

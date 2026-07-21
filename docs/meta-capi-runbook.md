@@ -64,8 +64,26 @@ reconcile cron recovers the session id with one `checkout.sessions.list` call;
 PayPal activations read browser signals from the `checkout_attributions` row
 the checkout route wrote.
 
-PageView / CompleteRegistration / InitiateCheckout are **pixel-only** by
-design — single-channel events need no dedup and add little to ad delivery.
+PageView / ViewContent / CompleteRegistration / InitiateCheckout are
+**pixel-only** by design — single-channel events need no dedup and add little
+to ad delivery. Corollary: Events Manager's "your server is sending fewer
+InitiateCheckout events than pixel" (event-coverage) warning is EXPECTED and
+not a defect — there is no server twin to send. If an ad set optimizes on a
+mid-funnel event, prefer **AddPaymentInfo** (dual-channel, ad-blocker-proof)
+over InitiateCheckout.
+
+## Event parameters (value / currency)
+
+Commerce events (InitiateCheckout, AddPaymentInfo, Purchase) carry a NUMERIC
+`value` in dollars, `currency: "USD"` (ISO-4217 — never `$`/words), and
+`contents: [{ id: <tier name>, quantity: 1 }]` on BOTH channels — Events
+Manager flags every commerce event missing value/currency ("price parameter
+missing") and value optimization can't train without them. The value is the
+price the buyer is seeing/committed to, lifetime discount applied (source:
+`publicPriceConfig` client-side, `tier.priceUsdCents` or
+`VIP_LIFETIME_OFFER.lifetimePrice` server-side). ViewContent (on /pricing)
+sends the plan list as `contents` with `item_price`, no top-level value — no
+single value describes a three-plan listing.
 
 ## Constraints inherited from Meta
 

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { stripeTaxCheckoutParams, tierNameForStripePrice } from "@/lib/stripe/config";
 import { VIP_OFFER_COOKIE, vipLifetimeCouponId, verifyVipUnlock } from "@/lib/vipOffer";
+import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
 import {
   capiAttributionFromRequest,
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     const tier = tierName
       ? await prisma.subscriptionTier.findFirst({
           where: { name: tierName, isActive: true },
-          select: { id: true, name: true },
+          select: { id: true, name: true, priceUsdCents: true },
         })
       : null;
 
@@ -216,6 +217,12 @@ export async function POST(request: Request) {
       userId: dbUser.id,
       email: dbUser.email,
       tier: tier.name,
+      // The committed price: the lifetime coupon's discounted charge isn't on
+      // any DB row (it lives in the Stripe coupon) — the display config
+      // mirrors it, same source metaCapiPurchase uses at activation.
+      valueUsdCents: discountCoupon
+        ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
+        : tier.priceUsdCents,
       transactionId: session.id,
       attribution: capiAttribution,
     });
