@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Download, Heart, Lock, Pause, Play, Search, X } from "lucide-react";
 import { Waveform } from "@/components/audio/Waveform";
 import { trackLandingCta } from "@/lib/analytics";
+import { INSTRUMENT_CATEGORIES } from "@/lib/utils/genre";
 
 /**
  * Interactive marketplace preview for the landing page.
@@ -23,6 +24,7 @@ export interface PreviewSample {
   creator_id: string;
   creator_avatar?: string | null;
   genre?: string;
+  instrument_type?: string;
   sample_type?: string; // "LOOP" | "ONE_SHOT"
   key?: string;
   bpm?: number;
@@ -39,6 +41,27 @@ const TYPE_TABS = [
 
 type TypeKey = (typeof TYPE_TABS)[number]["key"];
 
+// A sample's stored instrument_type is granular (e.g. "808", "Kick"). Fold it
+// up to a browsable category (Drums, Bass, Synths…) so the preview filters by
+// instrument group instead of genre. Built once from the shared taxonomy.
+const INSTRUMENT_TO_CATEGORY: Record<string, string> = {};
+for (const [category, values] of Object.entries(
+  INSTRUMENT_CATEGORIES as Record<string, readonly string[]>
+)) {
+  INSTRUMENT_TO_CATEGORY[category.toLowerCase()] = category;
+  for (const v of values) {
+    INSTRUMENT_TO_CATEGORY[v.toLowerCase()] = category;
+  }
+}
+
+function categoryOf(sample: PreviewSample): string | null {
+  const raw = sample.instrument_type?.trim();
+  if (!raw) return null;
+  // Fall back to the raw value as its own bucket if it isn't in the taxonomy,
+  // so real data is never hidden behind an "Other" catch-all.
+  return INSTRUMENT_TO_CATEGORY[raw.toLowerCase()] ?? raw;
+}
+
 export function MarketplacePreview({
   samples,
   total,
@@ -53,38 +76,41 @@ export function MarketplacePreview({
 
   const [query, setQuery] = useState("");
   const [typeKey, setTypeKey] = useState<TypeKey>("all");
-  const [genre, setGenre] = useState<string>("all");
+  const [category, setCategory] = useState<string>("all");
 
-  // Only samples with a playable preview belong in an audition widget.
+  // Only samples with a playable preview belong in an audition widget. The pool
+  // arrives best-seller-first (the API sorts by download count), so preserving
+  // its order everywhere keeps "top of the list" == "best selling".
   const pool = useMemo(
     () => samples.filter((s) => s.preview_url),
     [samples]
   );
 
-  // Genre chips are derived from the pool (most common first) — no extra fetch,
-  // and they always reflect what's actually auditionable.
-  const genres = useMemo(() => {
+  // Instrument-category chips are derived from the pool (most stocked first) —
+  // no extra fetch, and they always reflect what's actually auditionable.
+  const categories = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of pool) {
-      const g = s.genre?.trim();
-      if (g) counts.set(g, (counts.get(g) ?? 0) + 1);
+      const c = categoryOf(s);
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
     }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6)
-      .map(([g]) => g);
+      .map(([c]) => c);
   }, [pool]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return pool.filter((s) => {
+    const base = pool.filter((s) => {
       if (typeKey !== "all" && s.sample_type !== typeKey) return false;
-      if (genre !== "all" && s.genre !== genre) return false;
+      if (category !== "all" && categoryOf(s) !== category) return false;
       if (!q) return true;
       const haystack = [
         s.name,
         s.artist_name,
         s.genre,
+        s.instrument_type,
         ...(s.tags ?? []),
       ]
         .filter(Boolean)
@@ -92,7 +118,28 @@ export function MarketplacePreview({
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [pool, query, typeKey, genre]);
+
+    // In the unfiltered view, lead with each category's best seller so the
+    // preview showcases the top sound from every instrument group instead of,
+    // say, five kick drums. Since `base` is already best-seller-ordered, the
+    // first sample seen for a category IS that category's best seller.
+    if (category === "all") {
+      const seen = new Set<string>();
+      const leads: PreviewSample[] = [];
+      const rest: PreviewSample[] = [];
+      for (const s of base) {
+        const c = categoryOf(s);
+        if (c && !seen.has(c)) {
+          seen.add(c);
+          leads.push(s);
+        } else {
+          rest.push(s);
+        }
+      }
+      return [...leads, ...rest];
+    }
+    return base;
+  }, [pool, query, typeKey, category]);
 
   // Cap what an anonymous visitor sees — the rest is behind the paywall.
   const VISIBLE = 5;
@@ -219,29 +266,31 @@ export function MarketplacePreview({
               {t.label}
             </button>
           ))}
-          {genres.length > 0 && <span className="mx-1 h-4 w-px bg-white/10" />}
+          {categories.length > 0 && (
+            <span className="mx-1 h-4 w-px bg-white/10" />
+          )}
           <div className="flex flex-nowrap gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
-              onClick={() => setGenre("all")}
+              onClick={() => setCategory("all")}
               className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs transition ${
-                genre === "all"
+                category === "all"
                   ? "border border-[#39b54a]/50 bg-[#39b54a]/10 text-[#39b54a]"
                   : "border border-white/10 text-[#a1a1a1] hover:border-white/25 hover:text-white"
               }`}
             >
-              All genres
+              All instruments
             </button>
-            {genres.map((g) => (
+            {categories.map((c) => (
               <button
-                key={g}
-                onClick={() => setGenre(g)}
+                key={c}
+                onClick={() => setCategory(c)}
                 className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs transition ${
-                  genre === g
+                  category === c
                     ? "border border-[#39b54a]/50 bg-[#39b54a]/10 text-[#39b54a]"
                     : "border border-white/10 text-[#a1a1a1] hover:border-white/25 hover:text-white"
                 }`}
               >
-                {g}
+                {c}
               </button>
             ))}
           </div>

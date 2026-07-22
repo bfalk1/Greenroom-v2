@@ -8,13 +8,17 @@ import {
   BadgeCheck,
   CircleDollarSign,
   Infinity as InfinityIcon,
+  LineChart,
   ShieldCheck,
   Star,
+  UploadCloud,
+  Users,
   Zap,
 } from "lucide-react";
 import { eurostile, display } from "@/lib/fonts";
 import { trackLandingCta } from "@/lib/analytics";
 import { MarketplacePreview } from "@/components/landing/MarketplacePreview";
+import { DEMO_SAMPLES, DEMO_TOTAL } from "@/lib/landing/demoSamples";
 
 /* ------------------------------------------------------------------ */
 /*  Content                                                            */
@@ -43,6 +47,24 @@ const FEATURES = [
   },
 ];
 
+const CREATOR_FEATURES = [
+  {
+    icon: UploadCloud,
+    title: "Upload straight to the marketplace",
+    body: "Publish your samples directly to the platform — no minimums, no maximums. One loop or a thousand, it's your call.",
+  },
+  {
+    icon: LineChart,
+    title: "Track your earnings live",
+    body: "Watch your royalties add up in real time. Every download pays out — no waiting on quarterly statements.",
+  },
+  {
+    icon: Users,
+    title: "See who's using your samples",
+    body: "Know exactly which producers are pulling your sounds. Real insight into your audience, not a black box.",
+  },
+];
+
 const PRODUCER_NAMES = [
   "Juelz",
   "Kompany",
@@ -53,6 +75,19 @@ const PRODUCER_NAMES = [
   "Gravedgr",
 ];
 
+// Featured artists for the creators carousel, in display order. Their real
+// avatars are pulled from live sample data when the artist has uploads;
+// otherwise the tile falls back to a monogram so the lineup always renders.
+const FEATURED_ARTISTS = [
+  "QUIX",
+  "EKALI",
+  "JUELZ",
+  "MONTELL2099",
+  "JAWNS",
+  "KOMPANY",
+  "DREZO",
+];
+
 interface LandingSample {
   id: string;
   name: string;
@@ -60,6 +95,7 @@ interface LandingSample {
   creator_id: string;
   creator_avatar?: string | null;
   genre?: string;
+  instrument_type?: string;
   sample_type?: string;
   key?: string;
   bpm?: number;
@@ -218,17 +254,57 @@ export default function LandingPage() {
   // sample-count stat. The page degrades gracefully if it fails.
   useEffect(() => {
     const controller = new AbortController();
+    // In local dev the catalog is usually empty; fall back to a demo dataset so
+    // the interactive marketplace, creator tiles and live stat are previewable.
+    // `process.env.NODE_ENV` is inlined at build time, so this branch — and the
+    // demo import — are dropped from production bundles.
+    // In local dev the local catalog is usually empty. Prefer REAL production
+    // samples via a dev-only server proxy (no browser CORS, fresh signed URLs)
+    // so the preview auditions varied real sounds; fall back to a static 2-clip
+    // demo only if prod is unreachable. Both are dev-only and dropped from prod.
+    const useDevFallback = async () => {
+      if (process.env.NODE_ENV === "production") return;
+      try {
+        const res = await fetch(
+          "/api/dev/landing-preview?sortBy=popular&sortDir=desc&limit=24",
+          { signal: controller.signal }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const list: LandingSample[] = Array.isArray(data.samples)
+            ? data.samples
+            : [];
+          if (list.some((s) => s.preview_url)) {
+            setSamples(list);
+            if (typeof data.total === "number") setSampleTotal(data.total);
+            return;
+          }
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+      }
+      setSamples(DEMO_SAMPLES as LandingSample[]);
+      setSampleTotal(DEMO_TOTAL);
+    };
     (async () => {
       try {
         const res = await fetch("/api/samples?sortBy=popular&sortDir=desc&limit=24", {
           signal: controller.signal,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          await useDevFallback();
+          return;
+        }
         const data = await res.json();
-        setSamples(Array.isArray(data.samples) ? data.samples : []);
-        if (typeof data.total === "number") setSampleTotal(data.total);
+        const list: LandingSample[] = Array.isArray(data.samples) ? data.samples : [];
+        if (list.some((s) => s.preview_url)) {
+          setSamples(list);
+          if (typeof data.total === "number") setSampleTotal(data.total);
+        } else {
+          await useDevFallback();
+        }
       } catch {
-        /* landing page works fine without live data */
+        if (!controller.signal.aborted) await useDevFallback();
       }
     })();
     return () => controller.abort();
@@ -240,16 +316,19 @@ export default function LandingPage() {
   );
 
   const creators = useMemo(() => {
-    const seen = new Set<string>();
-    const list: { name: string; avatar: string; genre?: string }[] = [];
+    // Index whatever we know about each artist from the live sample feed
+    // (avatar + a representative genre), keyed by lowercased name.
+    const byName = new Map<string, { avatar: string | null; genre?: string }>();
     for (const s of samples) {
-      const name = s.artist_name?.trim();
-      if (!name || !s.creator_avatar || seen.has(name.toLowerCase())) continue;
-      seen.add(name.toLowerCase());
-      list.push({ name, avatar: s.creator_avatar, genre: s.genre });
-      if (list.length === 7) break;
+      const key = s.artist_name?.trim().toLowerCase();
+      if (!key || byName.has(key)) continue;
+      byName.set(key, { avatar: s.creator_avatar ?? null, genre: s.genre });
     }
-    return list;
+    // Curated lineup, in order — always render all of them.
+    return FEATURED_ARTISTS.map((name) => {
+      const info = byName.get(name.toLowerCase());
+      return { name, avatar: info?.avatar ?? null, genre: info?.genre };
+    });
   }, [samples]);
 
   return (
@@ -324,7 +403,7 @@ export default function LandingPage() {
       </header>
 
       {/* ---------- HERO ---------- */}
-      <section className="relative overflow-hidden px-5 pb-24 pt-32 sm:px-8 sm:pt-40 lg:pb-32">
+      <section className="relative overflow-hidden px-5 pb-16 pt-32 sm:px-8 sm:pt-40 lg:pb-20">
         {/* ambient glows */}
         <div
           aria-hidden
@@ -417,9 +496,6 @@ export default function LandingPage() {
             <HeroMedia />
           </div>
         </div>
-
-        {/* faint EQ under the hero */}
-        <EqStrip className="pointer-events-none mx-auto mt-20 hidden h-12 max-w-5xl opacity-[0.14] lg:flex" />
       </section>
 
       {/* ---------- PRODUCER NAMES MARQUEE ---------- */}
@@ -456,7 +532,7 @@ export default function LandingPage() {
       </section>
 
       {/* ---------- WHY ---------- */}
-      <section className="relative px-5 py-24 sm:px-8 sm:py-32">
+      <section className="relative px-5 py-16 sm:px-8 sm:py-24">
         <div className="mx-auto max-w-7xl">
           <Reveal>
             <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
@@ -504,7 +580,7 @@ export default function LandingPage() {
 
       {/* ---------- MARKETPLACE PREVIEW ---------- */}
       {previewSamples.length > 0 && (
-        <section className="relative px-5 py-24 sm:px-8 sm:py-32">
+        <section className="relative px-5 py-16 sm:px-8 sm:py-24">
           <div
             aria-hidden
             className="pointer-events-none absolute right-[-10%] top-1/4 h-[420px] w-[520px] rounded-full opacity-20 blur-[130px]"
@@ -557,7 +633,7 @@ export default function LandingPage() {
 
       {/* ---------- CREATORS ---------- */}
       {creators.length >= 4 && (
-        <section className="relative px-5 py-24 sm:px-8 sm:py-32">
+        <section className="relative px-5 py-16 sm:px-8 sm:py-24">
           <div className="mx-auto max-w-7xl">
             <Reveal>
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
@@ -586,21 +662,36 @@ export default function LandingPage() {
               </Reveal>
             </div>
 
-            <div className="mt-12 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:grid md:grid-cols-4 md:overflow-visible md:pb-0">
+            <div className="mt-12 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:grid lg:grid-cols-8 lg:overflow-visible lg:pb-0">
               {creators.map((c, i) => (
-                <Reveal key={c.name} delay={i * 80} className="min-w-[170px] snap-start md:min-w-0">
+                <Reveal key={c.name} delay={i * 80} className="min-w-[170px] snap-start lg:min-w-0">
                   <Link
                     href={`/artist/${encodeURIComponent(c.name)}`}
                     onClick={() => trackLandingCta("creator_card")}
                     className="group block overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02] transition-all duration-300 hover:-translate-y-1 hover:border-[#39b54a]/40 hover:shadow-[0_18px_50px_-20px_rgba(0,255,136,0.35)]"
                   >
                     <div className="relative aspect-square overflow-hidden">
-                      <img
-                        src={c.avatar}
-                        alt={c.name}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
+                      {c.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.avatar}
+                          alt={c.name}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div
+                          aria-hidden
+                          className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#0f1a12] to-[#0a0a0a] transition-transform duration-500 group-hover:scale-105"
+                        >
+                          <span
+                            style={display}
+                            className="text-4xl uppercase text-[#39b54a]/70"
+                          >
+                            {c.name.charAt(0)}
+                          </span>
+                        </div>
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                       <BadgeCheck className="absolute left-3 top-3 h-5 w-5 text-[#39b54a] drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]" />
                     </div>
@@ -614,7 +705,7 @@ export default function LandingPage() {
                 </Reveal>
               ))}
               {/* "& more" tile */}
-              <Reveal delay={creators.length * 80} className="min-w-[170px] snap-start md:min-w-0">
+              <Reveal delay={creators.length * 80} className="min-w-[170px] snap-start lg:min-w-0">
                 <Link
                   href="/pricing"
                   onClick={() => trackLandingCta("creators_more")}
@@ -631,51 +722,127 @@ export default function LandingPage() {
         </section>
       )}
 
-      {/* ---------- STATS ---------- */}
-      {/* Honest, live catalog count only — no hardcoded vanity metrics.
-          Hidden until the real number is meaningful so it never overstates. */}
-      {sampleTotal !== null && sampleTotal >= 500 && (
-        <section className="relative border-y border-white/5 bg-black/40 px-5 py-16 sm:px-8">
-          <Reveal className="mx-auto max-w-3xl text-center">
-            <p
-              style={display}
-              className="text-[clamp(2.4rem,6vw,4rem)] uppercase leading-none text-white"
-            >
-              {sampleTotal.toLocaleString("en-US")}
-            </p>
-            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
-              original sounds in the room — and counting
-            </p>
-          </Reveal>
-        </section>
-      )}
-
-      {/* ---------- QUOTE ---------- */}
-      <section className="relative px-5 py-24 sm:px-8 sm:py-28">
-        <div className="mx-auto max-w-3xl text-center">
-          <Reveal>
-            <div className="mb-6 flex items-center justify-center gap-1">
-              {Array.from({ length: 5 }, (_, i) => (
-                <Star key={i} className="h-4 w-4 text-[#39b54a]" fill="currentColor" />
-              ))}
+      {/* ---------- FOR CREATORS ---------- */}
+      <section className="relative border-y border-white/5 bg-black/40 px-5 py-16 sm:px-8 sm:py-24">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+            <div className="max-w-xl">
+              <Reveal>
+                <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
+                  For creators
+                </p>
+              </Reveal>
+              <Reveal delay={80}>
+                <h2
+                  style={display}
+                  className="text-[clamp(1.9rem,4vw,3.2rem)] uppercase leading-[0.98] tracking-[-0.01em] text-white"
+                >
+                  Upload your sound.{" "}
+                  <span className="text-[#39b54a]">Watch it earn.</span>
+                </h2>
+              </Reveal>
+              <Reveal delay={140}>
+                <p className="mt-5 max-w-md text-sm leading-relaxed text-[#9a9a9a]">
+                  Publish straight to the marketplace and keep full control — no
+                  gatekeepers, no pack quotas. Get paid every time a producer
+                  pulls your sound.
+                </p>
+              </Reveal>
             </div>
-          </Reveal>
-          <Reveal delay={100}>
-            <blockquote className="text-2xl font-medium leading-snug text-white sm:text-3xl">
-              &ldquo;Greenroom samples are the sh*t. Definitely check them
-              out.&rdquo;
-            </blockquote>
-          </Reveal>
-          <Reveal delay={200}>
-            <p className="mt-6 text-sm font-semibold uppercase tracking-[0.25em] text-[#8a8a8a]">
-              — Marshmello
-            </p>
-          </Reveal>
+            <Reveal delay={200}>
+              <Link
+                href="/creator/apply"
+                onClick={() => trackLandingCta("creator_apply")}
+                className="group inline-flex items-center gap-2 rounded-full border border-[#39b54a]/50 bg-[#39b54a]/10 px-6 py-3 text-sm font-bold text-[#39b54a] transition hover:bg-[#39b54a] hover:text-black hover:shadow-[0_0_28px_rgba(0,255,136,0.4)]"
+              >
+                Become a creator
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </Reveal>
+          </div>
+
+          <div className="mt-14 grid gap-x-10 gap-y-12 sm:grid-cols-3">
+            {CREATOR_FEATURES.map((f, i) => {
+              const Icon = f.icon;
+              return (
+                <Reveal key={f.title} delay={i * 110}>
+                  <div className="group border-t border-white/10 pt-6 transition-colors duration-300 hover:border-[#39b54a]/60">
+                    <Icon className="mb-5 h-6 w-6 text-[#39b54a]" />
+                    <h3 className="mb-2 text-base font-bold text-white">
+                      {f.title}
+                    </h3>
+                    <p className="text-sm leading-relaxed text-[#9a9a9a]">
+                      {f.body}
+                    </p>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ---------- QUOTE + LIVE COUNT ---------- */}
+      <section className="relative border-y border-white/5 bg-black/40 px-5 py-16 sm:px-8 sm:py-20">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-10 text-center lg:flex-row lg:justify-center lg:gap-16">
+          {/* Live catalog count, beside the quote — honest live total, hidden while thin */}
+          {sampleTotal !== null && sampleTotal >= 500 && (
+            <Reveal className="shrink-0 lg:border-r lg:border-white/10 lg:pr-16">
+              <p
+                style={display}
+                className="text-[clamp(3rem,7vw,5rem)] uppercase leading-none text-white"
+              >
+                {sampleTotal.toLocaleString("en-US")}
+              </p>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
+                original sounds
+                <br /> and counting
+              </p>
+            </Reveal>
+          )}
+
+          {/* Marshmello testimonial */}
+          <div className="max-w-xl">
+            <Reveal delay={80}>
+              <div className="mb-5 flex justify-center">
+                <div className="relative">
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute -inset-3 rounded-full bg-[#39b54a]/20 blur-xl"
+                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/marshmello.png"
+                    alt="Marshmello"
+                    className="relative h-16 w-16 rounded-full object-cover object-top ring-1 ring-white/15"
+                  />
+                </div>
+              </div>
+            </Reveal>
+            <Reveal delay={140}>
+              <div className="mb-5 flex items-center justify-center gap-1">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <Star key={i} className="h-4 w-4 text-[#39b54a]" fill="currentColor" />
+                ))}
+              </div>
+            </Reveal>
+            <Reveal delay={200}>
+              <blockquote className="text-2xl font-medium leading-snug text-white sm:text-3xl">
+                &ldquo;Greenroom samples are the sh*t. Definitely check them
+                out.&rdquo;
+              </blockquote>
+            </Reveal>
+            <Reveal delay={260}>
+              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.25em] text-[#8a8a8a]">
+                — Marshmello
+              </p>
+            </Reveal>
+          </div>
         </div>
       </section>
 
       {/* ---------- FINAL CTA ---------- */}
-      <section className="relative overflow-hidden px-5 pb-32 pt-10 text-center sm:px-8">
+      <section className="relative overflow-hidden px-5 pb-24 pt-10 text-center sm:px-8">
         <div className="absolute inset-0 -z-0">
           <div
             className="absolute left-1/2 top-1/2 h-[380px] w-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30 blur-[130px]"
