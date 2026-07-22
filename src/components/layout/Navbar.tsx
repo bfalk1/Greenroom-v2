@@ -47,7 +47,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <Link href={user && hasActiveSub ? "/marketplace" : "/explore"} className="flex items-center gap-2 group">
+          <Link href={user && hasActiveSub ? "/marketplace" : "/"} className="flex items-center gap-2 group">
             <img
               src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/697bed99d794c79d63ec6b73/c33d47e0e_GREENROOMLOGOWHITE.png"
               alt="GREENROOM"
@@ -76,7 +76,6 @@ export function Navbar() {
               ) : (
                 // Logged in without subscription
                 <>
-                  {navLink("/explore", "Explore")}
                   {navLink("/pricing", "Subscribe")}
                   {downloadBubble}
                 </>
@@ -84,7 +83,6 @@ export function Navbar() {
             ) : (
               // Not logged in
               <>
-                {navLink("/explore", "Explore")}
                 {navLink("/pricing", "Pricing")}
               </>
             )}
@@ -207,9 +205,6 @@ export function Navbar() {
                 </>
               ) : (
                 <>
-                  <Link href="/explore" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                    Explore
-                  </Link>
                   <Link href="/pricing" className="text-sm font-medium text-[#39b54a] hover:text-white">
                     Subscribe
                   </Link>
@@ -223,9 +218,6 @@ export function Navbar() {
               )
             ) : (
               <>
-                <Link href="/explore" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
-                  Explore
-                </Link>
                 <Link href="/pricing" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                   Pricing
                 </Link>

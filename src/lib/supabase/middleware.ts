@@ -88,7 +88,10 @@ export async function updateSession(request: NextRequest) {
   // /checkout (exact — NOT /checkout/complete) is public so an anonymous buyer
   // keeps the tier they picked and signs up inline on the page; the checkout
   // APIs it calls all still require a session.
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/explore", "/pricing", "/checkout", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health"];
+  // NOTE: "/explore" is a REMOVED route kept in this allowlist on purpose — it
+  // lets the deleted path fall through to Next's 404 for everyone instead of the
+  // auth gate bouncing anonymous visitors to /login (a hard 404, not a redirect).
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
@@ -146,6 +149,31 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(new URL(dest, request.url));
   }
 
+  // Hard paywall on account creation: a bare, logged-out hit on /signup is a
+  // consumer trying to make a free account, which must instead go through the
+  // paywall — pricing -> public /checkout, where the signup form is rendered
+  // inline at the point of subscribing. The standalone form is still served
+  // ONLY for invite-gated entries: creator and beta invites (?invite / ?beta),
+  // which is the "keep a signup path for creators" carve-out. A referral (?ref)
+  // is forwarded to /pricing so its attribution isn't lost. ?redirect is NOT a
+  // pass: the middleware bounces protected routes to /login?redirect=…, which
+  // the login page propagates to /signup?redirect=… — honoring it here would
+  // silently reopen the free-signup path. The VIP discount rides an HMAC cookie,
+  // not a URL param, so routing these to /pricing loses nothing.
+  // Must run BEFORE the isPublicPath early-return (/signup is a public path).
+  if (!user && pathname === "/signup") {
+    const params = request.nextUrl.searchParams;
+    const isInviteSignup = params.has("invite") || params.has("beta");
+    if (!isInviteSignup) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/pricing";
+      url.search = "";
+      const ref = params.get("ref");
+      if (ref) url.searchParams.set("ref", ref);
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (isPublicPath) {
     return supabaseResponse;
   }
@@ -171,7 +199,7 @@ export async function updateSession(request: NextRequest) {
 
   // Subscription paywall — users without active subscription are limited
   // Allow: pricing, account, onboarding, creator paths, admin/mod paths
-  const paywallExemptPaths = ["/pricing", "/account", "/onboarding", "/explore"];
+  const paywallExemptPaths = ["/pricing", "/account", "/onboarding"];
   const isPaywallExempt = 
     paywallExemptPaths.includes(pathname) ||
     pathname.startsWith("/creator/") ||

@@ -40,11 +40,12 @@ function LoginForm() {
 
   const notice = NOTICE_BY_CODE[searchParams.get("error") ?? ""] ?? null;
 
-  // The signup cross-link must carry the redirect: a never-registered VIP
-  // buyer who lands here (middleware default) loses the discount without it.
-  const signupHref = safeRedirect
-    ? `/signup?redirect=${encodeURIComponent(safeRedirect)}`
-    : "/signup";
+  // New here? Account creation goes through the paywall, not a standalone free
+  // signup — so the cross-link lands on /pricing (pick a plan → public /checkout,
+  // which renders the signup form inline). Bare /signup is redirected to /pricing
+  // by the middleware anyway; linking straight there avoids the extra hop. The
+  // VIP discount survives via its HMAC unlock cookie, independent of any redirect.
+  const signupHref = "/pricing";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

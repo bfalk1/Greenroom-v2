@@ -127,48 +127,58 @@ export function Waveform({
     };
   }, [audioUrl, data]);
 
-  // Draw the waveform
+  // Draw the waveform. Redraws via ResizeObserver so a canvas that was
+  // hidden or zero-width at data time (display:none breakpoints, mid-resize)
+  // paints once it actually has layout.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || waveformData.length === 0) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const draw = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
 
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
 
-    const width = rect.width;
-    const canvasHeight = rect.height;
+      const width = rect.width;
+      const canvasHeight = rect.height;
 
-    // Clear canvas
-    ctx.fillStyle = backgroundColor;
-    ctx.fillRect(0, 0, width, canvasHeight);
+      // Clear canvas
+      ctx.fillStyle = backgroundColor;
+      ctx.fillRect(0, 0, width, canvasHeight);
 
-    const barCount = waveformData.length;
-    const totalBarWidth = barWidth + barGap;
-    const startX = (width - barCount * totalBarWidth) / 2;
+      const barCount = waveformData.length;
+      const totalBarWidth = barWidth + barGap;
+      const startX = (width - barCount * totalBarWidth) / 2;
 
-    // Calculate which bar the progress is at
-    const progressBar = Math.floor((progress / 100) * barCount);
+      // Calculate which bar the progress is at
+      const progressBar = Math.floor((progress / 100) * barCount);
 
-    waveformData.forEach((value, index) => {
-      const x = startX + index * totalBarWidth;
-      const barHeight = Math.max(2, value * (canvasHeight - 4));
-      const y = (canvasHeight - barHeight) / 2;
+      waveformData.forEach((value, index) => {
+        const x = startX + index * totalBarWidth;
+        const barHeight = Math.max(2, value * (canvasHeight - 4));
+        const y = (canvasHeight - barHeight) / 2;
 
-      // Color based on progress
-      ctx.fillStyle = index < progressBar ? progressColor : barColor;
-      
-      // Draw rounded bar
-      ctx.beginPath();
-      ctx.roundRect(x, y, barWidth, barHeight, 1);
-      ctx.fill();
-    });
+        // Color based on progress
+        ctx.fillStyle = index < progressBar ? progressColor : barColor;
+
+        // Draw rounded bar
+        ctx.beginPath();
+        ctx.roundRect(x, y, barWidth, barHeight, 1);
+        ctx.fill();
+      });
+    };
+
+    draw();
+    const observer = new ResizeObserver(() => draw());
+    observer.observe(canvas);
+    return () => observer.disconnect();
   }, [waveformData, progress, height, barWidth, barGap, barColor, progressColor, backgroundColor]);
 
   const handleSeekFromEvent = (e: React.MouseEvent<HTMLCanvasElement>) => {

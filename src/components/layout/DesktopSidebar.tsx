@@ -60,7 +60,7 @@ export function DesktopSidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
         <NavItem href="/marketplace" icon={Home} label="Home" />
-        <NavItem href="/sounds" icon={Search} label="Browse" />
+        <NavItem href="/marketplace" icon={Search} label="Browse" />
         <NavItem href="/library" icon={Library} label="Library" />
         <NavItem href="/favorites" icon={Heart} label="Favorites" />
         <NavItem href="/following" icon={Users} label="Following" />
