@@ -129,7 +129,11 @@ export async function updateSession(request: NextRequest) {
     // VIP offer password gate — unauthenticated by design (a shared marketing
     // code, not account auth); the route rate-limits and the unlock is an
     // HMAC-signed cookie the checkout routes verify server-side.
-    pathname.startsWith("/api/vip-offer");
+    pathname.startsWith("/api/vip-offer") ||
+    // DEV-ONLY: landing-page preview proxy that forwards the public prod catalog
+    // so localhost auditions real sounds. The route itself 404s in production.
+    (process.env.NODE_ENV !== "production" &&
+      pathname === "/api/dev/landing-preview");
 
   // If user is logged in and on login/signup, forward them along. A carried
   // ?redirect (e.g. the /vip lifetime flow's /checkout deep link) wins over
