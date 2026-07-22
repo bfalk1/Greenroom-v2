@@ -6,6 +6,7 @@ import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import {
   capiAttributionFromMetadata,
   metaCapiPurchase,
+  capiIdentityFromProfile,
 } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
@@ -222,6 +223,15 @@ async function handleCheckoutCompleted(
     valueUsdCents: session.amount_total ?? tier.priceUsdCents,
     currency: session.currency,
     transactionId: session.id,
+    // Stripe's collected billing details are the best identity source here —
+    // an actual billing name + address, present even when the buyer never
+    // filled their Greenroom profile.
+    identity: capiIdentityFromProfile({
+      fullName: session.customer_details?.name,
+      city: session.customer_details?.address?.city,
+      state: session.customer_details?.address?.state,
+      postalCode: session.customer_details?.address?.postal_code,
+    }),
     attribution: capiAttributionFromMetadata(session.metadata ?? undefined),
   });
 

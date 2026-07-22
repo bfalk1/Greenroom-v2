@@ -5,9 +5,11 @@ import { createServer } from "node:http";
 import {
   buildCapiEvent,
   capiAttributionFromRequest,
+  capiIdentityFromProfile,
   hashEmail,
   metaCapiAddPaymentInfo,
   sha256Lower,
+  splitFullName,
 } from "./metaCapiServer";
 import { purchaseEventId } from "./metaPixel";
 
@@ -108,6 +110,82 @@ test("buildCapiEvent omits absent identity fields instead of sending empties", (
   assert.equal(userData.client_user_agent, UA);
   // No custom_data given → key absent entirely (Meta rejects null blocks).
   assert.equal("custom_data" in event, false);
+});
+
+test("buildCapiEvent hashes profile identifiers with Meta's normalization", () => {
+  const event = buildCapiEvent({
+    eventName: "AddPaymentInfo",
+    eventId: "addpayment:cs_id",
+    eventTimeSeconds: 1_784_000_000,
+    userId: "uuid-1",
+    identity: {
+      firstName: "Jane",
+      lastName: "O'Brien",
+      city: "New York",
+      state: "NY",
+      zip: "94025-1234",
+    },
+    attribution: { clientUserAgent: UA },
+  });
+  assert.ok(event);
+  const userData = event.user_data as Record<string, unknown>;
+  // Names: trim + lowercase, apostrophe kept. City/state: lowercase, non-a-z
+  // stripped ("New York" → "newyork"). Zip: first segment before the +4 hyphen.
+  assert.deepEqual(userData.fn, [sha256Lower("jane")]);
+  assert.deepEqual(userData.ln, [sha256Lower("o'brien")]);
+  assert.deepEqual(userData.ct, [sha256Lower("newyork")]);
+  assert.deepEqual(userData.st, [sha256Lower("ny")]);
+  assert.deepEqual(userData.zp, [sha256Lower("94025")]);
+});
+
+test("buildCapiEvent omits blank/whitespace identity fields", () => {
+  const event = buildCapiEvent({
+    eventName: "AddPaymentInfo",
+    eventId: "addpayment:cs_blank",
+    eventTimeSeconds: 1_784_000_000,
+    userId: "uuid-1",
+    // A city of only punctuation normalizes to "" and must be dropped, not
+    // sent as a hash of the empty string.
+    identity: { firstName: "  ", lastName: null, city: "!!!", state: undefined },
+    attribution: { clientUserAgent: UA },
+  });
+  assert.ok(event);
+  const userData = event.user_data as Record<string, unknown>;
+  assert.equal("fn" in userData, false);
+  assert.equal("ln" in userData, false);
+  assert.equal("ct" in userData, false);
+  assert.equal("st" in userData, false);
+  assert.equal("zp" in userData, false);
+});
+
+test("splitFullName puts the last token in ln, the rest in fn", () => {
+  assert.deepEqual(splitFullName("Jane Q Public"), {
+    firstName: "Jane Q",
+    lastName: "Public",
+  });
+  assert.deepEqual(splitFullName("Cher"), {
+    firstName: "Cher",
+    lastName: null,
+  });
+  assert.deepEqual(splitFullName("  "), { firstName: null, lastName: null });
+});
+
+test("capiIdentityFromProfile splits the name and maps postalCode → zip", () => {
+  assert.deepEqual(
+    capiIdentityFromProfile({
+      fullName: "Ada Lovelace",
+      city: "London",
+      state: null,
+      postalCode: "SW1A",
+    }),
+    {
+      firstName: "Ada",
+      lastName: "Lovelace",
+      city: "London",
+      state: null,
+      zip: "SW1A",
+    }
+  );
 });
 
 test("capiAttributionFromRequest bounds every value — oversized identifiers drop, prose truncates", () => {

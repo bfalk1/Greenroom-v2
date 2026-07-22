@@ -7,6 +7,7 @@ import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import {
   capiAttributionFromMetadata,
   metaCapiPurchase,
+  capiIdentityFromProfile,
 } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
@@ -207,7 +208,13 @@ async function reconcileOne(
         const [userRow, sessions] = await Promise.all([
           prisma.user.findUnique({
             where: { id: userId },
-            select: { email: true },
+            select: {
+              email: true,
+              fullName: true,
+              city: true,
+              state: true,
+              postalCode: true,
+            },
           }),
           stripe.checkout.sessions.list({
             subscription: subscription.id,
@@ -222,6 +229,7 @@ async function reconcileOne(
           valueUsdCents: originSession?.amount_total ?? tier.priceUsdCents,
           currency: originSession?.currency,
           transactionId: originSession?.id ?? subscription.id,
+          identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
           attribution: capiAttributionFromMetadata({
             ...(originSession?.metadata ?? {}),
             ...subscription.metadata,

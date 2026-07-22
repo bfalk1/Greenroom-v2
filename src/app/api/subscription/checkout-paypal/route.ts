@@ -17,6 +17,7 @@ import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
 import {
   capiAttributionFromRequest,
   metaCapiAddPaymentInfo,
+  capiIdentityFromProfile,
 } from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
@@ -246,6 +247,7 @@ export async function POST(request: Request) {
         ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
         : tier.priceUsdCents,
       transactionId: subscription.id,
+      identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,
     });
 

@@ -37,6 +37,22 @@ export interface CapiAttribution {
   eventSourceUrl?: string | null;
 }
 
+// Customer PII we can supply from the user's own profile / provider billing
+// details, hashed into user_data to raise Event Match Quality (Meta's
+// "Manual Integration" panel flags each of these as a missing signal). All
+// optional and sparse — a subscriber who never filled their profile address
+// simply matches on em/external_id/fbc instead. Sent RAW here; hashed in
+// buildCapiEvent so the hashing rules live in one place. The browser pixel
+// carries the same fields via Advanced Matching (src/lib/metaPixel.ts), so
+// the pixel and CAPI halves of a deduplicated event match on the same person.
+export interface CapiIdentity {
+  firstName?: string | null;
+  lastName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}
+
 interface CapiEventInput {
   eventName: "Purchase" | "AddPaymentInfo";
   // Must byte-match the browser pixel's eventID for dedup: the pixel event
@@ -46,6 +62,7 @@ interface CapiEventInput {
   email?: string | null;
   // Our user id — sent hashed as external_id for identity matching.
   userId?: string | null;
+  identity?: CapiIdentity;
   attribution: CapiAttribution;
   customData?: Record<string, unknown>;
 }
@@ -74,6 +91,64 @@ export function hashEmail(email: string): string {
   return sha256Lower(email.trim().toLowerCase());
 }
 
+// Meta's normalization rules for the profile identifiers, applied before
+// SHA-256 so the hash matches what the browser pixel produces from the same
+// raw value (fbevents normalizes identically). Names: trim + lowercase.
+// City/state: lowercase, strip everything but a–z (Meta drops spaces and
+// punctuation — "New York" → "newyork", "CA" → "ca"). Zip: lowercase, first
+// segment before any "+4" hyphen, spaces removed. Each returns null for an
+// empty/blank input so buildCapiEvent can omit the field entirely.
+export function hashName(value: string | null | undefined): string | null {
+  const v = value?.trim().toLowerCase();
+  return v ? sha256Lower(v) : null;
+}
+
+export function hashCityOrState(value: string | null | undefined): string | null {
+  const v = value?.toLowerCase().replace(/[^a-z]/g, "");
+  return v ? sha256Lower(v) : null;
+}
+
+export function hashZip(value: string | null | undefined): string | null {
+  const v = value?.trim().toLowerCase().split("-")[0].replace(/\s/g, "");
+  return v ? sha256Lower(v) : null;
+}
+
+// A single full_name column is all we store; split on the last space so the
+// final token is the surname and everything before it is the given name(s).
+// A one-word name becomes the first name with no last name.
+export function splitFullName(fullName: string | null | undefined): {
+  firstName: string | null;
+  lastName: string | null;
+} {
+  const parts = fullName?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (parts.length === 0) return { firstName: null, lastName: null };
+  if (parts.length === 1) return { firstName: parts[0], lastName: null };
+  return {
+    firstName: parts.slice(0, -1).join(" "),
+    lastName: parts[parts.length - 1],
+  };
+}
+
+// Build the identity bundle from a profile/billing shape: a single full name
+// (split into fn/ln) plus city/state/postal code. Accepts loosely-typed input
+// so both a Prisma User row (fullName/postalCode) and a provider's billing
+// details (name/postal_code) can feed it at the call sites.
+export function capiIdentityFromProfile(source: {
+  fullName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+}): CapiIdentity {
+  const { firstName, lastName } = splitFullName(source.fullName);
+  return {
+    firstName,
+    lastName,
+    city: source.city ?? null,
+    state: source.state ?? null,
+    zip: source.postalCode ?? null,
+  };
+}
+
 /**
  * Pure payload builder, separated from the send for testability. Returns
  * null when the event cannot legally be sent (no user agent captured — a
@@ -91,6 +166,21 @@ export function buildCapiEvent(
   if (input.email?.trim()) userData.em = [hashEmail(input.email)];
   if (input.userId?.trim()) {
     userData.external_id = [sha256Lower(input.userId.trim())];
+  }
+  // Profile identifiers (all optional / sparse) — hashed, each omitted when
+  // blank so an absent field never sends an empty-string hash.
+  const identity = input.identity;
+  if (identity) {
+    const fn = hashName(identity.firstName);
+    const ln = hashName(identity.lastName);
+    const ct = hashCityOrState(identity.city);
+    const st = hashCityOrState(identity.state);
+    const zp = hashZip(identity.zip);
+    if (fn) userData.fn = [fn];
+    if (ln) userData.ln = [ln];
+    if (ct) userData.ct = [ct];
+    if (st) userData.st = [st];
+    if (zp) userData.zp = [zp];
   }
   if (input.attribution.fbp?.trim()) userData.fbp = input.attribution.fbp.trim();
   if (input.attribution.fbc?.trim()) userData.fbc = input.attribution.fbc.trim();
@@ -187,6 +277,7 @@ export function metaCapiPurchase(props: {
   valueUsdCents: number;
   currency?: string | null;
   transactionId: string;
+  identity?: CapiIdentity;
   attribution: CapiAttribution;
 }): void {
   sendMetaCapiEvent({
@@ -195,6 +286,7 @@ export function metaCapiPurchase(props: {
     eventTimeSeconds: Date.now() / 1000,
     email: props.email,
     userId: props.userId,
+    identity: props.identity,
     attribution: props.attribution,
     customData: {
       content_category: "subscription",
@@ -222,6 +314,7 @@ export function metaCapiAddPaymentInfo(props: {
   // reporting the same amount.
   valueUsdCents?: number | null;
   transactionId: string;
+  identity?: CapiIdentity;
   attribution: CapiAttribution;
 }): string {
   const eventId = `addpayment:${props.transactionId}`;
@@ -231,6 +324,7 @@ export function metaCapiAddPaymentInfo(props: {
     eventTimeSeconds: Date.now() / 1000,
     email: props.email,
     userId: props.userId,
+    identity: props.identity,
     attribution: props.attribution,
     customData: {
       content_category: "subscription",

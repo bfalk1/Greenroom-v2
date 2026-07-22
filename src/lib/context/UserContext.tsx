@@ -4,6 +4,10 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { createClient } from "@/lib/supabase/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { identifyUser, resetAnalytics, trackLogout } from "@/lib/analytics";
+import {
+  metaSetAdvancedMatching,
+  metaClearAdvancedMatching,
+} from "@/lib/metaPixel";
 
 export interface AppUser {
   id: string;
@@ -20,6 +24,11 @@ export interface AppUser {
   profile_completed: boolean;
   is_whitelisted?: boolean;
   terms_accepted_at: string | null;
+  // Billing locality — used only to feed Meta Pixel Advanced Matching
+  // (src/lib/metaPixel.ts); sparse, since the profile address is optional.
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
 }
 
 interface UserContextType {
@@ -103,6 +112,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           setUser(data.user);
           setError(false);
           identifyUser(data.user);
+          // Attach the signed-in user's hashed identifiers to the Meta Pixel
+          // (Advanced Matching), so the browser half of every event carries
+          // email/name/address — not just the CAPI half. Fire-and-forget: it
+          // hashes external_id asynchronously and must not block user load.
+          void metaSetAdvancedMatching({
+            id: data.user.id,
+            email: data.user.email,
+            fullName: data.user.full_name,
+            city: data.user.city,
+            state: data.user.state,
+            postalCode: data.user.postal_code,
+          });
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
           setUser(null);
@@ -148,6 +169,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       } else if (event === "SIGNED_OUT") {
         // Only clear user state on explicit sign-out, not transient states
         resetAnalytics();
+        metaClearAdvancedMatching();
         setUser(null);
         setSupabaseUser(null);
         setError(false);

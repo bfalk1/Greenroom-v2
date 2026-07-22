@@ -12,7 +12,7 @@
 import { prisma } from "@/lib/prisma";
 import { paypalFetch } from "@/lib/paypal/client";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
-import { metaCapiPurchase } from "@/lib/metaCapiServer";
+import { metaCapiPurchase, capiIdentityFromProfile } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
 
@@ -466,6 +466,7 @@ export async function syncPaypalSubscription(
             ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
             : tier.priceUsdCents,
         transactionId: subscriptionId,
+        identity: capiIdentityFromProfile(user),
         attribution: {
           fbp: attribution?.fbp,
           fbc: attribution?.fbc,
