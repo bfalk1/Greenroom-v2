@@ -149,6 +149,11 @@ model User {
   referralsMade        Referral[]           @relation("Referrer")
   referralUsed         Referral?            @relation("ReferredUser")
   checkoutAttributions CheckoutAttribution[]
+  notifications        Notification[]       @relation("UserNotifications")
+  messageThreads       MessageThread[]      @relation("UserMessageThreads")
+  openedThreads        MessageThread[]      @relation("OpenedThreads")
+  sentMessages         Message[]            @relation("SentMessages")
+  authoredBroadcasts   Broadcast[]          @relation("AuthoredBroadcasts")
 
   @@map("users")
 }
@@ -726,4 +731,111 @@ model WaitlistEntry {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("waitlist_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, two-way messaging, and admin broadcasts
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  APPLICATION_APPROVED
+  APPLICATION_DENIED
+  SAMPLE_APPROVED
+  SAMPLE_REJECTED
+  SAMPLE_REMOVED
+  PRESET_APPROVED
+  PRESET_REJECTED
+  PRESET_REMOVED
+  BROADCAST
+}
+
+enum ThreadStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageSenderRole {
+  USER
+  STAFF
+}
+
+model Notification {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  type        NotificationType
+  title       String
+  body        String?
+  contextType String?          @map("context_type")
+  contextId   String?          @map("context_id") @db.Uuid
+  metadata    Json?            @db.JsonB
+  broadcastId String?          @map("broadcast_id") @db.Uuid
+  threadId    String?          @map("thread_id") @db.Uuid
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  user      User           @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  broadcast Broadcast?     @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  thread    MessageThread? @relation(fields: [threadId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([broadcastId])
+  @@index([threadId])
+  @@map("notifications")
+}
+
+model Broadcast {
+  id             String   @id @default(uuid()) @db.Uuid
+  authorId       String?  @map("author_id") @db.Uuid
+  subject        String
+  body           String
+  recipientCount Int      @default(0) @map("recipient_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  author        User?          @relation("AuthoredBroadcasts", fields: [authorId], references: [id], onDelete: SetNull)
+  notifications Notification[]
+
+  @@index([createdAt(sort: Desc)])
+  @@map("broadcasts")
+}
+
+model MessageThread {
+  id            String       @id @default(uuid()) @db.Uuid
+  userId        String       @map("user_id") @db.Uuid
+  createdById   String?      @map("created_by_id") @db.Uuid
+  subject       String
+  contextType   String?      @map("context_type")
+  contextId     String?      @map("context_id") @db.Uuid
+  status        ThreadStatus @default(OPEN)
+  lastMessageAt DateTime     @default(now()) @map("last_message_at")
+  userUnread    Boolean      @default(false) @map("user_unread")
+  staffUnread   Boolean      @default(false) @map("staff_unread")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  user          User           @relation("UserMessageThreads", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy     User?          @relation("OpenedThreads", fields: [createdById], references: [id], onDelete: SetNull)
+  messages      Message[]
+  notifications Notification[]
+
+  @@index([userId, lastMessageAt(sort: Desc)])
+  @@index([status, lastMessageAt(sort: Desc)])
+  @@index([staffUnread, lastMessageAt(sort: Desc)])
+  @@map("message_threads")
+}
+
+model Message {
+  id         String            @id @default(uuid()) @db.Uuid
+  threadId   String            @map("thread_id") @db.Uuid
+  senderId   String?           @map("sender_id") @db.Uuid
+  senderRole MessageSenderRole @map("sender_role")
+  body       String
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User?         @relation("SentMessages", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt])
+  @@index([senderId])
+  @@map("messages")
 }

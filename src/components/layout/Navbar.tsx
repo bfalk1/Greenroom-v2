@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Settings, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -103,6 +104,9 @@ export function Navbar() {
                     </span>
                   </div>
                 )}
+
+                {/* Notifications */}
+                <NotificationBell />
 
                 {/* Account */}
                 <Link
