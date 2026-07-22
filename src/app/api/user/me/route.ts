@@ -339,6 +339,11 @@ export async function GET() {
         banner_url: user.bannerUrl,
         is_whitelisted: user.isWhitelisted ?? false,
         terms_accepted_at: user.termsAcceptedAt,
+        // Feeds Meta Pixel Advanced Matching client-side (UserContext →
+        // metaSetAdvancedMatching). Sparse — the profile address is optional.
+        city: user.city,
+        state: user.state,
+        postal_code: user.postalCode,
       },
     });
   } catch (error) {

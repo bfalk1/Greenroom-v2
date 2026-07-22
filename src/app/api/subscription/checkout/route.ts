@@ -12,6 +12,7 @@ import {
   capiAttributionFromRequest,
   capiAttributionToMetadata,
   metaCapiAddPaymentInfo,
+  capiIdentityFromProfile,
 } from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
@@ -224,6 +225,7 @@ export async function POST(request: Request) {
         ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
         : tier.priceUsdCents,
       transactionId: session.id,
+      identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,
     });
 

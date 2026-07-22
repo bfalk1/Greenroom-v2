@@ -153,3 +153,87 @@ export function metaSuppressOnce(dedupeKey: string) {
     // double-count risk rather than throwing in the completion flow.
   }
 }
+
+// Local copy of metaCapiServer.splitFullName — that module can't be imported
+// into this browser file (it pulls in Node's crypto and next/server). Same
+// rule: the last whitespace-separated token is the surname.
+function splitName(
+  fullName: string | null | undefined
+): [string | null, string | null] {
+  const parts = fullName?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (parts.length === 0) return [null, null];
+  if (parts.length === 1) return [parts[0], null];
+  return [parts.slice(0, -1).join(" "), parts[parts.length - 1]];
+}
+
+// SHA-256 hex via Web Crypto, byte-matching the server's sha256Lower(userId)
+// so the pixel's external_id equals the CAPI external_id and Meta treats the
+// two channels as the same person. crypto.subtle needs a secure context
+// (https / localhost); returns null if unavailable so external_id is simply
+// omitted rather than sent malformed.
+async function sha256Hex(value: string): Promise<string | null> {
+  try {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(value)
+    );
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
+
+// Advanced Matching — the browser-side counterpart to the CAPI user_data in
+// src/lib/metaCapiServer.ts. Without it the pixel sends NO email/name/address
+// for its half of every event, so Events Manager sees identifiers on only
+// ~50% of event instances (the CAPI half). Re-initing the pixel with a
+// user_data object attaches these to all subsequent events; fbevents itself
+// normalizes + SHA-256 hashes em/fn/ln/ct/st/zp from the raw values we pass,
+// so raw never leaves the browser un-hashed. external_id is the one field
+// fbevents does NOT hash, so we pre-hash the id to match the CAPI side. Called
+// from the UserContext identify point once the signed-in user is known.
+export async function metaSetAdvancedMatching(user: {
+  id: string;
+  email?: string | null;
+  fullName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+}): Promise<void> {
+  const fbq = initMetaPixel();
+  const id = metaPixelId();
+  if (!fbq || !id) return;
+
+  const matching: Record<string, string> = {};
+  if (user.email?.trim()) matching.em = user.email.trim();
+  const [firstName, lastName] = splitName(user.fullName);
+  if (firstName) matching.fn = firstName;
+  if (lastName) matching.ln = lastName;
+  if (user.city?.trim()) matching.ct = user.city.trim();
+  if (user.state?.trim()) matching.st = user.state.trim();
+  if (user.postalCode?.trim()) matching.zp = user.postalCode.trim();
+  const externalId = await sha256Hex(user.id);
+  if (externalId) matching.external_id = externalId;
+
+  fbq("init", id, matching);
+}
+
+// Drop the previous user's identifiers on logout so a later event on a shared
+// browser can't carry a signed-out person's match keys. Re-inits with empty
+// values, which fbevents overwrites the stored advanced-matching data with.
+export function metaClearAdvancedMatching() {
+  const fbq = initMetaPixel();
+  const id = metaPixelId();
+  if (!fbq || !id) return;
+  fbq("init", id, {
+    em: "",
+    fn: "",
+    ln: "",
+    ct: "",
+    st: "",
+    zp: "",
+    external_id: "",
+  });
+}
