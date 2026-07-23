@@ -19,6 +19,7 @@ import { eurostile, display } from "@/lib/fonts";
 import { trackLandingCta } from "@/lib/analytics";
 import { MarketplacePreview } from "@/components/landing/MarketplacePreview";
 import { DEMO_SAMPLES, DEMO_TOTAL } from "@/lib/landing/demoSamples";
+import { FEATURED_ARTISTS, type FeaturedCreator } from "@/lib/landing/featuredArtists";
 
 /* ------------------------------------------------------------------ */
 /*  Content                                                            */
@@ -73,19 +74,6 @@ const PRODUCER_NAMES = [
   "Montell2099",
   "Ekali",
   "Gravedgr",
-];
-
-// Featured artists for the creators carousel, in display order. Their real
-// avatars are pulled from live sample data when the artist has uploads;
-// otherwise the tile falls back to a monogram so the lineup always renders.
-const FEATURED_ARTISTS = [
-  "QUIX",
-  "EKALI",
-  "JUELZ",
-  "MONTELL2099",
-  "JAWNS",
-  "KOMPANY",
-  "DREZO",
 ];
 
 interface LandingSample {
@@ -238,6 +226,7 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [samples, setSamples] = useState<LandingSample[]>([]);
   const [sampleTotal, setSampleTotal] = useState<number | null>(null);
+  const [featured, setFeatured] = useState<FeaturedCreator[] | null>(null);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setMounted(true));
@@ -310,14 +299,41 @@ export default function LandingPage() {
     return () => controller.abort();
   }, []);
 
+  // Resolve the curated "Verified creators" lineup to real avatars + genres.
+  // This is the authoritative source for the creator tiles; if it fails we fall
+  // back to enriching from the sample feed (and ultimately a monogram).
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch("/api/landing/creators", { signal: controller.signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.creators)) setFeatured(data.creators as FeaturedCreator[]);
+        }
+      } catch {
+        /* keep the sample-feed fallback below */
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
   const previewSamples = useMemo(
     () => samples.filter((s) => s.preview_url).slice(0, 4),
     [samples]
   );
 
   const creators = useMemo(() => {
-    // Index whatever we know about each artist from the live sample feed
-    // (avatar + a representative genre), keyed by lowercased name.
+    // Preferred source: the dedicated resolver, which returns a real avatar +
+    // genre for every name in the curated lineup (not just those that happen to
+    // appear in the top-24 popular feed).
+    if (featured && featured.length) {
+      return FEATURED_ARTISTS.map((name) => {
+        const info = featured.find((f) => f.name.toLowerCase() === name.toLowerCase());
+        return { name, avatar: info?.avatar ?? null, genre: info?.genre ?? undefined };
+      });
+    }
+    // Fallback: enrich from the live sample feed (top-24) — monogram if absent.
     const byName = new Map<string, { avatar: string | null; genre?: string }>();
     for (const s of samples) {
       const key = s.artist_name?.trim().toLowerCase();
@@ -329,7 +345,7 @@ export default function LandingPage() {
       const info = byName.get(name.toLowerCase());
       return { name, avatar: info?.avatar ?? null, genre: info?.genre };
     });
-  }, [samples]);
+  }, [featured, samples]);
 
   return (
     <div
@@ -403,7 +419,7 @@ export default function LandingPage() {
       </header>
 
       {/* ---------- HERO ---------- */}
-      <section className="relative overflow-hidden px-5 pb-16 pt-32 sm:px-8 sm:pt-40 lg:pb-20">
+      <section className="relative overflow-hidden px-5 pb-12 pt-28 sm:px-8 sm:pt-36 lg:pb-14">
         {/* ambient glows */}
         <div
           aria-hidden
@@ -532,7 +548,7 @@ export default function LandingPage() {
       </section>
 
       {/* ---------- WHY ---------- */}
-      <section className="relative px-5 py-16 sm:px-8 sm:py-24">
+      <section className="relative px-5 py-12 sm:px-8 sm:py-16">
         <div className="mx-auto max-w-7xl">
           <Reveal>
             <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
@@ -556,7 +572,7 @@ export default function LandingPage() {
             </Reveal>
           </div>
 
-          <div className="mt-16 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map((f, i) => {
               const Icon = f.icon;
               return (
@@ -580,7 +596,7 @@ export default function LandingPage() {
 
       {/* ---------- MARKETPLACE PREVIEW ---------- */}
       {previewSamples.length > 0 && (
-        <section className="relative px-5 py-16 sm:px-8 sm:py-24">
+        <section className="relative px-5 py-12 sm:px-8 sm:py-16">
           <div
             aria-hidden
             className="pointer-events-none absolute right-[-10%] top-1/4 h-[420px] w-[520px] rounded-full opacity-20 blur-[130px]"
@@ -633,7 +649,7 @@ export default function LandingPage() {
 
       {/* ---------- CREATORS ---------- */}
       {creators.length >= 4 && (
-        <section className="relative px-5 py-16 sm:px-8 sm:py-24">
+        <section className="relative px-5 py-12 sm:px-8 sm:py-16">
           <div className="mx-auto max-w-7xl">
             <Reveal>
               <p className="mb-4 text-xs font-semibold uppercase tracking-[0.3em] text-[#39b54a]">
@@ -723,7 +739,7 @@ export default function LandingPage() {
       )}
 
       {/* ---------- FOR CREATORS ---------- */}
-      <section className="relative border-y border-white/5 bg-black/40 px-5 py-16 sm:px-8 sm:py-24">
+      <section className="relative border-y border-white/5 bg-black/40 px-5 py-12 sm:px-8 sm:py-16">
         <div className="mx-auto max-w-7xl">
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
             <div className="max-w-xl">
@@ -761,7 +777,7 @@ export default function LandingPage() {
             </Reveal>
           </div>
 
-          <div className="mt-14 grid gap-x-10 gap-y-12 sm:grid-cols-3">
+          <div className="mt-12 grid gap-x-10 gap-y-12 sm:grid-cols-3">
             {CREATOR_FEATURES.map((f, i) => {
               const Icon = f.icon;
               return (
@@ -783,11 +799,11 @@ export default function LandingPage() {
       </section>
 
       {/* ---------- QUOTE + LIVE COUNT ---------- */}
-      <section className="relative border-y border-white/5 bg-black/40 px-5 py-16 sm:px-8 sm:py-20">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-10 text-center lg:flex-row lg:justify-center lg:gap-16">
+      <section className="relative border-y border-white/5 bg-black/40 px-5 py-12 sm:px-8 sm:py-14">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-8 text-center lg:flex-row lg:justify-center lg:gap-14">
           {/* Live catalog count, beside the quote — honest live total, hidden while thin */}
           {sampleTotal !== null && sampleTotal >= 500 && (
-            <Reveal className="shrink-0 lg:border-r lg:border-white/10 lg:pr-16">
+            <Reveal className="shrink-0 lg:border-r lg:border-white/10 lg:pr-14">
               <p
                 style={display}
                 className="text-[clamp(3rem,7vw,5rem)] uppercase leading-none text-white"
@@ -801,48 +817,51 @@ export default function LandingPage() {
             </Reveal>
           )}
 
-          {/* Marshmello testimonial */}
-          <div className="max-w-xl">
-            <Reveal delay={80}>
-              <div className="mb-5 flex justify-center">
-                <div className="relative">
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute -inset-3 rounded-full bg-[#39b54a]/20 blur-xl"
-                  />
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/marshmello.png"
-                    alt="Marshmello"
-                    className="relative h-16 w-16 rounded-full object-cover object-top ring-1 ring-white/15"
-                  />
+          {/* Marshmello testimonial — photo sits to the RIGHT of the quote so the
+              block reads wide instead of stacking into a tall column. */}
+          <div className="flex max-w-xl flex-col items-center gap-6 sm:flex-row sm:gap-8 sm:text-left">
+            <div className="max-w-md">
+              <Reveal delay={140}>
+                <div className="mb-4 flex items-center justify-center gap-1 sm:justify-start">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <Star key={i} className="h-4 w-4 text-[#39b54a]" fill="currentColor" />
+                  ))}
                 </div>
+              </Reveal>
+              <Reveal delay={200}>
+                <blockquote className="text-2xl font-medium leading-snug text-white sm:text-3xl">
+                  &ldquo;Greenroom samples are the sh*t. Definitely check them
+                  out.&rdquo;
+                </blockquote>
+              </Reveal>
+              <Reveal delay={260}>
+                <p className="mt-4 text-sm font-semibold uppercase tracking-[0.25em] text-[#8a8a8a]">
+                  — Marshmello
+                </p>
+              </Reveal>
+            </div>
+            {/* order-first on mobile keeps the photo on top when stacked; on
+                sm+ it falls after the quote, i.e. to the right. */}
+            <Reveal delay={80} className="order-first shrink-0 sm:order-none">
+              <div className="relative">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute -inset-3 rounded-full bg-[#39b54a]/20 blur-xl"
+                />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/marshmello.png"
+                  alt="Marshmello"
+                  className="relative h-20 w-20 rounded-full object-cover object-top ring-1 ring-white/15 sm:h-24 sm:w-24"
+                />
               </div>
-            </Reveal>
-            <Reveal delay={140}>
-              <div className="mb-5 flex items-center justify-center gap-1">
-                {Array.from({ length: 5 }, (_, i) => (
-                  <Star key={i} className="h-4 w-4 text-[#39b54a]" fill="currentColor" />
-                ))}
-              </div>
-            </Reveal>
-            <Reveal delay={200}>
-              <blockquote className="text-2xl font-medium leading-snug text-white sm:text-3xl">
-                &ldquo;Greenroom samples are the sh*t. Definitely check them
-                out.&rdquo;
-              </blockquote>
-            </Reveal>
-            <Reveal delay={260}>
-              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.25em] text-[#8a8a8a]">
-                — Marshmello
-              </p>
             </Reveal>
           </div>
         </div>
       </section>
 
       {/* ---------- FINAL CTA ---------- */}
-      <section className="relative overflow-hidden px-5 pb-24 pt-10 text-center sm:px-8">
+      <section className="relative overflow-hidden px-5 pb-16 pt-8 text-center sm:px-8">
         <div className="absolute inset-0 -z-0">
           <div
             className="absolute left-1/2 top-1/2 h-[380px] w-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30 blur-[130px]"
