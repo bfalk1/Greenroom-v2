@@ -5,6 +5,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { UserProvider } from "@/lib/context/UserContext";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { MetaPixel } from "@/components/providers/MetaPixel";
+import { GoogleTag } from "@/components/providers/GoogleTag";
 import "./globals.css";
 
 const inter = Inter({
@@ -33,6 +34,7 @@ export default function RootLayout({
         </PostHogProvider>
         <Analytics />
         <MetaPixel />
+        <GoogleTag />
       </body>
     </html>
   );
