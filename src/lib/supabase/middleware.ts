@@ -36,6 +36,34 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
+  // Meta ad click-id (fbclid) capture. fbc's only browser source is the _fbc
+  // cookie that fbevents.js mints from the fbclid on landing — which is never
+  // written when that script is blocked (ad blockers / Safari ITP / Brave) or
+  // when a redirect strips fbclid before the pixel runs, i.e. exactly the
+  // cohort the Conversions API exists to recover. Persisting the click id
+  // first-party lets capiAttributionFromRequest still populate fbc for them.
+  // Meta's format is fb.1.<first-seen-ms>.<fbclid>: stamp the time at first
+  // sight and only write when neither cookie exists yet, so the original click
+  // time survives later navigations. Set AFTER getUser() above — a token
+  // refresh there reassigns supabaseResponse, which would drop an earlier set.
+  // httpOnly is safe (only the server reads gr_fbc, unlike _fbc which fbevents
+  // reads); the strict charset guards against a junk/oversized cookie value.
+  const fbclid = request.nextUrl.searchParams.get("fbclid");
+  if (
+    fbclid &&
+    /^[A-Za-z0-9_-]{1,255}$/.test(fbclid) &&
+    !request.cookies.get("_fbc") &&
+    !request.cookies.get("gr_fbc")
+  ) {
+    supabaseResponse.cookies.set("gr_fbc", `fb.1.${Date.now()}.${fbclid}`, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90, // 90 days, matching Meta's _fbc TTL
+    });
+  }
+
   // For any authenticated request, load the account's status ONCE. Reused for
   // both suspension enforcement (immediately below) and the subscription
   // paywall further down, so we don't query the users table twice.
@@ -174,6 +202,9 @@ export async function updateSession(request: NextRequest) {
       url.search = "";
       const ref = params.get("ref");
       if (ref) url.searchParams.set("ref", ref);
+      // Carry the Meta ad click id so the pixel on /pricing still sets _fbc
+      // (gr_fbc above already backstops the CAPI side for this hop).
+      if (fbclid) url.searchParams.set("fbclid", fbclid);
       return NextResponse.redirect(url);
     }
   }

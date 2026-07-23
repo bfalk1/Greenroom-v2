@@ -1,9 +1,18 @@
+// priceUsdCents MUST mirror the amount actually charged — i.e. the live Stripe
+// Price / PayPal plan and the number shown on /pricing (PUBLIC_SUBSCRIPTION_PACKAGES
+// in ./publicPriceConfig). It is not just display: prisma/seed.ts upserts it into
+// subscription_tiers.priceUsdCents, and the Meta Pixel / CAPI Purchase falls back
+// to that DB value whenever the provider's own amount is absent (all PayPal
+// activations; Stripe when a session has no amount_total). A stale value here
+// silently over-/under-reports conversion value to Meta and biases ad optimization.
+// config.test.ts asserts these stay equal to publicPriceConfig — keep all three
+// (this, publicPriceConfig, the provider dashboards) in lockstep on any price change.
 export const SUBSCRIPTION_TIERS = {
   GA: {
     name: "GA",
     displayName: "General Admission",
     creditsPerMonth: 100,
-    priceUsdCents: 1099,
+    priceUsdCents: 999,
     stripePriceId:
       process.env.STRIPE_GA_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID ?? "",
   },
@@ -11,7 +20,7 @@ export const SUBSCRIPTION_TIERS = {
     name: "VIP",
     displayName: "VIP",
     creditsPerMonth: 200,
-    priceUsdCents: 1899,
+    priceUsdCents: 1799,
     stripePriceId:
       process.env.STRIPE_VIP_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
   },
