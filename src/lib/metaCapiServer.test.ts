@@ -220,6 +220,30 @@ test("capiAttributionFromRequest bounds every value — oversized identifiers dr
   assert.equal(oversizedFbp.fbp, null, "oversized fbp drops");
 });
 
+test("capiAttributionFromRequest falls back to gr_fbc when _fbc is absent, prefers _fbc when both exist", () => {
+  // gr_fbc is the first-party click id middleware persists from the fbclid URL
+  // param — the only fbc source for ad-clickers whose browser never wrote _fbc
+  // (blocked fbevents / Safari ITP). It must fill in ONLY when _fbc is missing.
+  const grFbc = "fb.1.1700000000.PAAaBbCcClickId";
+  const realFbc = "fb.1.1700000009.RealCookieClickId";
+  const req = () =>
+    new Request("http://localhost/api/subscription/checkout", {
+      headers: { "user-agent": UA },
+    });
+
+  // _fbc absent -> use gr_fbc
+  const fallback = capiAttributionFromRequest(req(), (n) =>
+    n === "gr_fbc" ? grFbc : undefined
+  );
+  assert.equal(fallback.fbc, grFbc, "gr_fbc backstops a missing _fbc");
+
+  // both present -> Meta's own _fbc wins
+  const both = capiAttributionFromRequest(req(), (n) =>
+    n === "_fbc" ? realFbc : n === "gr_fbc" ? grFbc : undefined
+  );
+  assert.equal(both.fbc, realFbc, "_fbc is canonical when present");
+});
+
 test("buildCapiEvent falls back to the app checkout URL when no referer was captured", () => {
   const event = buildCapiEvent({
     eventName: "Purchase",

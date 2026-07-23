@@ -371,7 +371,15 @@ export function capiAttributionFromRequest(
 ): CapiAttribution {
   return {
     fbp: boundedIdentifier(cookieValue("_fbp"), 500),
-    fbc: boundedIdentifier(cookieValue("_fbc"), 500),
+    // fbc: prefer Meta's own _fbc cookie (fbevents mints it from the fbclid on
+    // an ad landing); fall back to gr_fbc, the first-party click id our
+    // middleware persists from the fbclid URL param. The fallback is the only
+    // fbc source for the cohort CAPI exists to recover — ad-blocker / Safari-ITP
+    // / Brave visitors whose browser never loaded fbevents (so _fbc was never
+    // written), plus any redirect that stripped fbclid before the pixel ran.
+    fbc:
+      boundedIdentifier(cookieValue("_fbc"), 500) ??
+      boundedIdentifier(cookieValue("gr_fbc"), 500),
     clientIp: boundedIdentifier(
       request.headers.get("x-forwarded-for")?.split(",")[0],
       64
