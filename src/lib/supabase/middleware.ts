@@ -142,6 +142,9 @@ export async function updateSession(request: NextRequest) {
     pathname === "/api/credits/purchase-paypal/return" ||
     pathname === "/api/subscription/checkout-paypal/return" ||
     isPublicSamplePath ||
+    // Landing page's "Verified creators" row — resolves the curated lineup to
+    // real avatars. Read-only, returns only public creator display data.
+    pathname === "/api/landing/creators" ||
     pathname.startsWith("/api/genres") ||
     // Read-only filter options (published-sample metadata) used by the public
     // /explore browse page. GET only — the route also exports an admin-only
