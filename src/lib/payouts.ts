@@ -110,7 +110,7 @@ export async function getCreatorCreditsSpent(
  * time window. This is the second component of a creator's total earnings —
  * every unpaid-balance computation must be
  *
- *   catalog earnings (credits × rate) + referral cash − accounted payouts
+ *   catalog earnings (credits × rate) + referral cash + adjustments − accounted payouts
  *
  * or referral rewards would never be paid out (or worse, a payout containing
  * them would be deducted from future catalog earnings).
@@ -132,6 +132,31 @@ export async function getCreatorReferralCashCents(
     _sum: { referrerCashCents: true },
   });
   return agg._sum.referrerCashCents ?? 0;
+}
+
+/**
+ * Flat earnings adjustments granted to a creator (in cents), optionally scoped
+ * to a time window on createdAt. This is the THIRD component of a creator's
+ * total earnings — a non-sales grant such as an on-time upload bonus:
+ *
+ *   catalog earnings (credits × rate) + referral cash + adjustments − accounted payouts
+ *
+ * Every unpaid-balance computation must include it, or a granted bonus would
+ * never be paid. Amounts sum straight through, so a negative-cents row (an
+ * over-grant walk-back) nets against positives.
+ */
+export async function getCreatorAdjustmentCents(
+  creatorId: string,
+  range?: { gte?: Date; lt?: Date; lte?: Date }
+): Promise<number> {
+  const agg = await prisma.creatorEarningAdjustment.aggregate({
+    where: {
+      creatorId,
+      ...(range ? { createdAt: range } : {}),
+    },
+    _sum: { amountUsdCents: true },
+  });
+  return agg._sum.amountUsdCents ?? 0;
 }
 
 export type PayoutFeeConfig = {

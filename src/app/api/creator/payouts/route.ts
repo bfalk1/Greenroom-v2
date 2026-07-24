@@ -5,6 +5,7 @@ import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
   getCreatorReferralCashCents,
+  getCreatorAdjustmentCents,
   getPayoutFeeConfig,
   nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
@@ -114,9 +115,13 @@ export async function POST(_request: NextRequest) {
       authUser.id,
       totalCreditsEarned
     );
-    // Total earnings = catalog sales + referral cash rewards.
+    // Total earnings = catalog sales + referral cash rewards + flat adjustments
+    // (e.g. on-time upload bonus). The adjustment falls into the non-referral
+    // portion, so it's swept into this payout's amount and paid out normally.
     const referralCashCents = await getCreatorReferralCashCents(authUser.id);
-    const totalEarningsCents = catalogEarningsCents + referralCashCents;
+    const adjustmentCents = await getCreatorAdjustmentCents(authUser.id);
+    const totalEarningsCents =
+      catalogEarningsCents + referralCashCents + adjustmentCents;
 
     // Get total already paid out or pending
     const payoutAgg = await prisma.creatorPayout.aggregate({

@@ -4,6 +4,7 @@ import {
   calculateCreatorEarningsCents,
   getCreatorCreditsSpent,
   getCreatorReferralCashCents,
+  getCreatorAdjustmentCents,
   getPayoutFeeConfig,
   nextPayoutInvoiceNumber,
 } from "@/lib/payouts";
@@ -115,7 +116,11 @@ export async function POST(request: NextRequest) {
         );
         // Total earnings = catalog sales + referral cash rewards.
         const referralCashCents = await getCreatorReferralCashCents(creator.id);
-        const totalEarningsCents = catalogEarningsCents + referralCashCents;
+        // Flat non-sales grants (e.g. on-time upload bonus) — third earnings
+        // component. Swept into this payout's amount just like catalog/referral.
+        const adjustmentCents = await getCreatorAdjustmentCents(creator.id);
+        const totalEarningsCents =
+          catalogEarningsCents + referralCashCents + adjustmentCents;
 
         const unpaidCents = computeUnpaidCents(totalEarningsCents, accountedCents);
         const unpaidCredits = Math.max(0, totalCredits - accountedCredits);
