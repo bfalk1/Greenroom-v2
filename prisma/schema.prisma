@@ -140,6 +140,7 @@ model User {
   creatorApplication   CreatorApplication?  @relation("Applicant")
   reviewedApplications CreatorApplication[] @relation("Reviewer")
   payouts              CreatorPayout[]
+  earningAdjustments   CreatorEarningAdjustment[]
   auditLogs            AuditLog[]
   sentInvites          CreatorInvite[]      @relation("InvitedBy")
   usedInvite           CreatorInvite?       @relation("InviteUsedBy")
@@ -510,6 +511,30 @@ model CreatorPayout {
   @@index([creatorId])
   @@index([periodStart, periodEnd])
   @@map("creator_payouts")
+}
+
+// A flat, non-sales earnings grant to a creator — e.g. an on-time upload bonus
+// or a goodwill/correction adjustment. Summed into a creator's ALL-TIME earnings
+// alongside catalog sales and referral cash (getCreatorAdjustmentCents in
+// src/lib/payouts.ts), so it flows through the normal payout pipeline: it lands
+// in the unpaid balance, gets swept into the next PENDING CreatorPayout, and is
+// disbursed only on admin approval. Positive cents add to what's owed; a
+// negative amount can walk back an over-grant. Deleting a row (before it's been
+// paid) cleanly reverses the grant.
+model CreatorEarningAdjustment {
+  id             String   @id @default(uuid()) @db.Uuid
+  creatorId      String   @map("creator_id") @db.Uuid
+  amountUsdCents Int      @map("amount_usd_cents")
+  reason         String
+  // The admin who created it, for audit. Plain column (no FK), mirroring
+  // User.flaggedBy — the grant record must outlive an admin account deletion.
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  creator User @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@index([creatorId])
+  @@map("creator_earning_adjustments")
 }
 
 // ─────────────────────────────────────────────

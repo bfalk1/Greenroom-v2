@@ -6,6 +6,7 @@ import {
   getCreatorEarningsInfo,
   getCreatorCreditsSpent,
   getCreatorReferralCashCents,
+  getCreatorAdjustmentCents,
   getPayoutFeeConfig,
 } from "@/lib/payouts";
 import { computeNetPayoutCents } from "@/lib/payoutMath";
@@ -100,9 +101,13 @@ export async function GET(_request: NextRequest) {
       totalCreditsEarned
     );
     const referralCashCents = await getCreatorReferralCashCents(authUser.id);
-    const totalEarningsCents = catalogEarningsCents + referralCashCents;
+    // Flat non-sales grants (e.g. on-time upload bonus) — third earnings
+    // component, on the same basis as catalog + referral above.
+    const adjustmentCents = await getCreatorAdjustmentCents(authUser.id);
+    const totalEarningsCents =
+      catalogEarningsCents + referralCashCents + adjustmentCents;
 
-    // Calculate this month's earnings in cents (range-scoped for both parts)
+    // Calculate this month's earnings in cents (range-scoped for all parts)
     const thisMonthCatalogCents = await calculateCreatorEarningsCents(
       authUser.id,
       thisMonthCredits
@@ -111,7 +116,12 @@ export async function GET(_request: NextRequest) {
       authUser.id,
       { gte: startOfMonth }
     );
-    const thisMonthEarningsCents = thisMonthCatalogCents + thisMonthReferralCents;
+    const thisMonthAdjustmentCents = await getCreatorAdjustmentCents(
+      authUser.id,
+      { gte: startOfMonth }
+    );
+    const thisMonthEarningsCents =
+      thisMonthCatalogCents + thisMonthReferralCents + thisMonthAdjustmentCents;
 
     // Get payout rate + processing fee info for display
     const [earningsInfo, feeConfig] = await Promise.all([
@@ -139,6 +149,7 @@ export async function GET(_request: NextRequest) {
         unpaidEarnings: (totalEarningsCents - totalPaidOutCents) / 100,
         thisMonthEarnings: thisMonthEarningsCents / 100,
         referralEarnings: referralCashCents / 100,
+        adjustmentEarnings: adjustmentCents / 100,
       },
       payoutInfo: {
         centsPerCredit: earningsInfo.centsPerCredit,
