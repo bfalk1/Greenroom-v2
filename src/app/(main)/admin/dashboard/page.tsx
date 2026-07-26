@@ -117,6 +117,26 @@ interface PayoutRequest {
   createdAt: string;
 }
 
+interface CreatorBalance {
+  creatorId: string;
+  name: string;
+  email: string;
+  username: string | null;
+  owedUsd: number;
+  catalogUsd: number;
+  referralUsd: number;
+  adjustmentUsd: number;
+  meetsMinimum: boolean;
+}
+
+interface CreatorBalancesResponse {
+  creators: CreatorBalance[];
+  totalOwed: number;
+  readyToPay: number;
+  minPayout: number;
+  count: number;
+}
+
 interface SampleCreator {
   id: string;
   fullName: string | null;
@@ -192,6 +212,9 @@ export default function AdminDashboardPage() {
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([]);
   const [payoutFilter, setPayoutFilter] = useState<string>("PENDING");
   const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null);
+  const [creatorBalances, setCreatorBalances] =
+    useState<CreatorBalancesResponse | null>(null);
+  const [balancesLoading, setBalancesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
@@ -250,6 +273,20 @@ export default function AdminDashboardPage() {
       console.error("Failed to fetch payouts:", error);
     }
   }, [payoutFilter]);
+
+  const fetchCreatorBalances = useCallback(async () => {
+    setBalancesLoading(true);
+    try {
+      const res = await fetch("/api/admin/creator-balances");
+      if (res.ok) {
+        setCreatorBalances(await res.json());
+      }
+    } catch (error) {
+      console.error("Failed to fetch creator balances:", error);
+    } finally {
+      setBalancesLoading(false);
+    }
+  }, []);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -575,6 +612,7 @@ export default function AdminDashboardPage() {
               setActiveSection(next);
               if (next === "payouts") {
                 fetchPayouts("PENDING");
+                fetchCreatorBalances();
               }
               if (next === "tools") {
                 fetchSettings();
@@ -802,6 +840,147 @@ export default function AdminDashboardPage() {
 
           {activeSection === "payouts" && (
             <div>
+              {/* Live per-creator balances — what each creator is owed right
+                  now, computed with the SAME helpers as the payout cron. This
+                  surfaces amounts (e.g. flat bonuses) that don't yet have a
+                  CreatorPayout row, so they're visible before the 1st-of-month
+                  cron queues them. */}
+              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
+                <div className="flex items-start justify-between mb-1 flex-wrap gap-2">
+                  <h2 className="text-lg font-bold text-white">
+                    Owed to creators
+                  </h2>
+                  <button
+                    onClick={() => fetchCreatorBalances()}
+                    disabled={balancesLoading}
+                    className="text-xs text-[#a1a1a1] hover:text-white inline-flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {balancesLoading && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    )}
+                    Refresh
+                  </button>
+                </div>
+                <p className="text-xs text-[#666] mb-5">
+                  Current unpaid balance per creator (catalog + referral +
+                  bonuses − already paid/pending). Creators below the $
+                  {(creatorBalances?.minPayout ?? 50).toFixed(2)} minimum aren&apos;t
+                  auto-queued by the monthly cron yet.
+                </p>
+
+                {balancesLoading && !creatorBalances ? (
+                  <div className="py-10 text-center text-[#a1a1a1]">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                    Computing balances…
+                  </div>
+                ) : creatorBalances && creatorBalances.creators.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+                      <div>
+                        <p className="text-xs text-[#a1a1a1] mb-1">Total owed</p>
+                        <p className="text-2xl font-bold text-white">
+                          ${creatorBalances.totalOwed.toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#a1a1a1] mb-1">
+                          Ready to pay (≥ ${creatorBalances.minPayout.toFixed(2)})
+                        </p>
+                        <p className="text-2xl font-bold text-[#39b54a]">
+                          ${creatorBalances.readyToPay.toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-[#a1a1a1] mb-1">
+                          Creators owed
+                        </p>
+                        <p className="text-2xl font-bold text-white">
+                          {creatorBalances.count}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
+                            <th className="py-2 pr-4 font-medium">Artist</th>
+                            <th className="py-2 px-4 font-medium text-right">
+                              Catalog
+                            </th>
+                            <th className="py-2 px-4 font-medium text-right">
+                              Referral
+                            </th>
+                            <th className="py-2 px-4 font-medium text-right">
+                              Bonus
+                            </th>
+                            <th className="py-2 px-4 font-medium text-right">
+                              Owed
+                            </th>
+                            <th className="py-2 pl-4 font-medium text-right">
+                              Status
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {creatorBalances.creators.map((c) => (
+                            <tr
+                              key={c.creatorId}
+                              className="border-b border-[#1f1f1f]"
+                            >
+                              <td className="py-2.5 pr-4">
+                                <span className="text-white font-medium">
+                                  {c.name}
+                                </span>
+                                <span className="block text-xs text-[#666]">
+                                  {c.email}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-right text-[#a1a1a1]">
+                                ${c.catalogUsd.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-4 text-right text-[#a1a1a1]">
+                                ${c.referralUsd.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                {c.adjustmentUsd > 0 ? (
+                                  <span className="text-[#39b54a]">
+                                    ${c.adjustmentUsd.toFixed(2)}
+                                  </span>
+                                ) : (
+                                  <span className="text-[#444]">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right text-white font-bold">
+                                ${c.owedUsd.toFixed(2)}
+                              </td>
+                              <td className="py-2.5 pl-4 text-right">
+                                {c.meetsMinimum ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-[#39b54a]">
+                                    <CheckCircle2 className="w-3 h-3" /> Ready
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-xs text-yellow-400">
+                                    <Clock className="w-3 h-3" /> Below min
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-8 text-center text-[#a1a1a1] text-sm">
+                    No creators are currently owed a balance.
+                  </div>
+                )}
+              </div>
+
+              <h2 className="text-lg font-bold text-white mb-4">
+                Payout requests
+              </h2>
               {/* Filter buttons */}
               <div className="flex gap-2 mb-6">
                 {["PENDING", "PAID", "FAILED", ""].map((status) => (
