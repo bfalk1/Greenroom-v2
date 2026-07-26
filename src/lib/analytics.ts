@@ -1,18 +1,22 @@
 import posthog from "posthog-js";
 import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
+import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "./stripe/publicPriceConfig";
 
-// Some funnel functions below ALSO send a Meta Pixel standard event
-// (src/lib/metaPixel.ts) so Facebook ads can attribute and optimize against
-// them. PostHog stays the source of truth for funnel analysis; the pixel gets
-// only the standard-event ladder Meta optimizes on: ViewContent →
-// CompleteRegistration → InitiateCheckout → AddPaymentInfo → Purchase
-// (PageViews fire from src/components/providers/MetaPixel.tsx).
+// Some funnel functions below ALSO send ad-pixel standard events — Meta
+// (src/lib/metaPixel.ts) and TikTok (src/lib/tiktokPixel.ts) — so those ad
+// platforms can attribute and optimize against them. PostHog stays the source
+// of truth for funnel analysis; the pixels get only the standard-event ladder
+// each optimizes on: ViewContent → CompleteRegistration → InitiateCheckout →
+// AddPaymentInfo → Purchase (Meta) / CompletePayment (TikTok). PageViews fire
+// from the pixels' provider components.
 //
-// Commerce events (InitiateCheckout / AddPaymentInfo / Purchase) must carry a
-// NUMERIC `value` plus an ISO-4217 `currency` — Events Manager flags every
-// event missing them ("price parameter missing"), and value optimization
-// can't train without them. All prices on this site are USD.
+// Commerce events (InitiateCheckout / AddPaymentInfo / the purchase event) must
+// carry a NUMERIC `value` plus an ISO-4217 `currency` — the events managers
+// flag every event missing them ("price parameter missing"), and value
+// optimization can't train without them. All prices on this site are USD.
+// Parameter shapes differ per platform (Meta: contents[].id/item_price;
+// TikTok: contents[].content_id/price), so each pixel call is built inline.
 
 // --- Identity lifecycle ---
 
@@ -55,6 +59,9 @@ export function trackSignup(method: "email" | "invite", source?: string) {
   metaTrack("CompleteRegistration", {
     content_name: source ?? method,
     status: true,
+  });
+  tiktokTrack("CompleteRegistration", {
+    content_name: source ?? method,
   });
 }
 
@@ -121,6 +128,16 @@ export function trackPricingViewed() {
       item_price: p.price,
     })),
   });
+  tiktokTrack("ViewContent", {
+    content_type: "product",
+    contents: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => ({
+      content_id: p.tierName,
+      content_name: p.tierName,
+      quantity: 1,
+      price: p.price,
+    })),
+    currency: "USD",
+  });
 }
 
 // Plan click on /pricing. Signed-out clickers now go to /checkout too (signup
@@ -177,6 +194,24 @@ export function trackSubscriptionCheckout(
     },
     opts?.metaEventId
   );
+  tiktokTrack("AddPaymentInfo", {
+    content_name: plan,
+    ...(typeof opts?.valueUsdCents === "number"
+      ? {
+          content_type: "product",
+          contents: [
+            {
+              content_id: opts.tier ?? plan,
+              content_name: plan,
+              quantity: 1,
+              price: opts.valueUsdCents / 100,
+            },
+          ],
+          value: opts.valueUsdCents / 100,
+          currency: "USD",
+        }
+      : {}),
+  });
 }
 
 // NOTE: subscription_activated is captured SERVER-side only (see
@@ -243,6 +278,20 @@ export function trackCheckoutViewed(props: {
     value: props.valueUsdCents / 100,
     currency: "USD",
   });
+  tiktokTrack("InitiateCheckout", {
+    content_type: "product",
+    content_name: props.lifetime ? `${props.tier}-lifetime` : props.tier,
+    contents: [
+      {
+        content_id: props.tier,
+        content_name: props.tier,
+        quantity: 1,
+        price: props.valueUsdCents / 100,
+      },
+    ],
+    value: props.valueUsdCents / 100,
+    currency: "USD",
+  });
 }
 
 export function trackCheckoutMethodSelected(method: "card" | "paypal") {
@@ -301,6 +350,20 @@ export function trackCheckoutCompleteOutcome(props: {
       content_category: "subscription",
       content_name: props.tier,
       content_type: "product",
+      value: (props.valueUsdCents ?? 0) / 100,
+      currency: "USD",
+    });
+    tiktokTrackOnce(purchaseEventId(props.transactionId), "CompletePayment", {
+      content_type: "product",
+      content_name: props.tier,
+      contents: [
+        {
+          content_id: props.tier,
+          content_name: props.tier,
+          quantity: 1,
+          price: (props.valueUsdCents ?? 0) / 100,
+        },
+      ],
       value: (props.valueUsdCents ?? 0) / 100,
       currency: "USD",
     });

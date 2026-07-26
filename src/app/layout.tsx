@@ -6,6 +6,7 @@ import { UserProvider } from "@/lib/context/UserContext";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { MetaPixel } from "@/components/providers/MetaPixel";
 import { GoogleTag } from "@/components/providers/GoogleTag";
+import { TikTokPixel } from "@/components/providers/TikTokPixel";
 import "./globals.css";
 
 const inter = Inter({
@@ -35,6 +36,7 @@ export default function RootLayout({
         <Analytics />
         <MetaPixel />
         <GoogleTag />
+        <TikTokPixel />
       </body>
     </html>
   );
