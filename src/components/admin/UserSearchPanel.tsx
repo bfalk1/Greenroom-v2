@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Search, User, Mail, Shield, Zap, Percent, Loader2, Music, AtSign } from "lucide-react";
+import { Search, User, Mail, Shield, Zap, Percent, Loader2, Music, AtSign, MessageSquare } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { MessageUserModal } from "@/components/admin/MessageUserModal";
 
 interface SearchUser {
   id: string;
@@ -47,6 +48,7 @@ export function UserSearchPanel() {
   const [updatingWhitelist, setUpdatingWhitelist] = useState(false);
   const [updatingArtistName, setUpdatingArtistName] = useState(false);
   const [updatingUsername, setUpdatingUsername] = useState(false);
+  const [messagingUser, setMessagingUser] = useState<SearchUser | null>(null);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -412,6 +414,17 @@ export function UserSearchPanel() {
                         }`} />
                         <span className="text-xs text-white">{user.role}</span>
                       </div>
+                      <button
+                        type="button"
+                        title="Message user"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMessagingUser(user);
+                        }}
+                        className="p-2 rounded-md border border-[#2a2a2a] text-[#a1a1a1] hover:text-white hover:bg-[#2a2a2a] transition"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -640,6 +653,22 @@ export function UserSearchPanel() {
           </Card>
         </div>
       )}
+
+      <MessageUserModal
+        open={!!messagingUser}
+        onClose={() => setMessagingUser(null)}
+        defaultUser={
+          messagingUser
+            ? {
+                id: messagingUser.id,
+                label:
+                  messagingUser.artistName ||
+                  messagingUser.username ||
+                  messagingUser.email,
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }
