@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { buildSampleUpdateData } from "@/lib/sampleMetadata";
+import { notifyModerationSafe } from "@/lib/notifications";
 
 const MAX_BULK = 500;
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const samples = await prisma.sample.findMany({
     where: { id: { in: ids } },
-    select: { id: true, previewUrl: true },
+    select: { id: true, previewUrl: true, creatorId: true, name: true },
   });
   const foundIds = samples.map((s) => s.id);
   if (foundIds.length === 0) {
@@ -53,9 +54,10 @@ export async function POST(req: NextRequest) {
   if (action) {
     if (action === "approve") {
       // Only samples with a generated preview can be published.
-      const ready = samples
-        .filter((s) => s.previewUrl && s.previewUrl.startsWith("previews/"))
-        .map((s) => s.id);
+      const readySamples = samples.filter(
+        (s) => s.previewUrl && s.previewUrl.startsWith("previews/")
+      );
+      const ready = readySamples.map((s) => s.id);
       const skipped = foundIds.length - ready.length;
 
       if (ready.length > 0) {
@@ -73,6 +75,8 @@ export async function POST(req: NextRequest) {
             targetId: id,
           })),
         });
+
+        await notifyModerationSafe("sample", "approved", readySamples);
       }
 
       return NextResponse.json({
@@ -95,6 +99,9 @@ export async function POST(req: NextRequest) {
           targetId: id,
         })),
       });
+
+      await notifyModerationSafe("sample", "rejected", samples);
+
       return NextResponse.json({ updated: foundIds.length });
     }
 
@@ -112,6 +119,9 @@ export async function POST(req: NextRequest) {
           targetId: id,
         })),
       });
+
+      await notifyModerationSafe("sample", "removed", samples);
+
       return NextResponse.json({ updated: foundIds.length });
     }
 
