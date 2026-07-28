@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
@@ -351,7 +352,11 @@ async function handleSubscriptionUpdated(
   if (user.subscription.provider !== "stripe") return;
 
   const newPriceId = subscription.items.data[0]?.price.id;
-  if (!newPriceId) return;
+  if (!newPriceId) {
+    throw new Error(
+      `customer.subscription.updated ${subscription.id}: no priceId on subscription — tier cannot be reconciled`
+    );
+  }
 
   // Env price map → stable tier name → DB row (same as handleCheckoutCompleted).
   const newTierName = tierNameForStripePrice(newPriceId);
@@ -361,28 +366,50 @@ async function handleSubscriptionUpdated(
       })
     : null;
 
-  if (!newTier) return;
+  if (!newTier) {
+    // Same reasoning as handleCheckoutCompleted: an unknown price or a
+    // missing/inactive tier row on a LIVE subscription means we cannot map what
+    // Stripe bills to what we grant. Returning here 200s the delivery, so
+    // Stripe never retries and the row keeps the OLD tier — while invoice.paid
+    // goes on granting that old tier's credits at every renewal, indefinitely.
+    // Throw → 500 → the delivery shows as failing in the dashboard and Stripe
+    // retries (~3 days), which succeeds on its own if the price map is fixed
+    // in that window. The nightly reconcile sweep is the backstop after it.
+    throw new Error(
+      `customer.subscription.updated ${subscription.id}: cannot resolve tier (priceId=${newPriceId}, envTierName=${newTierName ?? "none"}, dbRow=${newTierName ? "missing/inactive" : "n/a"}) — tier change not applied`
+    );
+  }
 
   const oldTier = user.subscription.tier;
   const isUpgrade = newTier.creditsPerMonth > oldTier.creditsPerMonth;
   const { periodStart, periodEnd } = getPeriodDates(subscription);
 
-  // Update the subscription record (no status — that lives on users.subscription_status).
-  await prisma.subscription.update({
-    where: { userId: user.id },
-    data: {
-      tierId: newTier.id,
-      currentPeriodStart: periodStart,
-      currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-    },
-  });
+  // Tier row write + upgrade top-up commit TOGETHER. Split across two awaits
+  // they were not atomic, and the failure was silent + unrecoverable: if the
+  // top-up failed after the tier write committed, Stripe's retry re-read the
+  // row, saw oldTier === newTier, computed isUpgrade === false, and the
+  // customer never got the credits they had just paid the upgrade for.
+  // (No status here — that lives on users.subscription_status.)
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.subscription.update({
+      where: { userId: user.id },
+      data: {
+        tierId: newTier.id,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      },
+    }),
+  ];
 
-  // If upgrading, top up the difference in credits — atomically.
   if (isUpgrade) {
     const topUp = newTier.creditsPerMonth - oldTier.creditsPerMonth;
 
-    await prisma.$transaction([
+    // The event marker rides in the SAME transaction: a redelivery of an event
+    // whose top-up already committed conflicts on the PK (P2002) and rolls the
+    // whole thing back — the POST handler acks it as a duplicate. A redelivery
+    // after a FAILED attempt finds no marker and replays cleanly.
+    ops.push(
       prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
       prisma.creditBalance.upsert({
         where: { userId: user.id },
@@ -397,9 +424,11 @@ async function handleSubscriptionUpdated(
           referenceId: subscription.id,
           note: `Upgrade from ${oldTier.displayName} to ${newTier.displayName} — ${topUp} bonus credits`,
         },
-      }),
-    ]);
+      })
+    );
   }
+
+  await prisma.$transaction(ops);
 
   // A referred user who reaches VIP by UPGRADING (e.g. GA→VIP via the billing
   // portal) never hits handleCheckoutCompleted, so pay a pending referral here
