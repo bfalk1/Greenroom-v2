@@ -7,14 +7,15 @@ import {
 } from "@/lib/payoutMath";
 
 /**
- * GET /api/admin/analytics?range=7d|30d|90d|all — platform analytics (ADMIN only)
+ * GET /api/admin/analytics?range=1d|7d|30d|90d|all — platform analytics (ADMIN only)
  *
  * Returns for each KPI: the current-window value, the previous-equal-window
  * value (null when range=all — there is no "previous all time"), and a
  * gap-filled bucketed series for sparklines/charts. Current/previous are
  * equal ELAPSED windows ending now (rolling N days); series buckets stay
- * day-aligned. Buckets are daily for 7d/30d/90d; for "all" they are weekly
- * (short history) or monthly so the point count stays bounded.
+ * aligned to the bucket size. Buckets are hourly for 1d, daily for
+ * 7d/30d/90d; for "all" they are weekly (short history) or monthly so the
+ * point count stays bounded.
  *
  * Conventions (matching payoutMath/payouts):
  * - Royalties = GROSS payout amounts (amountUsdCents) on PAID payouts by paidAt.
@@ -25,8 +26,8 @@ import {
  * - "Today" boundaries use server-local midnight.
  */
 
-type RangeKey = "7d" | "30d" | "90d" | "all";
-type Bucket = "day" | "week" | "month";
+type RangeKey = "1d" | "7d" | "30d" | "90d" | "all";
+type Bucket = "hour" | "day" | "week" | "month";
 
 interface SeriesPoint {
   date: string;
@@ -35,6 +36,7 @@ interface SeriesPoint {
 }
 
 const RANGE_DAYS: Record<Exclude<RangeKey, "all">, number> = {
+  "1d": 1,
   "7d": 7,
   "30d": 30,
   "90d": 90,
@@ -46,9 +48,21 @@ function startOfDay(d: Date): Date {
   return x;
 }
 
+function startOfHour(d: Date): Date {
+  const x = new Date(d);
+  x.setMinutes(0, 0, 0);
+  return x;
+}
+
 function addDays(d: Date, n: number): Date {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
+  return x;
+}
+
+function addHours(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setHours(x.getHours() + n);
   return x;
 }
 
@@ -71,13 +85,18 @@ function bucketKeyFor(d: Date, bucket: Bucket): string {
     monday.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // Monday-start weeks
     return dayKey(monday);
   }
+  // Hour keys extend the day key (YYYY-MM-DDTHH) so the client can parse both
+  // with the same local-date split.
+  if (bucket === "hour") {
+    return `${dayKey(d)}T${pad2(d.getHours())}`;
+  }
   return dayKey(d);
 }
 
 /** Every bucket key from start..end inclusive, so series are gap-filled with zeros. */
 function buildBucketKeys(start: Date, end: Date, bucket: Bucket): string[] {
   const keys: string[] = [];
-  const cur = startOfDay(start);
+  const cur = bucket === "hour" ? startOfHour(start) : startOfDay(start);
   if (bucket === "week") {
     cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7));
   } else if (bucket === "month") {
@@ -85,7 +104,8 @@ function buildBucketKeys(start: Date, end: Date, bucket: Bucket): string[] {
   }
   while (cur <= end && keys.length < 400) {
     keys.push(bucketKeyFor(cur, bucket));
-    if (bucket === "day") cur.setDate(cur.getDate() + 1);
+    if (bucket === "hour") cur.setHours(cur.getHours() + 1);
+    else if (bucket === "day") cur.setDate(cur.getDate() + 1);
     else if (bucket === "week") cur.setDate(cur.getDate() + 7);
     else cur.setMonth(cur.getMonth() + 1);
   }
@@ -157,7 +177,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const rangeParam = searchParams.get("range") || "30d";
-    if (!["7d", "30d", "90d", "all"].includes(rangeParam)) {
+    if (!["1d", "7d", "30d", "90d", "all"].includes(rangeParam)) {
       return NextResponse.json({ error: "Invalid range" }, { status: 400 });
     }
     const range = rangeParam as RangeKey;
@@ -166,12 +186,13 @@ export async function GET(request: NextRequest) {
     const todayStart = startOfDay(now);
     const yesterdayStart = addDays(todayStart, -1);
 
-    // Window boundaries. Series buckets stay day-aligned: [currentStart
-    // (local midnight), now]. KPI current/previous values compare equal
-    // ELAPSED windows ending now — current [now - N days, now] vs previous
-    // [now - 2N days, now - N days) — because comparing a partially elapsed
-    // day-aligned window against a full previous one shows a spurious
-    // negative delta every morning. "all" has no previous.
+    // Window boundaries. Series buckets stay bucket-aligned: [currentStart
+    // (local midnight, or the top of the hour for 1d), now]. KPI
+    // current/previous values compare equal ELAPSED windows ending now —
+    // current [now - N, now] vs previous [now - 2N, now - N) — because
+    // comparing a partially elapsed aligned window against a full previous
+    // one shows a spurious negative delta every morning (every hour, for 1d).
+    // "all" has no previous.
     let currentStart: Date;
     let deltaCurrentStart: Date;
     let deltaPrevStart: Date;
@@ -182,6 +203,12 @@ export async function GET(request: NextRequest) {
       deltaCurrentStart = currentStart;
       deltaPrevStart = currentStart;
       hasPrev = false;
+    } else if (range === "1d") {
+      // 24 hourly buckets ending with the in-progress hour.
+      currentStart = addHours(startOfHour(now), -23);
+      deltaCurrentStart = addHours(now, -24);
+      deltaPrevStart = addHours(now, -48);
+      hasPrev = true;
     } else {
       const windowDays = RANGE_DAYS[range];
       currentStart = addDays(todayStart, -(windowDays - 1));
@@ -194,10 +221,22 @@ export async function GET(request: NextRequest) {
       (now.getTime() - currentStart.getTime()) / 86_400_000
     );
     const bucket: Bucket =
-      range === "all" ? (spanDays <= 200 ? "week" : "month") : "day";
+      range === "1d"
+        ? "hour"
+        : range === "all"
+        ? spanDays <= 200
+          ? "week"
+          : "month"
+        : "day";
     const bucketKeys = buildBucketKeys(currentStart, now, bucket);
 
-    const fetchStart = deltaPrevStart; // covers both delta windows and the series in one query
+    // Covers both delta windows and the series in one query. Clamped to
+    // yesterday's midnight so the today-vs-yesterday snapshot below is always
+    // complete — on 1d the delta window (now − 48h) is otherwise the tighter
+    // bound, and a 25-hour DST day would clip yesterday.
+    const fetchStart = new Date(
+      Math.min(deltaPrevStart.getTime(), yesterdayStart.getTime())
+    );
 
     const [
       purchases,
@@ -328,23 +367,27 @@ export async function GET(request: NextRequest) {
     // of the rolling window) map to keys outside bucketKeys and are dropped
     // from the series, so series stay day-aligned.
     const inCurrent = (d: Date) => d >= deltaCurrentStart;
+    // Explicit lower bound — fetchStart can reach further back than
+    // deltaPrevStart (see the clamp above), so "not current" is not the same
+    // as "previous".
+    const inPrevious = (d: Date) => d >= deltaPrevStart && d < deltaCurrentStart;
     const curPurchases = purchases.filter((p) => inCurrent(p.createdAt));
     const prevPurchases = hasPrev
-      ? purchases.filter((p) => !inCurrent(p.createdAt))
+      ? purchases.filter((p) => inPrevious(p.createdAt))
       : [];
     const curGrants = grants.filter((g) => inCurrent(g.createdAt));
-    const prevGrants = hasPrev ? grants.filter((g) => !inCurrent(g.createdAt)) : [];
+    const prevGrants = hasPrev ? grants.filter((g) => inPrevious(g.createdAt)) : [];
     const curPayouts = paidPayouts.filter((p) => p.paidAt && inCurrent(p.paidAt));
     const prevPayouts = hasPrev
-      ? paidPayouts.filter((p) => p.paidAt && !inCurrent(p.paidAt))
+      ? paidPayouts.filter((p) => p.paidAt && inPrevious(p.paidAt))
       : [];
     const curUploads = uploadedSamples.filter((s) => inCurrent(s.createdAt));
     const prevUploads = hasPrev
-      ? uploadedSamples.filter((s) => !inCurrent(s.createdAt))
+      ? uploadedSamples.filter((s) => inPrevious(s.createdAt))
       : [];
     const curPresetUploads = uploadedPresets.filter((p) => inCurrent(p.createdAt));
     const prevPresetUploads = hasPrev
-      ? uploadedPresets.filter((p) => !inCurrent(p.createdAt))
+      ? uploadedPresets.filter((p) => inPrevious(p.createdAt))
       : [];
 
     // ── Marketplace ────────────────────────────
@@ -453,7 +496,7 @@ export async function GET(request: NextRequest) {
     const newCreatorEntries = Array.from(newCreatorDates.entries());
     const newCreatorsCur = newCreatorEntries.filter(([, d]) => inCurrent(d)).length;
     const newCreatorsPrev = hasPrev
-      ? newCreatorEntries.filter(([, d]) => !inCurrent(d)).length
+      ? newCreatorEntries.filter(([, d]) => inPrevious(d)).length
       : null;
     const newCreatorsSeries = distinctSeries(
       newCreatorEntries
