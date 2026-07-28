@@ -11,6 +11,7 @@ import {
   BadgeCheck,
   Bell,
   BellOff,
+  FileText,
   Megaphone,
   MessageSquare,
   Music,
@@ -49,6 +50,9 @@ function timeAgo(iso: string): string {
 
 function TypeIcon({ type }: { type: string }) {
   const negative = type.endsWith("_REJECTED") || type.endsWith("_REMOVED");
+  if (type === "APPLICATION_SUBMITTED") {
+    return <FileText className="w-4 h-4 text-[#39b54a]" />;
+  }
   if (type === "APPLICATION_APPROVED") {
     return <BadgeCheck className="w-4 h-4 text-[#39b54a]" />;
   }
@@ -147,7 +151,13 @@ export function NotificationBell() {
       await refreshUser();
     }
     setOpen(false);
-    if (n.type === "APPLICATION_APPROVED" || n.type === "APPLICATION_DENIED") {
+    if (n.type === "APPLICATION_SUBMITTED") {
+      // Staff-facing: jump straight to the review queue.
+      router.push("/mod/applications");
+    } else if (
+      n.type === "APPLICATION_APPROVED" ||
+      n.type === "APPLICATION_DENIED"
+    ) {
       router.push("/creator/apply");
     } else {
       router.push(`/messages?n=${n.id}`);

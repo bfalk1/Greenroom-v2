@@ -87,6 +87,7 @@ enum PresetStatus {
 }
 
 enum NotificationType {
+  APPLICATION_SUBMITTED // staff-facing: a creator application awaits review
   APPLICATION_APPROVED
   APPLICATION_DENIED
   SAMPLE_APPROVED

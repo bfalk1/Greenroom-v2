@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
+  FileText,
   Loader2,
   Megaphone,
   MessageSquare,
@@ -21,6 +22,7 @@ import { ReplyToNotificationModal } from "@/components/notifications/ReplyToNoti
 import { useUser } from "@/lib/hooks/useUser";
 
 export type AppNotificationType =
+  | "APPLICATION_SUBMITTED"
   | "APPLICATION_APPROVED"
   | "APPLICATION_DENIED"
   | "SAMPLE_APPROVED"
@@ -74,6 +76,7 @@ const TYPE_ICONS: Record<
   AppNotificationType,
   { Icon: LucideIcon; className: string }
 > = {
+  APPLICATION_SUBMITTED: { Icon: FileText, className: "text-[#39b54a]" },
   APPLICATION_APPROVED: { Icon: BadgeCheck, className: "text-[#39b54a]" },
   APPLICATION_DENIED: { Icon: XCircle, className: "text-red-400" },
   SAMPLE_APPROVED: { Icon: Music, className: "text-[#39b54a]" },
@@ -224,6 +227,12 @@ export function NotificationRow({
           )}
 
           <div className="flex flex-wrap items-center gap-4 mt-4">
+            {notification.type === "APPLICATION_SUBMITTED" && (
+              <Link href="/mod/applications" className={PRIMARY_CTA_CLASS}>
+                Review application
+              </Link>
+            )}
+
             {notification.type === "APPLICATION_DENIED" && (
               <Link href="/creator/apply" className={PRIMARY_CTA_CLASS}>
                 Update application
@@ -249,6 +258,7 @@ export function NotificationRow({
             )}
 
             {notification.type !== "APPLICATION_APPROVED" &&
+              notification.type !== "APPLICATION_SUBMITTED" &&
               (notification.threadId ? (
                 <Link
                   href={`/messages/${notification.threadId}`}

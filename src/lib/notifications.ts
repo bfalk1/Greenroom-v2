@@ -9,7 +9,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/ratelimit";
-import { sendEmail, EMAIL_SITE_URL } from "@/lib/email";
+import { sendEmail, ADMIN_EMAIL, EMAIL_SITE_URL } from "@/lib/email";
 import {
   wrapEmailHtml,
   emailHeading,
@@ -17,6 +17,8 @@ import {
   emailButton,
   emailQuote,
   escapeHtml,
+  EMAIL_COLORS,
+  EMAIL_FONTS,
 } from "@/lib/email-layout";
 import {
   groupModerationByCreator,
@@ -93,6 +95,88 @@ export async function notifyModerationSafe(
   }
 }
 
+// ── Creator application lifecycle ────────────────────────────────────────────
+
+// New/resubmitted application: give every moderator and admin an in-app
+// notification pointing at the review queue, plus one throttled alert email to
+// the admin inbox (a burst of applications shouldn't produce a burst of
+// email — the queue link covers them all). Never throws.
+export async function notifyApplicationSubmittedSafe(input: {
+  applicationId: string;
+  applicantUserId: string;
+  artistName: string;
+  resubmission: boolean;
+}): Promise<void> {
+  try {
+    const staff = await prisma.user.findMany({
+      where: { role: { in: ["MODERATOR", "ADMIN"] } },
+      select: { id: true },
+    });
+
+    const title = input.resubmission
+      ? `Updated creator application: ${input.artistName}`
+      : `New creator application: ${input.artistName}`;
+
+    await createNotificationsGrouped(
+      prisma,
+      staff.map((s) => ({
+        userId: s.id,
+        type: "APPLICATION_SUBMITTED" as const,
+        title,
+        contextType: "CreatorApplication",
+        contextId: input.applicationId,
+        metadata: {
+          artistName: input.artistName,
+          applicantUserId: input.applicantUserId,
+          resubmission: input.resubmission,
+        },
+      }))
+    );
+
+    if (!(await isApplicationAdminEmailThrottled())) {
+      // artistName is applicant-supplied — escape it before it hits email HTML.
+      await trySendAlertEmail(ADMIN_EMAIL, {
+        subject: input.resubmission
+          ? "A creator application was updated on Greenroom"
+          : "New creator application on Greenroom",
+        heading: input.resubmission
+          ? "Application resubmitted"
+          : "New application",
+        lede: `${escapeHtml(input.artistName)} ${input.resubmission ? "updated their" : "submitted a"} creator application. It's waiting in the review queue.`,
+        ledeText: `${input.artistName} ${input.resubmission ? "updated their" : "submitted a"} creator application. It's waiting in the review queue.`,
+        ctaPath: "/mod/applications",
+        ctaLabel: "Review applications",
+        whyReceiving:
+          "You're receiving this because you're listed as the Greenroom platform admin.",
+      });
+    }
+  } catch (error) {
+    console.error("notifyApplicationSubmittedSafe error:", error);
+  }
+}
+
+// Confirmation to the applicant that their application landed. Transactional
+// (a direct receipt of their own action) — always sends, no throttle.
+export async function sendApplicationReceivedEmailSafe(
+  userId: string,
+  resubmission: boolean
+): Promise<void> {
+  const email = await resolveEmail(userId).catch(() => null);
+  if (!email) return;
+  await trySendAlertEmail(email, {
+    subject: resubmission
+      ? "We received your updated Greenroom creator application"
+      : "We received your Greenroom creator application",
+    heading: "Application received",
+    lede: resubmission
+      ? "Thanks for updating your application. Our team reviews every submission by hand — we'll email you as soon as there's a decision."
+      : "Thanks for applying to become a Greenroom creator. Our team reviews every application by hand — we'll email you as soon as there's a decision.",
+    ctaPath: "/creator/apply",
+    ctaLabel: "View application status",
+    whyReceiving: "You applied to become a Greenroom creator.",
+  });
+}
+
 // ── Alert emails (short pointers; content lives in-app) ─────────────────────
 
 const EMAIL_THROTTLE = { limit: 1, windowSec: 900 }; // ≤1 alert email per user per 15 min
@@ -100,6 +184,17 @@ const EMAIL_THROTTLE = { limit: 1, windowSec: 900 }; // ≤1 alert email per use
 async function isEmailThrottled(userId: string): Promise<boolean> {
   try {
     const rl = await rateLimit(`notif-email:${userId}`, EMAIL_THROTTLE);
+    return !rl.success;
+  } catch {
+    return false; // fail open — worst case an extra email
+  }
+}
+
+// Shared throttle for the admin "application submitted" alert — one key for
+// the whole queue, not per applicant, so a signup wave sends one email.
+async function isApplicationAdminEmailThrottled(): Promise<boolean> {
+  try {
+    const rl = await rateLimit("notif-email:admin-applications", EMAIL_THROTTLE);
     return !rl.success;
   } catch {
     return false; // fail open — worst case an extra email
@@ -117,7 +212,8 @@ async function resolveEmail(userId: string): Promise<string | null> {
 interface AlertEmail {
   subject: string;
   heading: string;
-  lede: string;
+  lede: string; // rendered into HTML — escape any user-supplied fragments
+  ledeText?: string; // plain-text override when lede carries HTML escapes
   extraHtml?: string;
   extraText?: string;
   ctaPath: string;
@@ -136,7 +232,7 @@ ${emailButton(`${EMAIL_SITE_URL}${alert.ctaPath}`, alert.ctaLabel)}
     await sendEmail({
       to,
       subject: alert.subject,
-      text: `${alert.heading}\n\n${alert.lede}${alert.extraText ? `\n\n${alert.extraText}` : ""}\n\n${EMAIL_SITE_URL}${alert.ctaPath}`,
+      text: `${alert.heading}\n\n${alert.ledeText ?? alert.lede}${alert.extraText ? `\n\n${alert.extraText}` : ""}\n\n${EMAIL_SITE_URL}${alert.ctaPath}`,
       html: wrapEmailHtml({
         preheader: alert.lede,
         content,
@@ -150,8 +246,41 @@ ${emailButton(`${EMAIL_SITE_URL}${alert.ctaPath}`, alert.ctaLabel)}
   }
 }
 
+// Numbered next-steps block used by the creator onboarding (approval) email.
+function emailSteps(steps: Array<{ title: string; detail: string }>): string {
+  const rows = steps
+    .map(
+      (s, i) => `<tr>
+<td valign="top" width="36" style="padding:0 12px 16px 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="width:28px;height:28px;background:${EMAIL_COLORS.accent};border-radius:14px;color:#000000;font-family:${EMAIL_FONTS.body};font-size:14px;font-weight:700;line-height:28px;">${i + 1}</td></tr></table></td>
+<td valign="top" style="padding:0 0 16px;">
+<p style="margin:0 0 2px;color:${EMAIL_COLORS.textPrimary};font-family:${EMAIL_FONTS.body};font-size:15px;font-weight:600;">${s.title}</p>
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;line-height:1.5;">${s.detail}</p>
+</td></tr>`
+    )
+    .join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 8px;">${rows}</table>`;
+}
+
+const CREATOR_ONBOARDING_STEPS = [
+  {
+    title: "Upload your first sample pack",
+    detail:
+      "Head to Creator Studio and upload samples or a full pack — they go live after a quick review.",
+  },
+  {
+    title: "Add presets alongside your sounds",
+    detail: "Presets sell for credits too, and you set the price.",
+  },
+  {
+    title: "Set up earnings & payouts",
+    detail:
+      "Check the Earnings tab so your payout details are ready before your first sale.",
+  },
+];
+
 // Application decisions always email (this is the "silent decision" gap being
-// fixed) — no throttle. The denial includes the moderator's reason.
+// fixed) — no throttle. Approval doubles as the creator onboarding email with
+// concrete first steps; the denial includes the moderator's reason.
 export async function sendApplicationDecisionEmailSafe(
   userId: string,
   decision: "approved" | "denied",
@@ -162,9 +291,13 @@ export async function sendApplicationDecisionEmailSafe(
 
   if (decision === "approved") {
     await trySendAlertEmail(email, {
-      subject: "Your Greenroom creator application was approved",
+      subject: "Welcome to Greenroom — your creator application was approved",
       heading: "You're in",
-      lede: "Your creator application was approved — you can now upload and sell on Greenroom.",
+      lede: "Your creator application was approved. Your Creator Studio is live — here's how to get set up:",
+      extraHtml: emailSteps(CREATOR_ONBOARDING_STEPS),
+      extraText: CREATOR_ONBOARDING_STEPS.map(
+        (s, i) => `${i + 1}. ${s.title} — ${s.detail}`
+      ).join("\n"),
       ctaPath: "/creator/dashboard",
       ctaLabel: "Go to Creator Studio",
       whyReceiving: "You applied to become a Greenroom creator.",
