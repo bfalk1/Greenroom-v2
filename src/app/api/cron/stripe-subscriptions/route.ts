@@ -104,7 +104,12 @@ async function reconcileOne(
 
   const existing = await prisma.subscription.findUnique({
     where: { userId },
-    select: { stripeSubscriptionId: true, provider: true },
+    select: {
+      stripeSubscriptionId: true,
+      provider: true,
+      tierId: true,
+      tier: { select: { name: true, creditsPerMonth: true } },
+    },
   });
 
   const alreadyGranted = await prisma.stripeWebhookEvent.findUnique({
@@ -112,12 +117,41 @@ async function reconcileOne(
     select: { id: true },
   });
 
+  // tierId is part of "current", not just the sub id: a tier change that
+  // customer.subscription.updated missed (unresolvable price, a transient
+  // failure on a path that returned 200) leaves the row on the OLD tier while
+  // Stripe bills the new one. Without this comparison the sweep early-returned
+  // "ok" on exactly that state, and handleInvoicePaid then granted the stale
+  // tier's creditsPerMonth on every renewal — forever.
+  const tierDrifted = !!existing && existing.tierId !== tier.id;
+
   const rowCurrent =
     existing?.provider === "stripe" &&
-    existing.stripeSubscriptionId === subscription.id;
+    existing.stripeSubscriptionId === subscription.id &&
+    !tierDrifted;
 
   if (rowCurrent && alreadyGranted) {
     return "ok";
+  }
+
+  // Loud, itemised line for log-based alerting — a tier drift is a BILLING
+  // mismatch (customer charged for one tier, credited for another), not merely
+  // a stale row, so it gets its own signal rather than being folded into the
+  // generic "repaired" count. The upsert below fixes the row, which corrects
+  // every FUTURE renewal grant; credits already granted at the wrong rate for
+  // past periods are NOT auto-adjusted here (a repair-path credit grant would
+  // race the webhook's own upgrade top-up, which is keyed only by event id) —
+  // that reconciliation stays a deliberate manual action.
+  if (tierDrifted && existing.provider === "stripe") {
+    const delta = tier.creditsPerMonth - (existing.tier?.creditsPerMonth ?? 0);
+    console.error(
+      `[stripe-reconcile] TIER DRIFT user ${userId} sub ${subscription.id}: ` +
+        `row=${existing.tier?.name ?? existing.tierId} but Stripe bills ${tier.name} ` +
+        `(priceId=${priceId}) — repairing row; renewals were granting ` +
+        `${existing.tier?.creditsPerMonth ?? "?"} credits/mo instead of ${tier.creditsPerMonth} ` +
+        `(${delta > 0 ? "+" : ""}${delta}/mo owed to the customer from here on; ` +
+        `past periods need manual credit review)`
+    );
   }
 
   // Never clobber a PayPal-owned row from a reconcile sweep — the webhook's
