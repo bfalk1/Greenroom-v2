@@ -1,8 +1,9 @@
 // Shared types for the admin analytics Overview — mirrors the response shape
 // of GET /api/admin/analytics.
 
-export type RangeKey = "7d" | "30d" | "90d" | "all";
-export type Bucket = "day" | "week" | "month";
+export type RangeKey = "1d" | "7d" | "30d" | "90d" | "all";
+/** "hour" keys are `YYYY-MM-DDTHH`; the rest are `YYYY-MM-DD` (or `YYYY-MM`). */
+export type Bucket = "hour" | "day" | "week" | "month";
 
 export interface SeriesPoint {
   date: string;
