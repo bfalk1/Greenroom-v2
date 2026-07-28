@@ -21,6 +21,7 @@ import {
   LayoutDashboard,
   Mail,
   UserPlus,
+  CreditCard,
   Infinity as InfinityIcon,
   FileText,
   Upload,
@@ -43,10 +44,12 @@ import { CreatorUploadsPanel } from "@/components/admin/CreatorUploadsPanel";
 import AnalyticsOverview from "@/components/admin/analytics/AnalyticsOverview";
 import { MessageUserModal } from "@/components/admin/MessageUserModal";
 import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
+import { SubscribersPanel } from "@/components/admin/SubscribersPanel";
 import { toast } from "sonner";
 
 type AdminSection =
   | "overview"
+  | "subscribers"
   | "applications"
   | "samples"
   | "creator-uploads"
@@ -246,6 +249,7 @@ export default function AdminDashboardPage() {
 
   const sidebarItems: AdminSidebarItem[] = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
+    { id: "subscribers", label: "Subscribers", icon: CreditCard },
     {
       id: "applications",
       label: "Applications",
@@ -660,6 +664,7 @@ export default function AdminDashboardPage() {
               }}
             />
           )}
+          {activeSection === "subscribers" && <SubscribersPanel />}
           {activeSection === "applications" && (
             <div>
               {applications.length > 0 ? (

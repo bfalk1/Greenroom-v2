@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Music, Upload, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import {
+  Music,
+  Upload,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  ShieldCheck,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useUser } from "@/lib/hooks/useUser";
 import { uploadApplicationZip } from "@/lib/uploadClient";
@@ -283,6 +290,26 @@ export default function CreatorApplicationPage() {
           <p className="text-[#a1a1a1]">
             Share your samples and earn credits from every purchase
           </p>
+        </div>
+
+        {/* Mission statement */}
+        <div className="mb-8 rounded-lg border border-[#2a2a2a] bg-[#141414] p-5">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-[#39b54a] mt-0.5 shrink-0" />
+            <div>
+              <h2 className="text-sm font-semibold text-white mb-1">
+                Real creators. Original sounds.
+              </h2>
+              <p className="text-sm text-[#a1a1a1] leading-relaxed">
+                Every application is reviewed for authenticity and audio
+                quality. We don&apos;t accept AI-generated audio or sounds
+                lifted from other artists — everything you submit should be
+                yours. This isn&apos;t about gatekeeping; it&apos;s how we keep
+                GREENROOM dedicated to its creators and every sound on the
+                platform unique.
+              </p>
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">

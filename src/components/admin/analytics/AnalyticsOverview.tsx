@@ -28,6 +28,7 @@ import type { AnalyticsResponse, Bucket, RangeKey } from "./types";
  */
 
 const RANGES: { id: RangeKey; label: string }[] = [
+  { id: "1d", label: "1D" },
   { id: "7d", label: "7D" },
   { id: "30d", label: "30D" },
   { id: "90d", label: "90D" },
@@ -35,6 +36,7 @@ const RANGES: { id: RangeKey; label: string }[] = [
 ];
 
 const PREV_LABEL: Record<RangeKey, string> = {
+  "1d": "vs previous 24 hours",
   "7d": "vs previous 7 days",
   "30d": "vs previous 30 days",
   "90d": "vs previous 90 days",
@@ -68,6 +70,13 @@ function bucketDateFormatter(bucket: Bucket) {
       return new Date(y, m - 1, 1).toLocaleDateString("en-US", {
         month: "short",
         year: "2-digit",
+      });
+    }
+    if (bucket === "hour") {
+      const [day, hour] = key.split("T");
+      const [y, m, d] = day.split("-").map(Number);
+      return new Date(y, m - 1, d, Number(hour)).toLocaleTimeString("en-US", {
+        hour: "numeric",
       });
     }
     const [y, m, d] = key.split("-").map(Number);
@@ -407,6 +416,10 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
   const rangeLabel =
     data.range === "all"
       ? `All time · since ${fmtDayKey(data.rangeStartDay, true)}`
+      : data.range === "1d"
+      ? // Hour-of-day would have to be rendered in the viewer's timezone while
+        // the chart labels use the server's — so just say the window.
+        "Last 24 hours"
       : `${fmtDayKey(data.rangeStartDay, false)} – ${fmtDayKey(data.rangeEndDay, true)}`;
 
   return (
@@ -479,7 +492,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
             )}
             deltaTitle={`Subscription renewals ${deltaTitle}`}
             series={k.activeSubscribers.series}
-            note="Paying · Δ from renewals/day"
+            note="Paying · Δ from renewals"
           />
           <StatCard
             label="Items Purchased"

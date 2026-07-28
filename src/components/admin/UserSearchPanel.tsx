@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,37 @@ export function UserSearchPanel() {
   const [updatingArtistName, setUpdatingArtistName] = useState(false);
   const [updatingUsername, setUpdatingUsername] = useState(false);
   const [messagingUser, setMessagingUser] = useState<SearchUser | null>(null);
+  // Live platform-default payout rate (cents/credit) so the payout field shows
+  // the ACTUAL default a creator falls back to — not a hardcoded example.
+  const [platformDefaultRate, setPlatformDefaultRate] = useState<number | null>(
+    null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/settings");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (
+          !cancelled &&
+          typeof data?.settings?.creatorPayoutRate === "number"
+        ) {
+          setPlatformDefaultRate(data.settings.creatorPayoutRate);
+        }
+      } catch {
+        // Non-fatal: fall back to a neutral placeholder if settings can't load.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const defaultRateCents = platformDefaultRate;
+  const defaultRateDollars =
+    defaultRateCents != null ? `$${(defaultRateCents / 100).toFixed(2)}` : null;
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -585,7 +616,11 @@ export function UserSearchPanel() {
                       <span>
                         Payout Rate (cents per credit)
                         {selectedUser.customPayoutRate === null ? (
-                          <span className="ml-2 text-xs text-[#666]">(platform default)</span>
+                          <span className="ml-2 text-xs text-[#666]">
+                            {defaultRateCents != null
+                              ? `(platform default: ${defaultRateCents}¢ = ${defaultRateDollars}/cr)`
+                              : "(platform default)"}
+                          </span>
                         ) : (
                           <span className="ml-2 text-xs text-[#39b54a]">(custom: ${(selectedUser.customPayoutRate / 100).toFixed(2)}/cr)</span>
                         )}
@@ -596,7 +631,11 @@ export function UserSearchPanel() {
                         type="number"
                         min="0"
                         max="50"
-                        placeholder="e.g. 7 (= $0.07/credit)"
+                        placeholder={
+                          defaultRateCents != null
+                            ? `Default: ${defaultRateCents} (= ${defaultRateDollars}/credit)`
+                            : "cents per credit"
+                        }
                         value={payoutRateInput}
                         onChange={(e) => setPayoutRateInput(e.target.value)}
                         className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
@@ -610,7 +649,11 @@ export function UserSearchPanel() {
                       </Button>
                     </div>
                     <p className="text-xs text-[#a1a1a1]">
-                      Cents the creator earns per credit spent on their work (e.g. 7 = $0.07/credit). Leave empty for the platform default.
+                      Cents the creator earns per credit spent on their work.
+                      Leave empty to use the platform default
+                      {defaultRateCents != null
+                        ? ` (currently ${defaultRateCents}¢ = ${defaultRateDollars}/credit).`
+                        : "."}
                     </p>
                   </div>
                 )}
