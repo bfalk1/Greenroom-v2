@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
             username: true,
             fullName: true,
             artistName: true,
+            paypalEmail: true,
           },
         },
       },
@@ -62,6 +63,9 @@ export async function GET(request: NextRequest) {
           id: p.creator.id,
           email: p.creator.email,
           username: p.creator.username,
+          // Where the money actually goes — the admin sends by hand, so this is
+          // the address they need in front of them before approving.
+          paypalEmail: p.creator.paypalEmail,
           name:
             p.creator.artistName ||
             p.creator.fullName ||
@@ -133,6 +137,34 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // Approval asserts the money was sent. If the creator has no PayPal address
+    // on file it cannot have been, so refuse — a payout marked PAID is deducted
+    // from the creator's balance forever, and this is the last checkpoint before
+    // that happens. Rejection stays available either way.
+    let payeePaypalEmail: string | null = null;
+    if (action === "approve") {
+      const target = await prisma.creatorPayout.findUnique({
+        where: { id: payoutId },
+        select: { creator: { select: { paypalEmail: true } } },
+      });
+
+      if (!target) {
+        return NextResponse.json({ error: "Payout not found" }, { status: 404 });
+      }
+
+      if (!target.creator.paypalEmail) {
+        return NextResponse.json(
+          {
+            error:
+              "This creator has no PayPal payout email on file — they must add one before this payout can be marked paid.",
+          },
+          { status: 400 }
+        );
+      }
+
+      payeePaypalEmail = target.creator.paypalEmail;
+    }
+
     // Guard the PENDING → PAID/FAILED transition inside the update itself so
     // two admins acting concurrently can't both succeed.
     const { count } = await prisma.creatorPayout.updateMany({
@@ -179,6 +211,8 @@ export async function PATCH(request: NextRequest) {
             updated.processingFeeCents
           ),
           invoiceNumber: updated.invoiceNumber,
+          // Recorded on approval so the audit trail says where the money went.
+          paypalEmail: payeePaypalEmail,
           note: body.note ?? null,
         },
       },

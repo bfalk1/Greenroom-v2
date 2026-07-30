@@ -298,6 +298,8 @@ export async function sendPayoutSummaryToAdmin(summary: {
   payoutsQueued: number;
   totalAmountUsd: number;
   skippedBelowThreshold: number;
+  /** Creators skipped because they have no PayPal payout email on file. */
+  skippedNoPayoutMethod?: number;
   errors: string[];
 }) {
   const hasErrors = summary.errors.length > 0;
@@ -319,7 +321,8 @@ ${emailLede(`Processed ${summary.processed} creators · queued ${summary.payouts
 </tr></table>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;"><tr><td style="background:${EMAIL_COLORS.surfaceElevated};border:1px solid ${EMAIL_COLORS.border};border-radius:12px;padding:20px;">
 <p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Creators processed:</strong> ${summary.processed}</p>
-<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Below minimum:</strong> ${summary.skippedBelowThreshold}</p>
+<p style="margin:0 0 8px;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">Below minimum:</strong> ${summary.skippedBelowThreshold}</p>
+<p style="margin:0;color:${EMAIL_COLORS.textSecondary};font-family:${EMAIL_FONTS.body};font-size:14px;"><strong style="color:${EMAIL_COLORS.textPrimary};">No PayPal email on file:</strong> ${summary.skippedNoPayoutMethod ?? 0}</p>
 </td></tr></table>
 ${errorsBlock}
 `;
@@ -333,6 +336,7 @@ Processed: ${summary.processed} creators
 Payouts Queued (awaiting admin approval): ${summary.payoutsQueued}
 Total Queued: ${totalStr}
 Skipped (below minimum): ${summary.skippedBelowThreshold}
+Skipped (no PayPal email on file): ${summary.skippedNoPayoutMethod ?? 0}
 ${hasErrors ? `\nErrors:\n${summary.errors.join("\n")}` : ""}
 
 ---

@@ -118,6 +118,7 @@ model User {
   flaggedBy          String?   @map("flagged_by") @db.Uuid
   isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
   customPayoutRate   Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
+  paypalEmail        String?   @map("paypal_email") // PayPal address the creator wants payouts sent to. Must be set before a payout can be requested, queued or approved.
   termsAcceptedAt    DateTime? @map("terms_accepted_at")
   emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
   referralCode       String?   @unique @map("referral_code") // Personal referral code, allocated lazily on first use of the referral panel

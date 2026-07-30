@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
     totalQueuedCents: 0,
     skippedBelowThreshold: 0,
     skippedExisting: 0,
+    skippedNoPayoutMethod: 0,
     errors: [] as string[],
   };
 
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     const creators = await prisma.user.findMany({
       where: { role: "CREATOR", isActive: true },
-      select: { id: true, email: true },
+      select: { id: true, email: true, paypalEmail: true },
     });
 
     console.log(`Found ${creators.length} active creators`);
@@ -80,6 +81,18 @@ export async function POST(request: NextRequest) {
       results.processed++;
 
       try {
+        // No PayPal address on file means nobody can send this money, so don't
+        // queue a row an admin would have to reject. The balance isn't lost —
+        // it's all-time unpaid, so the next run after the creator sets an
+        // address sweeps it up in full.
+        if (!creator.paypalEmail) {
+          results.skippedNoPayoutMethod++;
+          console.log(
+            `Skipped ${creator.email}: no PayPal payout email on file`
+          );
+          continue;
+        }
+
         // Don't queue a second payout for the same generation period.
         const existingPayout = await prisma.creatorPayout.findFirst({
           where: { creatorId: creator.id, periodStart, periodEnd },
@@ -189,6 +202,7 @@ export async function POST(request: NextRequest) {
         payoutsQueued: results.payoutsQueued,
         totalAmountUsd: results.totalQueuedCents / 100,
         skippedBelowThreshold: results.skippedBelowThreshold,
+        skippedNoPayoutMethod: results.skippedNoPayoutMethod,
         errors: results.errors,
       });
     } catch (emailError) {
