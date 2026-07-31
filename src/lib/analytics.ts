@@ -1,6 +1,10 @@
 import posthog from "posthog-js";
 import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
-import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
+import {
+  tiktokTrack,
+  tiktokTrackOnce,
+  tiktokIdentifyEmail,
+} from "./tiktokPixel";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "./stripe/publicPriceConfig";
 
 // Some funnel functions below ALSO send ad-pixel standard events — Meta
@@ -49,7 +53,14 @@ export function trackLandingCta(cta: string) {
 
 // --- Auth ---
 
-export function trackSignup(method: "email" | "invite", source?: string) {
+export function trackSignup(
+  method: "email" | "invite",
+  source?: string,
+  // The address just entered. Optional so existing callers keep working; when
+  // present it identifies the TikTok pixel before CompleteRegistration, which
+  // otherwise fires before UserContext resolves and lands unidentified.
+  email?: string
+) {
   // source attributes the signup to a funnel — "vip" for the lifetime offer's
   // standalone /signup path, "checkout" for the signup step embedded on
   // /checkout, "pricing" for the one embedded on /pricing — so the
@@ -60,6 +71,7 @@ export function trackSignup(method: "email" | "invite", source?: string) {
     content_name: source ?? method,
     status: true,
   });
+  tiktokIdentifyEmail(email);
   tiktokTrack("CompleteRegistration", {
     content_name: source ?? method,
   });

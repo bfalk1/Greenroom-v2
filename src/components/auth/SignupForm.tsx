@@ -166,13 +166,13 @@ export function SignupForm({
       // If session exists, email confirmation is off — hand off to the caller.
       if (data.session) {
         await fetch("/api/user/me");
-        trackSignup(method, source);
+        trackSignup(method, source, email);
         await onSession();
         return;
       }
 
       // Email confirmation is on — show check email screen
-      trackSignup(method, source);
+      trackSignup(method, source, email);
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);
