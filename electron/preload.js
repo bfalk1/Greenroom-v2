@@ -3,7 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const isMac = process.platform === 'darwin';
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.8.0';
 const STARTUP_OVERLAY_ID = 'greenroom-desktop-loading-overlay';
 const STARTUP_LOADING_CLASS = 'greenroom-desktop-loading';
 

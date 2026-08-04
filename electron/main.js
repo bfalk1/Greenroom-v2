@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme, dialog, net } = require('electron');
+const { app, BrowserWindow, shell, Menu, ipcMain, globalShortcut, nativeTheme, dialog, net, Notification, session, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { createNotificationPoller } = require('./notifications');
 
 let LOCAL_SAMPLE_DIR = null;
 let LOCAL_SAMPLE_INDEX_PATH = null;
@@ -16,6 +17,7 @@ const GREENROOM_URL =
   process.env.NODE_ENV === 'development' || process.argv.includes('--dev')
     ? DEV_SERVER_URL
     : PROD_SERVER_URL;
+const DESKTOP_USER_AGENT = `GREENROOM-Desktop/${app.getVersion()}`;
 
 function logDragDebug(message, details = {}) {
   console.log(`[drag-main] ${message}`, {
@@ -153,6 +155,15 @@ function createWindow() {
     if (!isAllowedRoute(url)) {
       event.preventDefault();
       mainWindow.loadURL(`${GREENROOM_URL}/marketplace`);
+    }
+  });
+
+  // Real page loads (login/logout round-trips, not SPA hops) are the moments
+  // the session can change — pull the next notification poll forward so a
+  // fresh login gets its badge/toasts within seconds, not minutes.
+  mainWindow.webContents.on('did-navigate', () => {
+    if (areDesktopNotificationsEnabled()) {
+      notificationPoller.pollSoon();
     }
   });
 
@@ -296,6 +307,14 @@ function createMenu() {
         accelerator: 'CmdOrCtrl+Shift+T',
         click: (menuItem) => {
           mainWindow?.setAlwaysOnTop(menuItem.checked);
+        },
+      },
+      {
+        label: 'Desktop Notifications',
+        type: 'checkbox',
+        checked: areDesktopNotificationsEnabled(),
+        click: (menuItem) => {
+          setDesktopNotificationsEnabled(menuItem.checked);
         },
       }
     );
@@ -562,7 +581,7 @@ function downloadFileWithSession(url, destPath) {
       useSessionCookies: true,
       redirect: 'follow',
     });
-    request.setHeader('User-Agent', 'GREENROOM-Desktop/1.7.1');
+    request.setHeader('User-Agent', DESKTOP_USER_AGENT);
 
     request.on('response', (response) => {
       const statusCode = response.statusCode || 0;
@@ -603,6 +622,134 @@ function downloadFileWithSession(url, destPath) {
 
     request.end();
   });
+}
+
+// Authenticated JSON GET against the site, going through the shell's session
+// (same cookie/refresh semantics as downloadFileWithSession). Never rejects —
+// resolves { status, json } with status 0 on network/parse-level failure.
+function fetchApiJson(pathname) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let request = null;
+
+    const timeoutTimer = setTimeout(() => {
+      try {
+        request?.abort();
+      } catch {
+        // ignore — settling below is what matters
+      }
+      settle({ status: 0, json: null });
+    }, 30 * 1000);
+
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      resolve(value);
+    };
+
+    try {
+      request = net.request({
+        method: 'GET',
+        url: `${GREENROOM_URL}${pathname}`,
+        session: session.defaultSession,
+        useSessionCookies: true,
+        redirect: 'follow',
+      });
+    } catch (err) {
+      console.error('[notify] failed to create request:', err);
+      settle({ status: 0, json: null });
+      return;
+    }
+
+    request.setHeader('User-Agent', DESKTOP_USER_AGENT);
+    request.setHeader('Accept', 'application/json');
+
+    request.on('response', (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        let json = null;
+        try {
+          json = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch {
+          // non-JSON body (e.g. an HTML 404 page) — status alone is enough
+        }
+        settle({ status: response.statusCode || 0, json });
+      });
+      response.on('error', () => settle({ status: 0, json: null }));
+    });
+    request.on('error', () => settle({ status: 0, json: null }));
+    request.end();
+  });
+}
+
+function showDesktopToast({ title, body, onClick }) {
+  try {
+    if (!Notification.isSupported()) {
+      return;
+    }
+    const toast = new Notification({
+      title: title || 'GREENROOM',
+      body: body || undefined,
+      silent: false,
+    });
+    if (onClick) {
+      toast.on('click', () => {
+        try {
+          onClick();
+        } catch (err) {
+          console.error('[notify] toast click failed:', err);
+        }
+      });
+    }
+    toast.show();
+  } catch (err) {
+    console.error('[notify] failed to show toast:', err);
+  }
+}
+
+function setUnreadBadge(count) {
+  try {
+    if (typeof app.setBadgeCount === 'function') {
+      app.setBadgeCount(Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0);
+    }
+  } catch {
+    // badges are unsupported on some platforms — never let that break polling
+  }
+}
+
+function areDesktopNotificationsEnabled() {
+  return localSettings.notificationsEnabled !== false;
+}
+
+const notificationPoller = createNotificationPoller({
+  fetchJson: fetchApiJson,
+  showToast: showDesktopToast,
+  // Creator routes are blocked inside the shell, so clicks open the WEBSITE
+  // in the default browser — that's where uploading happens.
+  openWebsite: (websitePath) => shell.openExternal(`${GREENROOM_URL}${websitePath}`),
+  setBadge: setUnreadBadge,
+  getState: () => localSettings.notificationState || null,
+  setState: (nextState) => {
+    localSettings.notificationState = nextState;
+    saveLocalSettings();
+  },
+  log: (message, details = {}) => {
+    console.log(`[notify] ${message}`, { at: new Date().toISOString(), ...details });
+  },
+});
+
+function setDesktopNotificationsEnabled(enabled) {
+  localSettings.notificationsEnabled = !!enabled;
+  saveLocalSettings();
+  if (enabled) {
+    notificationPoller.start();
+    notificationPoller.pollSoon();
+  } else {
+    notificationPoller.stop();
+    setUnreadBadge(0);
+  }
 }
 
 async function ensureSampleDownloaded(sampleId, sampleName, artistName) {
@@ -793,9 +940,29 @@ app.on('ready', () => {
     LOCAL_SAMPLE_DIR = localSettings.sampleFolderPath;
   }
   loadLocalSampleIndex();
-  
+
+  // Windows needs an explicit app user model id or toasts won't display.
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.greenroom.app');
+  }
+
   createMenu();
   createWindow();
+
+  // Surface website notifications (upload nudges, moderation results,
+  // broadcasts) as native toasts + dock badge.
+  if (areDesktopNotificationsEnabled()) {
+    notificationPoller.start();
+  }
+  try {
+    powerMonitor.on('resume', () => {
+      if (areDesktopNotificationsEnabled()) {
+        notificationPoller.pollSoon();
+      }
+    });
+  } catch (err) {
+    console.log('Could not watch power resume events:', err.message);
+  }
   
   // Register media key shortcuts
   try {
