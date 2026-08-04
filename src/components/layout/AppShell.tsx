@@ -8,6 +8,7 @@ import { DesktopTitleBar } from "./DesktopTitleBar";
 import { DesktopLibrarySync } from "@/components/desktop/DesktopLibrarySync";
 import { NowPlayingBar } from "@/components/audio/NowPlayingBar";
 import { TermsReacceptanceGate } from "@/components/legal/TermsReacceptanceGate";
+import { isDesktopApp } from "@/lib/platform";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -20,17 +21,15 @@ export function AppShell({ children }: AppShellProps) {
   useEffect(() => {
     setMounted(true);
     
-    // Check if running in Electron desktop app
+    // Check if running in Electron desktop app (shared detector — also
+    // drives the analytics `platform` label, so the two can't drift)
     const checkDesktop = () => {
-      const hasGreenroomAPI = !!(window as any).greenroom?.isDesktop;
-      const hasElectronUA = navigator.userAgent.toLowerCase().includes('electron');
-      
-      const isElectron = hasGreenroomAPI || hasElectronUA;
-      
+      const isElectron = isDesktopApp();
+
       if (isElectron) {
         setIsDesktop(true);
       }
-      
+
       return isElectron;
     };
     
