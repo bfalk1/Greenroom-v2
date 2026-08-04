@@ -42,9 +42,21 @@ interface TierRow {
   active: number;
   canceling: number;
   sharePct: number | null;
+  /** Effective MRR — lifetime cohort at its locked price, rest at list. */
   mrrUsd: number;
+  /** MRR if every sub on this tier paid list price. */
+  listMrrUsd: number;
   stripe: number;
   paypal: number;
+  /** VIP lifetime-offer cohort inside this tier (null when empty). */
+  lifetime: {
+    active: number;
+    canceling: number;
+    stripe: number;
+    paypal: number;
+    priceUsd: number;
+    mrrUsd: number;
+  } | null;
 }
 
 interface SubscriberRow {
@@ -74,6 +86,11 @@ interface SubscribersResponse {
     withAccess: number;
     untieredActive: number;
     mrrUsd: number;
+    listMrrUsd: number;
+    lifetimeActive: number;
+    avgMrrUsd: number | null;
+    avgCreditsPerMonth: number | null;
+    monthlyCreditsTotal: number;
     stripe: number;
     paypal: number;
   };
@@ -101,6 +118,11 @@ const fmtUsd = (n: number | null | undefined) =>
 
 const fmtPct = (n: number | null | undefined) =>
   n == null ? "—" : `${n.toFixed(1)}%`;
+
+const fmtNum = (n: number | null | undefined) =>
+  n == null
+    ? "—"
+    : n.toLocaleString("en-US", { maximumFractionDigits: 1 });
 
 const fmtDate = (iso: string | null) =>
   iso == null
@@ -169,8 +191,8 @@ function ProviderPill({ provider }: { provider: string | null }) {
 function SubscribersSkeleton() {
   return (
     <div className="animate-pulse space-y-4" aria-busy="true">
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-        {Array.from({ length: 5 }).map((_, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+        {Array.from({ length: 7 }).map((_, i) => (
           <div
             key={i}
             className="h-[92px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
@@ -300,7 +322,67 @@ export function SubscribersPanel() {
   const list = data.list;
   const pageStart = list.total === 0 ? 0 : list.offset + 1;
   const pageEnd = Math.min(list.offset + list.limit, list.total);
-  const maxTierCount = Math.max(1, ...data.tiers.map((x) => x.active));
+
+  // A tier with a lifetime-offer cohort renders as two table rows — full price
+  // and locked discount — so every row's Price × Subscribers equals its MRR.
+  const share = (n: number) => (t.active > 0 ? (n / t.active) * 100 : null);
+  const tierTableRows = data.tiers.flatMap((tier) => {
+    const retired = tier.isActive ? "" : " · retired";
+    const base = {
+      tierName: tier.name,
+      creditsPerMonth: tier.creditsPerMonth,
+    };
+    if (!tier.lifetime) {
+      return [
+        {
+          ...base,
+          key: tier.id,
+          label: tier.displayName,
+          detail: `${tier.name} · ${fmtInt(tier.creditsPerMonth)} credits/mo${retired}`,
+          isLifetime: false,
+          priceUsd: tier.priceUsd,
+          active: tier.active,
+          canceling: tier.canceling,
+          stripe: tier.stripe,
+          paypal: tier.paypal,
+          sharePct: tier.sharePct,
+          mrrUsd: tier.mrrUsd,
+        },
+      ];
+    }
+    const lt = tier.lifetime;
+    return [
+      {
+        ...base,
+        key: tier.id,
+        label: tier.displayName,
+        detail: `${tier.name} · ${fmtInt(tier.creditsPerMonth)} credits/mo · list price${retired}`,
+        isLifetime: false,
+        priceUsd: tier.priceUsd,
+        active: tier.active - lt.active,
+        canceling: tier.canceling - lt.canceling,
+        stripe: tier.stripe - lt.stripe,
+        paypal: tier.paypal - lt.paypal,
+        sharePct: share(tier.active - lt.active),
+        mrrUsd: tier.mrrUsd - lt.mrrUsd,
+      },
+      {
+        ...base,
+        key: `${tier.id}:lifetime`,
+        label: `${tier.displayName} · Lifetime`,
+        detail: `locked ${fmtUsd(lt.priceUsd)}/mo · same ${fmtInt(tier.creditsPerMonth)} credits/mo`,
+        isLifetime: true,
+        priceUsd: lt.priceUsd,
+        active: lt.active,
+        canceling: lt.canceling,
+        stripe: lt.stripe,
+        paypal: lt.paypal,
+        sharePct: share(lt.active),
+        mrrUsd: lt.mrrUsd,
+      },
+    ];
+  });
+  const maxTierCount = Math.max(1, ...tierTableRows.map((x) => x.active));
 
   return (
     <div>
@@ -354,7 +436,7 @@ export function SubscribersPanel() {
         }`}
       >
         {/* Headline counts */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
           <BigStat
             label="Paying Subscribers"
             value={fmtInt(t.active)}
@@ -372,9 +454,29 @@ export function SubscribersPanel() {
             hint="paying + comped"
           />
           <BigStat
-            label="MRR (list price)"
+            label="MRR"
             value={fmtUsd(t.mrrUsd)}
-            hint="upper bound — ignores coupons"
+            hint={
+              t.lifetimeActive > 0
+                ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
+                    t.listMrrUsd - t.mrrUsd
+                  )} VIP lifetime discount`
+                : "all subscribers at list price"
+            }
+          />
+          <BigStat
+            label="Avg MRR / Subscriber"
+            value={fmtUsd(t.avgMrrUsd)}
+            hint="effective MRR ÷ paying subscribers"
+          />
+          <BigStat
+            label="Avg Credits / Subscriber"
+            value={
+              t.avgCreditsPerMonth == null
+                ? "—"
+                : `${fmtNum(t.avgCreditsPerMonth)}/mo`
+            }
+            hint={`${fmtInt(t.monthlyCreditsTotal)} credits allocated monthly`}
           />
           <BigStat
             label="Canceling"
@@ -440,62 +542,79 @@ export function SubscribersPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.tiers.map((tier) => (
-                    <tr key={tier.id} className="border-b border-[#1f1f1f]">
+                  {tierTableRows.map((row) => (
+                    <tr key={row.key} className="border-b border-[#1f1f1f]">
                       <td className="py-2.5 pr-4">
-                        <span className="inline-flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-2 ${
+                            row.isLifetime ? "pl-4" : ""
+                          }`}
+                        >
                           <span
                             className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: tierColor(tier.name) }}
+                            style={
+                              row.isLifetime
+                                ? {
+                                    boxShadow: `inset 0 0 0 1.5px ${tierColor(
+                                      row.tierName
+                                    )}`,
+                                  }
+                                : { backgroundColor: tierColor(row.tierName) }
+                            }
                           />
                           <span className="text-white font-medium">
-                            {tier.displayName}
+                            {row.label}
                           </span>
                         </span>
-                        <span className="block text-xs text-[#666] pl-4">
-                          {tier.name} · {fmtInt(tier.creditsPerMonth)} credits/mo
-                          {!tier.isActive && " · retired"}
+                        <span
+                          className={`block text-xs text-[#666] ${
+                            row.isLifetime ? "pl-8" : "pl-4"
+                          }`}
+                        >
+                          {row.detail}
                         </span>
                       </td>
                       <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
-                        {fmtUsd(tier.priceUsd)}
+                        {fmtUsd(row.priceUsd)}
                       </td>
                       <td className="py-2.5 px-4 text-right text-white font-bold tabular-nums">
-                        {fmtInt(tier.active)}
+                        {fmtInt(row.active)}
                       </td>
                       <td className="py-2.5 px-4">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 bg-[#0a0a0a] rounded-full overflow-hidden min-w-[40px]">
                             <div
-                              className="h-full rounded-full"
+                              className={`h-full rounded-full ${
+                                row.isLifetime ? "opacity-60" : ""
+                              }`}
                               style={{
-                                width: `${(tier.active / maxTierCount) * 100}%`,
-                                backgroundColor: tierColor(tier.name),
+                                width: `${(row.active / maxTierCount) * 100}%`,
+                                backgroundColor: tierColor(row.tierName),
                               }}
                             />
                           </div>
                           <span className="text-xs text-[#a1a1a1] tabular-nums w-12 text-right shrink-0">
-                            {fmtPct(tier.sharePct)}
+                            {fmtPct(row.sharePct)}
                           </span>
                         </div>
                       </td>
                       <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
-                        {fmtInt(tier.stripe)}
+                        {fmtInt(row.stripe)}
                       </td>
                       <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
-                        {fmtInt(tier.paypal)}
+                        {fmtInt(row.paypal)}
                       </td>
                       <td className="py-2.5 px-4 text-right tabular-nums">
-                        {tier.canceling > 0 ? (
+                        {row.canceling > 0 ? (
                           <span className="text-yellow-400">
-                            {fmtInt(tier.canceling)}
+                            {fmtInt(row.canceling)}
                           </span>
                         ) : (
                           <span className="text-[#444]">—</span>
                         )}
                       </td>
                       <td className="py-2.5 pl-4 text-right text-white font-medium tabular-nums">
-                        {fmtUsd(tier.mrrUsd)}
+                        {fmtUsd(row.mrrUsd)}
                       </td>
                     </tr>
                   ))}
@@ -707,8 +826,10 @@ export function SubscribersPanel() {
 
         <p className="text-xs text-[#666]">
           Paying = a Stripe or PayPal subscription inside its current period.
-          MRR multiplies each tier&apos;s list price by its active subscribers,
-          so discounted and VIP-lifetime accounts are overstated.
+          MRR counts VIP lifetime-offer subscribers at their locked discounted
+          price and everyone else at list price; other one-off coupons
+          aren&apos;t tracked. Averages are per paying subscriber — comped
+          accounts are excluded.
         </p>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { VIP_LIFETIME_CENTS, VIP_LIFETIME_SOURCE } from "@/lib/mrr";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -19,9 +20,11 @@ import type { Prisma } from "@prisma/client";
  *              row (the beta bypass). These have no tier and pay nothing.
  * - Expired  = a subscriptions row already past currentPeriodEnd.
  *
- * MRR is list-price only: tier price × active subs. Coupons and the VIP
- * lifetime plan bill less than list, so it is an upper bound — flagged as such
- * in the UI rather than silently reported as revenue.
+ * MRR prices each sub at its tier's list price, EXCEPT the VIP lifetime-offer
+ * cohort (acquisition_source = "vip-lifetime"), which bills at the locked
+ * discount — same rule as computeMrrSnapshot in @/lib/mrr, so every surface
+ * reports the same number. Other one-off coupons aren't tracked and still
+ * report at list.
  */
 
 const STATUSES = ["active", "canceling", "expired", "comped"] as const;
@@ -104,12 +107,20 @@ export async function GET(request: NextRequest) {
       subscriptionStatus: { in: ["active", "past_due"] },
       subscription: { is: null },
     };
+    // VIP lifetime-offer cohort: billed at the locked discount, not list price.
+    const lifetimeWhere: Prisma.SubscriptionWhereInput = {
+      ...activeWhere,
+      acquisitionSource: VIP_LIFETIME_SOURCE,
+    };
 
     const [
       tierRows,
       activeGroups,
       cancelingGroups,
       providerGroups,
+      lifetimeGroups,
+      lifetimeCancelingGroups,
+      lifetimeProviderGroups,
       acquisitionGroups,
       activeTotal,
       cancelingTotal,
@@ -146,6 +157,21 @@ export async function GET(request: NextRequest) {
         _count: { _all: true },
       }),
       prisma.subscription.groupBy({
+        by: ["tierId"],
+        where: lifetimeWhere,
+        _count: { _all: true },
+      }),
+      prisma.subscription.groupBy({
+        by: ["tierId"],
+        where: { ...lifetimeWhere, cancelAtPeriodEnd: true },
+        _count: { _all: true },
+      }),
+      prisma.subscription.groupBy({
+        by: ["tierId", "provider"],
+        where: lifetimeWhere,
+        _count: { _all: true },
+      }),
+      prisma.subscription.groupBy({
         by: ["acquisitionSource"],
         where: activeWhere,
         _count: { _all: true },
@@ -175,17 +201,48 @@ export async function GET(request: NextRequest) {
     const cancelingByTier = new Map(
       cancelingGroups.map((g) => [g.tierId, g._count._all])
     );
-    const providerByTier = new Map<string, { stripe: number; paypal: number }>();
-    for (const g of providerGroups) {
-      const entry = providerByTier.get(g.tierId) ?? { stripe: 0, paypal: 0 };
-      if (g.provider === "paypal") entry.paypal += g._count._all;
-      else entry.stripe += g._count._all;
-      providerByTier.set(g.tierId, entry);
-    }
+    const lifetimeByTier = new Map(
+      lifetimeGroups.map((g) => [g.tierId, g._count._all])
+    );
+    const lifetimeCancelingByTier = new Map(
+      lifetimeCancelingGroups.map((g) => [g.tierId, g._count._all])
+    );
+    const emptyProviders = () => ({ stripe: 0, paypal: 0 });
+    const groupProviders = (
+      groups: { tierId: string; provider: string; _count: { _all: number } }[]
+    ) => {
+      const map = new Map<string, { stripe: number; paypal: number }>();
+      for (const g of groups) {
+        const entry = map.get(g.tierId) ?? emptyProviders();
+        if (g.provider === "paypal") entry.paypal += g._count._all;
+        else entry.stripe += g._count._all;
+        map.set(g.tierId, entry);
+      }
+      return map;
+    };
+    const providerByTier = groupProviders(providerGroups);
+    const lifetimeProviderByTier = groupProviders(lifetimeProviderGroups);
+
+    // Accumulate money in cents so the totals stay exact.
+    let mrrCentsTotal = 0;
+    let listMrrCentsTotal = 0;
+    let lifetimeActiveTotal = 0;
+    let monthlyCreditsTotal = 0;
 
     const tiers = tierRows.map((t) => {
       const active = activeByTier.get(t.id) ?? 0;
-      const providers = providerByTier.get(t.id) ?? { stripe: 0, paypal: 0 };
+      const providers = providerByTier.get(t.id) ?? emptyProviders();
+      const lifetimeActive = lifetimeByTier.get(t.id) ?? 0;
+      const fullPriceActive = Math.max(0, active - lifetimeActive);
+      const lifetimeMrrCents = lifetimeActive * VIP_LIFETIME_CENTS;
+      const mrrCents = fullPriceActive * t.priceUsdCents + lifetimeMrrCents;
+      const listMrrCents = active * t.priceUsdCents;
+
+      mrrCentsTotal += mrrCents;
+      listMrrCentsTotal += listMrrCents;
+      lifetimeActiveTotal += lifetimeActive;
+      monthlyCreditsTotal += active * t.creditsPerMonth;
+
       return {
         id: t.id,
         name: t.name,
@@ -196,9 +253,22 @@ export async function GET(request: NextRequest) {
         active,
         canceling: cancelingByTier.get(t.id) ?? 0,
         sharePct: activeTotal > 0 ? (active / activeTotal) * 100 : null,
-        mrrUsd: centsToUsd(active * t.priceUsdCents),
+        /** Effective MRR: lifetime cohort at its locked price, rest at list. */
+        mrrUsd: centsToUsd(mrrCents),
+        /** What this tier would bill if every sub paid list price. */
+        listMrrUsd: centsToUsd(listMrrCents),
         stripe: providers.stripe,
         paypal: providers.paypal,
+        lifetime:
+          lifetimeActive > 0
+            ? {
+                active: lifetimeActive,
+                canceling: lifetimeCancelingByTier.get(t.id) ?? 0,
+                ...(lifetimeProviderByTier.get(t.id) ?? emptyProviders()),
+                priceUsd: centsToUsd(VIP_LIFETIME_CENTS),
+                mrrUsd: centsToUsd(lifetimeMrrCents),
+              }
+            : null,
       };
     });
 
@@ -208,7 +278,7 @@ export async function GET(request: NextRequest) {
     const tieredActive = tiers.reduce((s, t) => s + t.active, 0);
     const untieredActive = activeTotal - tieredActive;
 
-    const mrrUsd = tiers.reduce((s, t) => s + t.mrrUsd, 0);
+    const mrrUsd = centsToUsd(mrrCentsTotal);
     const providerTotals = tiers.reduce(
       (acc, t) => ({ stripe: acc.stripe + t.stripe, paypal: acc.paypal + t.paypal }),
       { stripe: 0, paypal: 0 }
@@ -348,7 +418,20 @@ export async function GET(request: NextRequest) {
         /** Everyone with access right now, billed or not. */
         withAccess: activeTotal + compedTotal,
         untieredActive,
+        /** Effective MRR: VIP lifetime cohort at its locked discount price. */
         mrrUsd,
+        /** MRR if every sub paid list price (the old upper-bound figure). */
+        listMrrUsd: centsToUsd(listMrrCentsTotal),
+        /** Active subs on the VIP lifetime offer. */
+        lifetimeActive: lifetimeActiveTotal,
+        /** Effective MRR ÷ paying subscribers. */
+        avgMrrUsd:
+          activeTotal > 0 ? centsToUsd(mrrCentsTotal / activeTotal) : null,
+        /** Mean monthly credit allocation per paying subscriber. */
+        avgCreditsPerMonth:
+          activeTotal > 0 ? monthlyCreditsTotal / activeTotal : null,
+        /** Credits granted per month across all paying subscribers. */
+        monthlyCreditsTotal,
         stripe: providerTotals.stripe,
         paypal: providerTotals.paypal,
       },
