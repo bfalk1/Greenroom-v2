@@ -87,6 +87,10 @@ export async function POST(
       // Only set role to CREATOR if user is currently a regular USER
       if (applicant?.role === "USER") {
         updateData.role = "CREATOR";
+        // Arm the congratulations modal (CreatorWelcomeModal). Explicitly
+        // nulled rather than relying on the column default so a re-approval
+        // after a demotion shows the welcome again.
+        updateData.creatorWelcomeSeenAt = null;
       }
 
       await tx.user.update({
