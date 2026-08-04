@@ -4,6 +4,10 @@ import { recordReferralForNewUser } from "@/lib/referral";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { NextRequest, NextResponse } from "next/server";
 
+// How recently a creator must have been approved for the welcome modal to read
+// as a congratulations rather than an upload nudge.
+const CREATOR_WELCOME_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -327,12 +331,27 @@ export async function GET() {
     // uploaded. Only count while the welcome is actually pending — every other
     // request (i.e. essentially all of them) pays no extra query.
     let creatorContentCount: number | null = null;
+    let creatorWelcomeVariant: "approved" | "nudge" | null = null;
     if (isCreator && !user.creatorWelcomeSeenAt) {
-      const [sampleCount, presetCount] = await Promise.all([
+      const [sampleCount, presetCount, application] = await Promise.all([
         prisma.sample.count({ where: { creatorId: user.id } }),
         prisma.preset.count({ where: { creatorId: user.id } }),
+        prisma.creatorApplication.findUnique({
+          where: { userId: user.id },
+          select: { reviewedAt: true },
+        }),
       ]);
       creatorContentCount = sampleCount + presetCount;
+      // "approved" is the congratulations proper — someone who just got in.
+      // The flag also gets re-armed in bulk to nudge long-standing creators
+      // with an empty profile; congratulating those on an approval from months
+      // ago would read as a bug, so they get the "nudge" copy instead.
+      // Invited creators have no application row — fall back to signup date.
+      const approvedAt = application?.reviewedAt ?? user.createdAt;
+      creatorWelcomeVariant =
+        Date.now() - approvedAt.getTime() < CREATOR_WELCOME_WINDOW_MS
+          ? "approved"
+          : "nudge";
     }
 
     return NextResponse.json({
@@ -355,6 +374,7 @@ export async function GET() {
         terms_accepted_at: user.termsAcceptedAt,
         creator_welcome_seen_at: user.creatorWelcomeSeenAt,
         creator_content_count: creatorContentCount,
+        creator_welcome_variant: creatorWelcomeVariant,
         // Feeds Meta Pixel Advanced Matching client-side (UserContext →
         // metaSetAdvancedMatching). Sparse — the profile address is optional.
         city: user.city,

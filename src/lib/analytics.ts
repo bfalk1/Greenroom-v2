@@ -484,21 +484,28 @@ export function trackCreatorDashboardViewed() {
 export function trackCreatorWelcomeShown(props: {
   contentCount: number;
   platform: "desktop_app" | "web";
+  variant: "approved" | "nudge";
 }) {
   posthog.capture("creator_welcome_shown", {
     content_count: props.contentCount,
     has_uploads: props.contentCount > 0,
     surface: props.platform,
+    variant: props.variant,
   });
 }
 
 export function trackCreatorWelcomeCta(
   cta: "upload_now" | "dismiss",
-  props: { contentCount: number; platform: "desktop_app" | "web" }
+  props: {
+    contentCount: number;
+    platform: "desktop_app" | "web";
+    variant: "approved" | "nudge";
+  }
 ) {
   posthog.capture("creator_welcome_cta", {
     cta,
     content_count: props.contentCount,
     surface: props.platform,
+    variant: props.variant,
   });
 }

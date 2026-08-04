@@ -118,6 +118,10 @@ export function CreatorWelcomeModal({ isDesktop }: { isDesktop: boolean }) {
   const shownRef = useRef(false);
 
   const contentCount = user?.creator_content_count ?? 0;
+  // "nudge" = a long-standing creator whose flag was re-armed because their
+  // profile is still empty. Congratulating them on an approval from months ago
+  // would read as a bug, so the copy (and the fireworks) change.
+  const isNudge = user?.creator_welcome_variant === "nudge";
   const show =
     !loading &&
     !dismissed &&
@@ -130,14 +134,16 @@ export function CreatorWelcomeModal({ isDesktop }: { isDesktop: boolean }) {
     trackCreatorWelcomeShown({
       contentCount,
       platform: isDesktop ? "desktop_app" : "web",
+      variant: isNudge ? "nudge" : "approved",
     });
-  }, [show, contentCount, isDesktop]);
+  }, [show, contentCount, isDesktop, isNudge]);
 
   if (!show) return null;
 
   const analyticsProps = {
     contentCount,
     platform: isDesktop ? ("desktop_app" as const) : ("web" as const),
+    variant: isNudge ? ("nudge" as const) : ("approved" as const),
   };
 
   // Record the dismissal server-side, but never let a failed write trap the
@@ -182,13 +188,17 @@ export function CreatorWelcomeModal({ isDesktop }: { isDesktop: boolean }) {
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <Fireworks />
+      {!isNudge && <Fireworks />}
 
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="creator-welcome-title"
-        className="relative bg-[#1a1a1a] border border-[#39b54a]/30 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-[0_0_70px_-12px_rgba(57,181,74,0.5)]"
+        className={
+          isNudge
+            ? "relative bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            : "relative bg-[#1a1a1a] border border-[#39b54a]/30 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-[0_0_70px_-12px_rgba(57,181,74,0.5)]"
+        }
       >
         <button
           onClick={() => dismiss("dismiss")}
@@ -199,18 +209,36 @@ export function CreatorWelcomeModal({ isDesktop }: { isDesktop: boolean }) {
         </button>
 
         <div className="w-12 h-12 rounded-full bg-[#39b54a]/15 border border-[#39b54a]/30 flex items-center justify-center mb-4">
-          <PartyPopper className="w-6 h-6 text-[#39b54a]" />
+          {isNudge ? (
+            <UploadCloud className="w-6 h-6 text-[#39b54a]" />
+          ) : (
+            <PartyPopper className="w-6 h-6 text-[#39b54a]" />
+          )}
         </div>
 
         <h3
           id="creator-welcome-title"
           className="text-xl font-semibold text-white mb-2"
         >
-          {firstName ? `Congratulations, ${firstName}!` : "Congratulations!"}
+          {isNudge
+            ? "Your profile is still empty"
+            : firstName
+              ? `Congratulations, ${firstName}!`
+              : "Congratulations!"}
         </h3>
         <p className="text-[#a1a1a1] text-sm mb-4">
-          Your application was approved — you&apos;re officially a Greenroom
-          creator. Your artist profile is live and ready for sounds.
+          {isNudge ? (
+            <>
+              You&apos;re a Greenroom creator, but you haven&apos;t uploaded
+              anything yet — so there&apos;s nothing on your artist profile for
+              buyers to find.
+            </>
+          ) : (
+            <>
+              Your application was approved — you&apos;re officially a Greenroom
+              creator. Your artist profile is live and ready for sounds.
+            </>
+          )}
         </p>
 
         <div className="rounded-md border border-[#2a2a2a] bg-[#141414] p-4 mb-5">
@@ -218,16 +246,18 @@ export function CreatorWelcomeModal({ isDesktop }: { isDesktop: boolean }) {
             <UploadCloud className="w-5 h-5 text-[#39b54a] shrink-0 mt-0.5" />
             <div className="text-sm">
               <p className="text-white font-medium mb-1">
-                {contentCount === 0
-                  ? "You haven't uploaded any samples yet"
-                  : "Keep the uploads coming"}
+                {isNudge
+                  ? "Upload your first samples"
+                  : contentCount === 0
+                    ? "You haven't uploaded any samples yet"
+                    : "Keep the uploads coming"}
               </p>
               <p className="text-[#a1a1a1]">
                 {contentCount === 0 ? (
                   <>
-                    Nothing has been added to your profile yet. Head to your
-                    creator dashboard to upload your first samples and presets —
-                    that&apos;s what buyers will see.
+                    Head to your creator dashboard to upload samples and presets
+                    — that&apos;s what buyers will see, and it&apos;s what earns
+                    you credits.
                   </>
                 ) : (
                   <>

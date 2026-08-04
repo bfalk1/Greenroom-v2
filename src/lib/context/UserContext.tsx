@@ -29,6 +29,9 @@ export interface AppUser {
   // Samples + presets this creator has uploaded. Only computed by /api/user/me
   // while the welcome is pending; null otherwise.
   creator_content_count: number | null;
+  // "approved" = just accepted (congratulations). "nudge" = long-standing
+  // creator whose flag was re-armed to prompt them to finally upload.
+  creator_welcome_variant: "approved" | "nudge" | null;
   // Billing locality — used only to feed Meta Pixel Advanced Matching
   // (src/lib/metaPixel.ts); sparse, since the profile address is optional.
   city: string | null;
