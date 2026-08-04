@@ -316,6 +316,17 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => mainWindow?.close());
 
+// Open a greenroom.fm page in the user's default browser. Needed because the
+// shell blocks /creator, /admin and /mod (BLOCKED_ROUTES) — a normal link to
+// one of those bounces the window to /marketplace instead of opening it. Only
+// our own site paths are accepted, so this can't be turned into an arbitrary
+// "open anything" bridge by page script.
+ipcMain.on('open-website', (_event, websitePath) => {
+  const path = String(websitePath || '/');
+  if (!path.startsWith('/') || path.startsWith('//')) return;
+  shell.openExternal(`${GREENROOM_URL}${path}`);
+});
+
 function sanitizeSampleFilename(sampleName) {
   const baseName = String(sampleName || 'sample')
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')

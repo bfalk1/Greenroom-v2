@@ -24,6 +24,11 @@ export interface AppUser {
   profile_completed: boolean;
   is_whitelisted?: boolean;
   terms_accepted_at: string | null;
+  // Null on a creator = the congratulations modal hasn't been shown yet.
+  creator_welcome_seen_at: string | null;
+  // Samples + presets this creator has uploaded. Only computed by /api/user/me
+  // while the welcome is pending; null otherwise.
+  creator_content_count: number | null;
   // Billing locality — used only to feed Meta Pixel Advanced Matching
   // (src/lib/metaPixel.ts); sparse, since the profile address is optional.
   city: string | null;

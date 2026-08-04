@@ -87,6 +87,9 @@ contextBridge.exposeInMainWorld('greenroom', {
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
+  // Opens a greenroom.fm path in the default browser. The website uses this for
+  // creator routes, which the shell itself blocks.
+  openWebsite: (websitePath) => ipcRenderer.send('open-website', websitePath),
   getLocalSampleStatus: async (sampleId, sampleName, artistName) => {
     return ipcRenderer.invoke('get-local-sample-status', { sampleId, sampleName, artistName });
   },
