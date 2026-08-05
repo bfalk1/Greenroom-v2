@@ -13,6 +13,7 @@ import {
   capiAttributionToMetadata,
   metaCapiAddPaymentInfo,
   capiIdentityFromProfile,
+  withUserFbcFallback,
 } from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
@@ -180,9 +181,13 @@ export async function POST(request: Request) {
     // activation — this request is the last moment they exist; the webhook
     // and reconcile cron only ever see provider-originated requests.
     const acquisitionSource = discountCoupon ? "vip-lifetime" : null;
-    const capiAttribution = capiAttributionFromRequest(
-      request,
-      (name) => cookieStore.get(name)?.value
+    // Live cookies first; when the click id is gone from this jar (the ad
+    // click happened in another browser, or _fbc expired), recover the one
+    // /api/user/me banked on the account — it rides into the session and
+    // subscription metadata below, so the webhook/cron Purchase gets it too.
+    const capiAttribution = withUserFbcFallback(
+      capiAttributionFromRequest(request, (name) => cookieStore.get(name)?.value),
+      dbUser
     );
     const capiMetadata = capiAttributionToMetadata(capiAttribution);
     const session = await stripe.checkout.sessions.create({

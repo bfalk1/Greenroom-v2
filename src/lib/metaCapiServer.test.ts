@@ -6,10 +6,15 @@ import {
   buildCapiEvent,
   capiAttributionFromRequest,
   capiIdentityFromProfile,
+  fbcClickTimeMs,
+  fbcFromCookies,
   hashEmail,
   metaCapiAddPaymentInfo,
+  normalizeFbc,
   sha256Lower,
   splitFullName,
+  USER_FBC_MAX_AGE_MS,
+  withUserFbcFallback,
 } from "./metaCapiServer";
 import { purchaseEventId } from "./metaPixel";
 
@@ -242,6 +247,85 @@ test("capiAttributionFromRequest falls back to gr_fbc when _fbc is absent, prefe
     n === "_fbc" ? realFbc : n === "gr_fbc" ? grFbc : undefined
   );
   assert.equal(both.fbc, realFbc, "_fbc is canonical when present");
+});
+
+test("normalizeFbc accepts only Meta's fb.<n>.<ms>.<fbclid> shape", () => {
+  // The guard runs on cookie capture AND on the banked user-row value — a
+  // mangled cookie must reach neither Meta nor the database.
+  assert.equal(normalizeFbc("fb.1.1700000000.AbC-123_x"), "fb.1.1700000000.AbC-123_x");
+  assert.equal(normalizeFbc("  fb.2.1700000000.id  "), "fb.2.1700000000.id");
+  assert.equal(normalizeFbc("IwAR123rawFbclid"), null, "a bare fbclid is not an fbc");
+  assert.equal(normalizeFbc("fb.1.notatime.id"), null);
+  assert.equal(normalizeFbc("fb.1.1700000000."), null, "empty click id");
+  assert.equal(normalizeFbc("fb.1.1700000000.has space"), null);
+  assert.equal(normalizeFbc(""), null);
+  assert.equal(normalizeFbc(null), null);
+});
+
+test("fbcFromCookies skips a malformed _fbc and still recovers gr_fbc", () => {
+  const grFbc = "fb.1.1700000000.PAAaBbCcClickId";
+  const fbc = fbcFromCookies((n) =>
+    n === "_fbc" ? "garbage-cookie" : n === "gr_fbc" ? grFbc : undefined
+  );
+  assert.equal(fbc, grFbc);
+});
+
+test("withUserFbcFallback recovers the banked click id only when the request had none and it is fresh", () => {
+  const now = 1_784_000_000_000;
+  const banked = `fb.1.${now - 1000}.BankedClickId`;
+  const live = { fbc: `fb.1.${now - 500}.LiveCookieId`, clientUserAgent: UA };
+  const bare = { clientUserAgent: UA };
+  const fresh = { metaFbc: banked, metaFbcUpdatedAt: new Date(now - 1000) };
+
+  // A live cookie always wins — the banked id is strictly a fallback.
+  assert.equal(withUserFbcFallback(live, fresh, now).fbc, live.fbc);
+  // No cookie + fresh banked id -> recovered.
+  assert.equal(withUserFbcFallback(bare, fresh, now).fbc, banked);
+  // No user row (webhook lookup failed) -> no-op.
+  assert.equal(withUserFbcFallback(bare, null, now).fbc, null);
+  // Banked >90d ago (past the cookie-TTL mirror) -> ignored.
+  const staleBank = {
+    metaFbc: banked,
+    metaFbcUpdatedAt: new Date(now - USER_FBC_MAX_AGE_MS - 1),
+  };
+  assert.equal(withUserFbcFallback(bare, staleBank, now).fbc, null);
+  // Fresh bank stamp but the CLICK itself (embedded ms) is >90d old — a
+  // cookie first banked at day 89 must not gain a second 90-day lease.
+  const staleClick = {
+    metaFbc: `fb.1.${now - USER_FBC_MAX_AGE_MS - 1}.OldClickId`,
+    metaFbcUpdatedAt: new Date(now),
+  };
+  assert.equal(withUserFbcFallback(bare, staleClick, now).fbc, null);
+  // Malformed or unstamped banked values never surface.
+  assert.equal(
+    withUserFbcFallback(
+      bare,
+      { metaFbc: "junk", metaFbcUpdatedAt: new Date(now) },
+      now
+    ).fbc,
+    null
+  );
+  assert.equal(
+    withUserFbcFallback(bare, { metaFbc: banked, metaFbcUpdatedAt: null }, now)
+      .fbc,
+    null
+  );
+  // A mangled LIVE value (legacy checkout_attributions row) is dropped, not
+  // sent, and doesn't block recovery of a good banked id.
+  assert.equal(
+    withUserFbcFallback({ fbc: "garbage", clientUserAgent: UA }, fresh, now)
+      .fbc,
+    banked
+  );
+});
+
+test("fbcClickTimeMs reads the embedded click time; 0 for malformed/absent", () => {
+  // /api/user/me compares these so the LATEST click wins — an older cookie in
+  // a second browser's jar must not clobber a newer banked click.
+  assert.equal(fbcClickTimeMs("fb.1.1784000000000.Abc"), 1_784_000_000_000);
+  assert.equal(fbcClickTimeMs("IwARrawFbclid"), 0);
+  assert.equal(fbcClickTimeMs(null), 0);
+  assert.equal(fbcClickTimeMs(undefined), 0);
 });
 
 test("buildCapiEvent falls back to the app checkout URL when no referer was captured", () => {

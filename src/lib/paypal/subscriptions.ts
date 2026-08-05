@@ -12,7 +12,11 @@
 import { prisma } from "@/lib/prisma";
 import { paypalFetch } from "@/lib/paypal/client";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
-import { metaCapiPurchase, capiIdentityFromProfile } from "@/lib/metaCapiServer";
+import {
+  metaCapiPurchase,
+  capiIdentityFromProfile,
+  withUserFbcFallback,
+} from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
 
@@ -467,13 +471,19 @@ export async function syncPaypalSubscription(
             : tier.priceUsdCents,
         transactionId: subscriptionId,
         identity: capiIdentityFromProfile(user),
-        attribution: {
-          fbp: attribution?.fbp,
-          fbc: attribution?.fbc,
-          clientIp: attribution?.clientIp,
-          clientUserAgent: attribution?.userAgent,
-          eventSourceUrl: attribution?.eventSourceUrl,
-        },
+        // The row's checkout-time signals, with the account-banked click id
+        // as a last resort — covers rows written before the fallback existed
+        // and buyers whose checkout jar had no fbc that /me later banked.
+        attribution: withUserFbcFallback(
+          {
+            fbp: attribution?.fbp,
+            fbc: attribution?.fbc,
+            clientIp: attribution?.clientIp,
+            clientUserAgent: attribution?.userAgent,
+            eventSourceUrl: attribution?.eventSourceUrl,
+          },
+          user
+        ),
       });
     }
   }

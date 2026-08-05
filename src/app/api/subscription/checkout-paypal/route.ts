@@ -18,6 +18,7 @@ import {
   capiAttributionFromRequest,
   metaCapiAddPaymentInfo,
   capiIdentityFromProfile,
+  withUserFbcFallback,
 } from "@/lib/metaCapiServer";
 
 export async function POST(request: Request) {
@@ -211,9 +212,13 @@ export async function POST(request: Request) {
     // effort: attribution is not worth failing a checkout the buyer is about
     // to approve.
     const store = await cookies();
-    const capiAttribution = capiAttributionFromRequest(
-      request,
-      (name) => store.get(name)?.value
+    // Live cookies first; when the click id is gone from this jar (the ad
+    // click happened in another browser, or _fbc expired), recover the one
+    // /api/user/me banked on the account — it lands in the attribution row
+    // below, so the webhook-driven activation Purchase gets it too.
+    const capiAttribution = withUserFbcFallback(
+      capiAttributionFromRequest(request, (name) => store.get(name)?.value),
+      dbUser
     );
     try {
       await prisma.checkoutAttribution.create({
