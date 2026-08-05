@@ -1,3 +1,7 @@
+// Must precede the prisma import — the client reads DATABASE_URL when it is
+// constructed at import time, and Prisma Client (unlike the CLI) never loads
+// .env itself. Next.js does this for the app; a bare tsx run does not.
+import "dotenv/config";
 import { prisma } from "../src/lib/prisma";
 
 /**
