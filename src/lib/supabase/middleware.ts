@@ -42,27 +42,49 @@ export async function updateSession(request: NextRequest) {
   // when a redirect strips fbclid before the pixel runs, i.e. exactly the
   // cohort the Conversions API exists to recover. Persisting the click id
   // first-party lets capiAttributionFromRequest still populate fbc for them.
-  // Meta's format is fb.1.<first-seen-ms>.<fbclid>: stamp the time at first
-  // sight and only write when neither cookie exists yet, so the original click
-  // time survives later navigations. Set AFTER getUser() above — a token
-  // refresh there reassigns supabaseResponse, which would drop an earlier set.
+  // Meta's format is fb.1.<first-seen-ms>.<fbclid>. A NEW fbclid overwrites a
+  // stale gr_fbc — Meta attributes to the latest click, and fbevents refreshes
+  // its own _fbc the same way — while a repeat sighting of the SAME id keeps
+  // the original click time. An existing _fbc is authoritative (it's read
+  // first at capture), so gr_fbc never shadows it.
   // httpOnly is safe (only the server reads gr_fbc, unlike _fbc which fbevents
   // reads); the strict charset guards against a junk/oversized cookie value.
+  // The Set-Cookie must ride EVERY response branch below (withGrFbc) — when it
+  // rode only the fall-through supabaseResponse, each redirect return silently
+  // dropped the click id, most damagingly the protected-route bounce to
+  // /login, which buries fbclid inside the ?redirect param where no later
+  // request re-reads it.
   const fbclid = request.nextUrl.searchParams.get("fbclid");
+  let grFbc: string | null = null;
+  // Only a WELL-FORMED _fbc suppresses the first-party copy — capture rejects
+  // malformed ones (normalizeFbc), so deferring to a mangled cookie would
+  // lose the click id entirely. The shape mirrors FBC_FORMAT in
+  // metaCapiServer.ts, not imported because that module pulls node:crypto,
+  // which this edge-runtime middleware can't load.
+  const fbcCookie = request.cookies.get("_fbc")?.value ?? "";
+  const hasAuthoritativeFbc = /^fb\.\d+\.\d+\.\S{1,400}$/.test(fbcCookie);
   if (
     fbclid &&
     /^[A-Za-z0-9_-]{1,255}$/.test(fbclid) &&
-    !request.cookies.get("_fbc") &&
-    !request.cookies.get("gr_fbc")
+    !hasAuthoritativeFbc
   ) {
-    supabaseResponse.cookies.set("gr_fbc", `fb.1.${Date.now()}.${fbclid}`, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 90, // 90 days, matching Meta's _fbc TTL
-    });
+    const existing = request.cookies.get("gr_fbc")?.value;
+    if (!existing || !existing.endsWith(`.${fbclid}`)) {
+      grFbc = `fb.1.${Date.now()}.${fbclid}`;
+    }
   }
+  const withGrFbc = <T extends NextResponse>(res: T): T => {
+    if (grFbc) {
+      res.cookies.set("gr_fbc", grFbc, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 90, // 90 days, matching Meta's _fbc TTL
+      });
+    }
+    return res;
+  };
 
   // For any authenticated request, load the account's status ONCE. Reused for
   // both suspension enforcement (immediately below) and the subscription
@@ -91,17 +113,16 @@ export async function updateSession(request: NextRequest) {
 
       if (!allowedWhileSuspended) {
         if (pathname.startsWith("/api/")) {
-          return NextResponse.json(
-            { error: "Account suspended" },
-            { status: 403 }
+          return withGrFbc(
+            NextResponse.json({ error: "Account suspended" }, { status: 403 })
           );
         }
         const url = request.nextUrl.clone();
         url.pathname = "/login";
         url.searchParams.set("error", "suspended");
-        return NextResponse.redirect(url);
+        return withGrFbc(NextResponse.redirect(url));
       }
-      return supabaseResponse;
+      return withGrFbc(supabaseResponse);
     }
   }
 
@@ -181,7 +202,7 @@ export async function updateSession(request: NextRequest) {
       carried && !carried.startsWith("/login") && !carried.startsWith("/signup")
         ? carried
         : "/marketplace";
-    return NextResponse.redirect(new URL(dest, request.url));
+    return withGrFbc(NextResponse.redirect(new URL(dest, request.url)));
   }
 
   // Hard paywall on account creation: a bare, logged-out hit on /signup is a
@@ -206,19 +227,21 @@ export async function updateSession(request: NextRequest) {
       const ref = params.get("ref");
       if (ref) url.searchParams.set("ref", ref);
       // Carry the Meta ad click id so the pixel on /pricing still sets _fbc
-      // (gr_fbc above already backstops the CAPI side for this hop).
+      // (gr_fbc already backstops the CAPI side for this hop).
       if (fbclid) url.searchParams.set("fbclid", fbclid);
-      return NextResponse.redirect(url);
+      return withGrFbc(NextResponse.redirect(url));
     }
   }
 
   if (isPublicPath) {
-    return supabaseResponse;
+    return withGrFbc(supabaseResponse);
   }
 
   // API routes should return 401, not redirect
   if (pathname.startsWith("/api/") && !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return withGrFbc(
+      NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    );
   }
 
   // Protected routes — redirect to login if not authenticated, carrying the
@@ -232,7 +255,7 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/login";
     url.search = "";
     url.searchParams.set("redirect", target);
-    return NextResponse.redirect(url);
+    return withGrFbc(NextResponse.redirect(url));
   }
 
   // Subscription paywall — users without active subscription are limited
@@ -264,10 +287,10 @@ export async function updateSession(request: NextRequest) {
         const url = request.nextUrl.clone();
         url.pathname = "/pricing";
         url.searchParams.set("redirect", pathname);
-        return NextResponse.redirect(url);
+        return withGrFbc(NextResponse.redirect(url));
       }
     }
   }
 
-  return supabaseResponse;
+  return withGrFbc(supabaseResponse);
 }

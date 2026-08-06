@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { recordReferralForNewUser } from "@/lib/referral";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
+import { fbcClickTimeMs, fbcFromCookies } from "@/lib/metaCapiServer";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -316,6 +318,35 @@ export async function GET() {
       } catch (e) {
         console.error("Failed to reconcile user email:", e);
       }
+    }
+
+    // Bank the freshest Meta ad click id on the account. Checkout-time fbc
+    // capture is cookie-jar-bound — an ad click in the Instagram in-app
+    // browser followed by a purchase on desktop, or any checkout after
+    // Safari's 7-day expiry of the JS-set _fbc, reaches the checkout POST
+    // with no click id at all (measured at ~86% of prod checkouts). This
+    // route runs on every authenticated page load, so the id is banked at
+    // first login and refreshed by later ad clicks; checkout recovers it via
+    // withUserFbcFallback when the live cookies are gone. LATEST CLICK WINS:
+    // the click-time comparison stops a 60-day-old cookie in a second
+    // browser's jar from clobbering a newer banked click. Writes only when
+    // the value actually changed (~once per ad click, free otherwise) and
+    // never fails the request over attribution.
+    const cookieStore = await cookies();
+    const cookieFbc = fbcFromCookies((name) => cookieStore.get(name)?.value);
+    if (
+      cookieFbc &&
+      cookieFbc !== user.metaFbc &&
+      fbcClickTimeMs(cookieFbc) >= fbcClickTimeMs(user.metaFbc)
+    ) {
+      await prisma.user
+        .update({
+          where: { id: user.id },
+          data: { metaFbc: cookieFbc, metaFbcUpdatedAt: new Date() },
+        })
+        .catch((error) =>
+          console.error("Failed to bank Meta click id:", error)
+        );
     }
 
     const credits = user.creditBalance?.balance ?? 0;

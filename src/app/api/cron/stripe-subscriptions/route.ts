@@ -8,6 +8,7 @@ import {
   capiAttributionFromMetadata,
   metaCapiPurchase,
   capiIdentityFromProfile,
+  withUserFbcFallback,
 } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
@@ -248,6 +249,8 @@ async function reconcileOne(
               city: true,
               state: true,
               postalCode: true,
+              metaFbc: true,
+              metaFbcUpdatedAt: true,
             },
           }),
           stripe.checkout.sessions.list({
@@ -264,10 +267,15 @@ async function reconcileOne(
           currency: originSession?.currency,
           transactionId: originSession?.id ?? subscription.id,
           identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
-          attribution: capiAttributionFromMetadata({
-            ...(originSession?.metadata ?? {}),
-            ...subscription.metadata,
-          }),
+          // The account-banked click id backstops metadata written before
+          // the durable-fbc fallback shipped (or banked after checkout).
+          attribution: withUserFbcFallback(
+            capiAttributionFromMetadata({
+              ...(originSession?.metadata ?? {}),
+              ...subscription.metadata,
+            }),
+            userRow
+          ),
         });
       } catch (capiError) {
         console.error(
