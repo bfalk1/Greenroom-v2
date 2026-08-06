@@ -31,6 +31,17 @@ const FBC_FORMAT = /^fb\.\d+\.\d+\.\S{1,400}$/;
 const MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// When the durable-fbc fix reached production (PR #38, squash-merged to main
+// as 5907d11 and auto-deployed by Vercel). Section 3 splits the capture data
+// on this instant and computes BOTH rates from live rows — deliberately not a
+// hardcoded baseline percentage, which silently goes stale as new checkouts
+// land and would grade the fix against the wrong number.
+const DEPLOY_AT = new Date("2026-08-06T21:57:46Z");
+
+// Below this many post-deploy checkouts, the rate is noise — the PayPal leg
+// only writes a handful of rows a week.
+const MIN_MEANINGFUL_SAMPLE = 15;
+
 const pct = (n: number, d: number) =>
   d === 0 ? "n/a" : `${((n / d) * 100).toFixed(1)}%`;
 
@@ -147,16 +158,65 @@ async function checkoutCapture() {
     const f = Number(w.with_fbc);
     runTotal += t;
     runFbc += f;
+    // The deploy lands mid-week, so that row mixes both regimes — flag it so
+    // it isn't read as a clean post-fix data point. The split below is exact.
+    const weekEnd = new Date(w.week.getTime() + 7 * DAY_MS);
+    const straddles = DEPLOY_AT >= w.week && DEPLOY_AT < weekEnd;
     console.log(
       `${w.week.toISOString().slice(0, 10)}  | ${String(t).padStart(5)} | ${String(f).padStart(3)} | ` +
-        `${pct(f, t).padStart(6)} | ${String(Number(w.with_fbp)).padStart(3)} | ${Number(w.neither)}`
+        `${pct(f, t).padStart(6)} | ${String(Number(w.with_fbp)).padStart(3)} | ${Number(w.neither)}` +
+        (straddles ? "   <- deploy landed mid-week" : "")
     );
   }
   console.log(`ALL TIME    | ${String(runTotal).padStart(5)} | ${String(runFbc).padStart(3)} | ${pct(runFbc, runTotal).padStart(6)}`);
+
+  // Exact pre/post split on the deploy instant, computed from live rows so it
+  // can never disagree with the table above or go stale.
+  const [split] = await prisma.$queryRaw<
+    {
+      pre_total: bigint;
+      pre_fbc: bigint;
+      pre_fbp: bigint;
+      post_total: bigint;
+      post_fbc: bigint;
+      post_fbp: bigint;
+    }[]
+  >`
+    SELECT count(*) FILTER (WHERE created_at <  ${DEPLOY_AT})::bigint AS pre_total,
+           count(*) FILTER (WHERE created_at <  ${DEPLOY_AT} AND fbc IS NOT NULL)::bigint AS pre_fbc,
+           count(*) FILTER (WHERE created_at <  ${DEPLOY_AT} AND fbp IS NOT NULL)::bigint AS pre_fbp,
+           count(*) FILTER (WHERE created_at >= ${DEPLOY_AT})::bigint AS post_total,
+           count(*) FILTER (WHERE created_at >= ${DEPLOY_AT} AND fbc IS NOT NULL)::bigint AS post_fbc,
+           count(*) FILTER (WHERE created_at >= ${DEPLOY_AT} AND fbp IS NOT NULL)::bigint AS post_fbp
+    FROM checkout_attributions
+  `;
+
+  const preTotal = Number(split.pre_total);
+  const preFbc = Number(split.pre_fbc);
+  const postTotal = Number(split.post_total);
+  const postFbc = Number(split.post_fbc);
+
+  console.log(`\n  Split at deploy (${DEPLOY_AT.toISOString()}):`);
   console.log(
-    "\n  Baseline measured 2026-08-05 (pre-fix): 3/22 = 13.6% fbc, 59% fbp.\n" +
-      "  Compare the weeks AFTER your deploy date against that."
+    `    BEFORE: ${preFbc}/${preTotal} fbc = ${pct(preFbc, preTotal)}  ` +
+      `(fbp ${pct(Number(split.pre_fbp), preTotal)})`
   );
+  console.log(
+    `    AFTER : ${postFbc}/${postTotal} fbc = ${pct(postFbc, postTotal)}  ` +
+      `(fbp ${pct(Number(split.post_fbp), postTotal)})`
+  );
+
+  if (postTotal === 0) {
+    console.log(
+      "\n    No checkouts since the deploy yet — nothing to compare. The BEFORE\n" +
+        "    figure is your baseline."
+    );
+  } else if (postTotal < MIN_MEANINGFUL_SAMPLE) {
+    console.log(
+      `\n    Only ${postTotal} post-deploy checkout(s) — too few to read as a rate.\n` +
+        `    Wait for ~${MIN_MEANINGFUL_SAMPLE}+ before drawing any conclusion.`
+    );
+  }
 }
 
 async function recoveryPotential(now: number) {
