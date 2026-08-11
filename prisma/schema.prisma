@@ -281,6 +281,7 @@ model Sample {
   ratingCount    Int          @default(0) @map("rating_count")
   isActive       Boolean      @default(true) @map("is_active")
   status         SampleStatus @default(DRAFT)
+  reviewNote     String?      @map("review_note") // moderator's reason for the latest reject/removal; cleared on approval
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
@@ -331,6 +332,7 @@ model Preset {
   ratingCount        Int            @default(0) @map("rating_count")
   isActive           Boolean        @default(true) @map("is_active")
   status             PresetStatus   @default(DRAFT)
+  reviewNote         String?        @map("review_note") // moderator's reason for the latest reject/removal; cleared on approval
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
@@ -819,6 +821,7 @@ model Broadcast {
   authorId       String?  @map("author_id") @db.Uuid
   subject        String
   body           String
+  audience       String   @default("CREATORS") // ALL | CREATORS | USERS | SPECIFIC — plain string, not an enum: audiences are a product decision that shouldn't need a migration to change
   recipientCount Int      @default(0) @map("recipient_count")
   createdAt      DateTime @default(now()) @map("created_at")
 

@@ -45,6 +45,39 @@ const ACTION_PHRASE: Record<ModerationAction, string> = {
   removed: "removed",
 };
 
+// A moderator's reason is required to reject and optional to remove — an
+// approval never carries one. Kept here (not in the routes) so every entry
+// point applies the same rule.
+export const REVIEW_NOTE_MAX = 1000;
+export const REASON_REQUIRED_FOR: ReadonlySet<ModerationAction> = new Set([
+  "rejected",
+]);
+
+export type ReviewNoteResult =
+  | { ok: true; note: string | null }
+  | { ok: false; error: string };
+
+export function parseReviewNote(
+  action: ModerationAction,
+  raw: unknown
+): ReviewNoteResult {
+  const note = typeof raw === "string" ? raw.trim() : "";
+
+  if (!note) {
+    if (REASON_REQUIRED_FOR.has(action)) {
+      return { ok: false, error: "A reason is required when rejecting" };
+    }
+    return { ok: true, note: null };
+  }
+  if (note.length > REVIEW_NOTE_MAX) {
+    return {
+      ok: false,
+      error: `Reason must be ${REVIEW_NOTE_MAX} characters or fewer`,
+    };
+  }
+  return { ok: true, note };
+}
+
 export function moderationTitle(
   kind: ModerationKind,
   action: ModerationAction,
@@ -62,10 +95,16 @@ export function moderationTitle(
 
 // Fold a moderated batch into one notification row per creator, so
 // bulk-approving 20 samples for one creator yields a single row.
+//
+// `reviewNote` is the moderator's reason for the whole call (one decision, one
+// reason — a bulk reject shares it across the batch). It lands in the
+// notification body so the creator reads "why" without opening anything, and is
+// mirrored into metadata for anything that wants it structured.
 export function groupModerationByCreator(
   kind: ModerationKind,
   action: ModerationAction,
-  items: ModeratedItem[]
+  items: ModeratedItem[],
+  reviewNote?: string | null
 ): NotificationInput[] {
   const byCreator = new Map<string, ModeratedItem[]>();
   for (const item of items) {
@@ -75,6 +114,7 @@ export function groupModerationByCreator(
     else byCreator.set(item.creatorId, [item]);
   }
 
+  const note = reviewNote?.trim() || null;
   const contextType = kind === "sample" ? "Sample" : "Preset";
   const rows: NotificationInput[] = [];
   for (const [creatorId, group] of byCreator) {
@@ -82,12 +122,14 @@ export function groupModerationByCreator(
       userId: creatorId,
       type: MODERATION_TYPE[kind][action],
       title: moderationTitle(kind, action, group.length, group[0]?.name),
+      body: note,
       contextType,
       contextId: group.length === 1 ? group[0].id : null,
       metadata: {
         count: group.length,
         itemNames: group.slice(0, 5).map((i) => i.name),
         itemIds: group.map((i) => i.id),
+        ...(note ? { reviewNote: note } : {}),
       },
     });
   }

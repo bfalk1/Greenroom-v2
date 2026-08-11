@@ -15,6 +15,7 @@ import {
   Download,
 } from "lucide-react";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
+import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
 import { toast } from "sonner";
 
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -109,6 +110,11 @@ export function PresetModeration() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("REVIEW");
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Pending reject/takedown awaiting the moderator's reason.
+  const [reasonPrompt, setReasonPrompt] = useState<{
+    kind: "reject" | "delete";
+    presetId: string;
+  } | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
 
@@ -184,13 +190,27 @@ export function PresetModeration() {
     fetchData(statusFilter, searchQuery, { offset: presets.length, append: true });
   };
 
+  // Rejections and takedowns collect a reason first — it's what the creator
+  // receives as the notification body.
   const handleModerate = async (presetId: string, action: "approve" | "reject") => {
+    if (action === "reject") {
+      setReasonPrompt({ kind: "reject", presetId });
+      return;
+    }
+    await submitModerate(presetId, "approve");
+  };
+
+  const submitModerate = async (
+    presetId: string,
+    action: "approve" | "reject",
+    reviewNote?: string
+  ) => {
     setBusyId(presetId);
     try {
       const res = await fetch("/api/mod/presets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId, action }),
+        body: JSON.stringify({ presetId, action, reviewNote }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -205,11 +225,16 @@ export function PresetModeration() {
     }
   };
 
-  const handleDelete = async (presetId: string) => {
-    if (!confirm("Delete this preset? It will be unpublished and permanently removed from the marketplace.")) return;
+  const handleDelete = (presetId: string) => {
+    setReasonPrompt({ kind: "delete", presetId });
+  };
+
+  const submitDelete = async (presetId: string, reviewNote: string) => {
     setBusyId(presetId);
     try {
-      const res = await fetch(`/api/mod/presets?presetId=${presetId}`, { method: "DELETE" });
+      const params = new URLSearchParams({ presetId });
+      if (reviewNote) params.set("reviewNote", reviewNote);
+      const res = await fetch(`/api/mod/presets?${params.toString()}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete preset");
       toast.success("Preset removed");
       refreshCurrent();
@@ -217,6 +242,17 @@ export function PresetModeration() {
       toast.error("Failed to delete preset");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleReasonConfirm = async (reason: string) => {
+    if (!reasonPrompt) return;
+    const { kind, presetId } = reasonPrompt;
+    setReasonPrompt(null);
+    if (kind === "reject") {
+      await submitModerate(presetId, "reject", reason);
+    } else {
+      await submitDelete(presetId, reason);
     }
   };
 
@@ -500,6 +536,20 @@ export function PresetModeration() {
           </div>
         </div>
       )}
+
+      <ModerationReasonModal
+        open={reasonPrompt !== null}
+        onClose={() => setReasonPrompt(null)}
+        onConfirm={handleReasonConfirm}
+        required={reasonPrompt?.kind === "reject"}
+        title={reasonPrompt?.kind === "reject" ? "Reject preset" : "Remove preset"}
+        confirmLabel={reasonPrompt?.kind === "reject" ? "Reject preset" : "Remove preset"}
+        description={
+          reasonPrompt?.kind === "reject"
+            ? "Sent back to draft so the creator can revise and resubmit."
+            : "Unpublished permanently. The creator can't resubmit it."
+        }
+      />
     </div>
   );
 }

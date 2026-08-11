@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 import { sendBroadcastAlertEmailSafe } from "@/lib/notifications";
+import { audienceWhere, parseAudience } from "@/lib/broadcastAudience";
 
 // The post-commit email loop is paced at ~600ms per recipient (Resend's
 // default limit is 2 req/s), so a large audience needs a long function budget.
@@ -52,6 +53,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const parsedAudience = parseAudience(raw?.audience, raw?.userIds);
+    if (!parsedAudience.ok) {
+      return NextResponse.json(
+        { error: parsedAudience.error },
+        { status: 400 }
+      );
+    }
+    const { audience, userIds } = parsedAudience;
+
     const rl = await rateLimit(`broadcast:${dbUser.id}`, {
       limit: 3,
       windowSec: 60,
@@ -61,13 +71,13 @@ export async function POST(req: NextRequest) {
     }
 
     const recipients = await prisma.user.findMany({
-      where: { role: "CREATOR", isActive: true },
+      where: audienceWhere(audience, userIds),
       select: { id: true, email: true },
     });
 
     if (recipients.length === 0) {
       return NextResponse.json(
-        { error: "No approved creators to send to" },
+        { error: "That audience has no active recipients" },
         { status: 400 }
       );
     }
@@ -79,6 +89,7 @@ export async function POST(req: NextRequest) {
             authorId: dbUser.id,
             subject,
             body,
+            audience,
             recipientCount: recipients.length,
           },
         });
@@ -101,7 +112,14 @@ export async function POST(req: NextRequest) {
             action: "BROADCAST_SENT",
             targetType: "Broadcast",
             targetId: created.id,
-            metadata: { recipientCount: recipients.length, subject },
+            metadata: {
+              recipientCount: recipients.length,
+              subject,
+              audience,
+              // Only for hand-picked sends — the role audiences are reproducible
+              // from the audience name alone.
+              ...(audience === "SPECIFIC" ? { userIds } : {}),
+            },
           },
         });
 
@@ -127,7 +145,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { broadcast, delivered: recipients.length, emailed, emailErrors },
+      { broadcast, audience, delivered: recipients.length, emailed, emailErrors },
       { status: 201 }
     );
   } catch (error) {
@@ -176,6 +194,7 @@ export async function GET(req: NextRequest) {
           id: true,
           subject: true,
           body: true,
+          audience: true,
           recipientCount: true,
           createdAt: true,
         },

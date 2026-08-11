@@ -31,6 +31,8 @@ import {
 export {
   groupModerationByCreator,
   moderationTitle,
+  parseReviewNote,
+  REVIEW_NOTE_MAX,
   type ModeratedItem,
   type ModerationAction,
   type ModerationKind,
@@ -81,14 +83,15 @@ export async function createNotificationsGrouped(
 export async function notifyModerationSafe(
   kind: ModerationKind,
   action: ModerationAction,
-  items: ModeratedItem[]
+  items: ModeratedItem[],
+  reviewNote?: string | null
 ): Promise<void> {
   try {
-    const rows = groupModerationByCreator(kind, action, items);
+    const rows = groupModerationByCreator(kind, action, items, reviewNote);
     if (rows.length === 0) return;
     await createNotificationsGrouped(prisma, rows);
     for (const row of rows) {
-      await sendUploadsReviewedEmailSafe(row.userId);
+      await sendUploadsReviewedEmailSafe(row.userId, reviewNote);
     }
   } catch (error) {
     console.error("notifyModerationSafe error:", error);
@@ -337,17 +340,28 @@ export async function sendNewMessageEmailSafe(
   });
 }
 
-// Moderation update alert — throttled per recipient.
-export async function sendUploadsReviewedEmailSafe(userId: string): Promise<void> {
+// Moderation update alert — throttled per recipient. When the moderator left a
+// reason it rides along: a creator who has to revise an upload shouldn't have to
+// come back to the site just to learn what was wrong.
+export async function sendUploadsReviewedEmailSafe(
+  userId: string,
+  reviewNote?: string | null
+): Promise<void> {
   if (await isEmailThrottled(userId)) return;
   const email = await resolveEmail(userId).catch(() => null);
   if (!email) return;
+  const note = reviewNote?.trim() || null;
   await trySendAlertEmail(email, {
     subject: "Updates on your Greenroom uploads",
     heading: "Your uploads were reviewed",
-    lede: "There's an update on one or more of your uploads.",
-    ctaPath: "/messages",
-    ctaLabel: "View updates",
+    lede: note
+      ? "There's an update on one or more of your uploads. The review team left a note:"
+      : "There's an update on one or more of your uploads.",
+    // Moderator-authored free text — escape before it reaches email HTML.
+    extraHtml: note ? emailQuote(escapeHtml(note)) : undefined,
+    extraText: note ? `"${note}"` : undefined,
+    ctaPath: "/creator/dashboard",
+    ctaLabel: "View uploads",
     whyReceiving: "You're receiving this because you have a Greenroom creator account.",
   });
 }

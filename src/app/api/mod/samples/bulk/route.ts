@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { buildSampleUpdateData } from "@/lib/sampleMetadata";
-import { notifyModerationSafe } from "@/lib/notifications";
+import { notifyModerationSafe, parseReviewNote } from "@/lib/notifications";
 
 const MAX_BULK = 500;
 
@@ -28,10 +28,11 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sampleIds, action, metadata } = body as {
+  const { sampleIds, action, metadata, reviewNote: rawReviewNote } = body as {
     sampleIds?: unknown;
     action?: "approve" | "reject" | "delete";
     metadata?: Record<string, unknown>;
+    reviewNote?: unknown;
   };
 
   if (!Array.isArray(sampleIds) || sampleIds.length === 0) {
@@ -62,10 +63,11 @@ export async function POST(req: NextRequest) {
 
       if (ready.length > 0) {
         // Reactivate on publish — a sent-back (isActive:false) sample that's
-        // revised and re-approved must go live again.
+        // revised and re-approved must go live again, and its old rejection
+        // reason no longer applies.
         await prisma.sample.updateMany({
           where: { id: { in: ready } },
-          data: { status: "PUBLISHED", isActive: true },
+          data: { status: "PUBLISHED", isActive: true, reviewNote: null },
         });
         await prisma.auditLog.createMany({
           data: ready.map((id) => ({
@@ -87,9 +89,16 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "reject") {
+      // One decision, one reason — it applies to the whole batch and is
+      // required, same as a single-sample reject.
+      const parsed = parseReviewNote("rejected", rawReviewNote);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+
       await prisma.sample.updateMany({
         where: { id: { in: foundIds } },
-        data: { status: "DRAFT", isActive: false },
+        data: { status: "DRAFT", isActive: false, reviewNote: parsed.note },
       });
       await prisma.auditLog.createMany({
         data: foundIds.map((id) => ({
@@ -97,19 +106,25 @@ export async function POST(req: NextRequest) {
           action: "SAMPLE_REJECTED",
           targetType: "Sample",
           targetId: id,
+          metadata: JSON.stringify({ reviewNote: parsed.note }),
         })),
       });
 
-      await notifyModerationSafe("sample", "rejected", samples);
+      await notifyModerationSafe("sample", "rejected", samples, parsed.note);
 
       return NextResponse.json({ updated: foundIds.length });
     }
 
     if (action === "delete") {
+      const parsed = parseReviewNote("removed", rawReviewNote);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+
       // Terminal takedown — mirror the single-sample DELETE behaviour.
       await prisma.sample.updateMany({
         where: { id: { in: foundIds } },
-        data: { isActive: false, status: "REMOVED" },
+        data: { isActive: false, status: "REMOVED", reviewNote: parsed.note },
       });
       await prisma.auditLog.createMany({
         data: foundIds.map((id) => ({
@@ -117,10 +132,11 @@ export async function POST(req: NextRequest) {
           action: "SAMPLE_DELETED",
           targetType: "Sample",
           targetId: id,
+          metadata: JSON.stringify({ reviewNote: parsed.note }),
         })),
       });
 
-      await notifyModerationSafe("sample", "removed", samples);
+      await notifyModerationSafe("sample", "removed", samples, parsed.note);
 
       return NextResponse.json({ updated: foundIds.length });
     }
