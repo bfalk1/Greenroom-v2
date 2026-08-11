@@ -27,6 +27,7 @@ import {
   Upload,
   Inbox,
   MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -106,6 +107,8 @@ interface PayoutCreator {
   email: string;
   username: string | null;
   name: string;
+  /** Where to send the money. Null = creator set none; approval is blocked. */
+  paypalEmail: string | null;
 }
 
 interface PayoutRequest {
@@ -1140,6 +1143,24 @@ export default function AdminDashboardPage() {
                         </div>
                       </div>
 
+                      {/* Destination — the address to actually send money to. */}
+                      <div className="mb-4 bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg px-4 py-3">
+                        <p className="text-xs text-[#a1a1a1] mb-1">
+                          Send via PayPal to
+                        </p>
+                        {payout.creator.paypalEmail ? (
+                          <p className="text-sm text-white font-medium break-all">
+                            {payout.creator.paypalEmail}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-yellow-400 inline-flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                            No PayPal email on file — the creator must add one
+                            before this can be approved.
+                          </p>
+                        )}
+                      </div>
+
                       <div className="mb-4">
                         <a
                           href={`/api/creator/payouts/${payout.id}/invoice`}
@@ -1187,8 +1208,16 @@ export default function AdminDashboardPage() {
                                   payout.netAmountUsd
                                 )
                               }
-                              disabled={processingPayoutId === payout.id}
-                              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140]"
+                              disabled={
+                                processingPayoutId === payout.id ||
+                                !payout.creator.paypalEmail
+                              }
+                              title={
+                                payout.creator.paypalEmail
+                                  ? undefined
+                                  : "Creator has no PayPal payout email on file"
+                              }
+                              className="flex-1 bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {processingPayoutId === payout.id ? (
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

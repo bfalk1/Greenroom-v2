@@ -84,13 +84,26 @@ export async function POST(_request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
-      select: { role: true, createdAt: true },
+      select: { role: true, createdAt: true, paypalEmail: true },
     });
 
     if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
       return NextResponse.json(
         { error: "Creator access required" },
         { status: 403 }
+      );
+    }
+
+    // No payout method, no payout. Payouts are sent by hand over PayPal, so a
+    // request without an address on file could never be fulfilled — reject it
+    // here rather than queueing work an admin can't action.
+    if (!dbUser.paypalEmail) {
+      return NextResponse.json(
+        {
+          error:
+            "Add the PayPal email you want payouts sent to before requesting a payout.",
+        },
+        { status: 400 }
       );
     }
 

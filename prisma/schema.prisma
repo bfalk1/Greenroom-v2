@@ -141,9 +141,13 @@ model User {
   flaggedBy          String?   @map("flagged_by") @db.Uuid
   isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
   customPayoutRate   Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
+  paypalEmail        String?   @map("paypal_email") // PayPal address the creator wants payouts sent to. Must be set before a payout can be requested, queued or approved.
   termsAcceptedAt    DateTime? @map("terms_accepted_at")
+  creatorWelcomeSeenAt DateTime? @map("creator_welcome_seen_at") // Set when a newly-approved creator dismisses the congratulations modal. Null on a CREATOR means the welcome is still pending; re-armed on re-approval.
   emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
   referralCode       String?   @unique @map("referral_code") // Personal referral code, allocated lazily on first use of the referral panel
+  metaFbc            String?   @map("meta_fbc") // Meta ad click id (fb.1.<ms>.<fbclid>), banked from the _fbc/gr_fbc cookies on authenticated page loads (/api/user/me). Checkout falls back to it when the live cookie jar carries no click id (cross-browser conversion, expired _fbc) — see withUserFbcFallback.
+  metaFbcUpdatedAt   DateTime? @map("meta_fbc_updated_at") // Freshness bound for metaFbc: the fallback ignores ids banked >90d ago (USER_FBC_MAX_AGE_MS).
   vipOfferUnlockedAt DateTime? @map("vip_offer_unlocked_at") // Set when a creator referral grants this account the VIP lifetime discount; honored by checkout as an unlock (alongside the gr_vip_offer cookie). Permanent, never-paid eligibility still applies.
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")

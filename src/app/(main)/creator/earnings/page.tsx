@@ -10,8 +10,11 @@ import {
   ShoppingCart,
   Loader2,
   Wallet,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { EarningsChart } from "@/components/creator/EarningsChart";
@@ -86,6 +89,11 @@ export default function CreatorEarningsPage() {
   const [feeConfig, setFeeConfig] = useState<PayoutFeeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
+  // PayPal address payouts are sent to. `paypalEmail` is what's saved on the
+  // account; `paypalInput` is the draft in the field.
+  const [paypalEmail, setPaypalEmail] = useState<string | null>(null);
+  const [paypalInput, setPaypalInput] = useState("");
+  const [savingPaypal, setSavingPaypal] = useState(false);
 
   const fetchEarnings = useCallback(async () => {
     try {
@@ -100,6 +108,9 @@ export default function CreatorEarningsPage() {
           payoutFeeBps: data.payoutInfo.payoutFeeBps ?? 0,
           payoutFeeFixedCents: data.payoutInfo.payoutFeeFixedCents ?? 0,
         });
+        const saved: string | null = data.payoutInfo.paypalEmail ?? null;
+        setPaypalEmail(saved);
+        setPaypalInput(saved ?? "");
       }
     } catch (error) {
       console.error("Error fetching earnings:", error);
@@ -108,6 +119,35 @@ export default function CreatorEarningsPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleSavePaypalEmail = async () => {
+    const value = paypalInput.trim();
+    if (!value) {
+      toast.error("Enter the PayPal email you want payouts sent to.");
+      return;
+    }
+    setSavingPaypal(true);
+    try {
+      const res = await fetch("/api/creator/payout-method", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paypalEmail: value }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save PayPal email");
+      }
+      setPaypalEmail(data.paypalEmail);
+      setPaypalInput(data.paypalEmail);
+      toast.success(`Payouts will be sent to ${data.paypalEmail}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save PayPal email"
+      );
+    } finally {
+      setSavingPaypal(false);
+    }
+  };
 
   const handleRequestPayout = async () => {
     setRequestingPayout(true);
@@ -173,8 +213,14 @@ export default function CreatorEarningsPage() {
     );
   }
 
-  const canRequestPayout =
-    stats && stats.unpaidEarnings - stats.pendingPayout >= PAYOUT_THRESHOLD;
+  const hasPayoutMethod = Boolean(paypalEmail);
+  const meetsThreshold = Boolean(
+    stats && stats.unpaidEarnings - stats.pendingPayout >= PAYOUT_THRESHOLD
+  );
+  // A payout can't be requested without somewhere to send it — the server
+  // enforces the same rule, this just keeps the button honest.
+  const canRequestPayout = meetsThreshold && hasPayoutMethod;
+  const paypalDirty = paypalInput.trim() !== (paypalEmail ?? "");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -257,6 +303,63 @@ export default function CreatorEarningsPage() {
           </div>
         </div>
 
+        {/* Payout Method — where the money is sent. Required before payout. */}
+        <div
+          className={`bg-[#1a1a1a] border rounded-lg p-6 mb-8 ${
+            hasPayoutMethod ? "border-[#2a2a2a]" : "border-yellow-500/40"
+          }`}
+        >
+          <div className="flex items-start gap-3 mb-1">
+            {hasPayoutMethod ? (
+              <CheckCircle2 className="w-5 h-5 text-[#39b54a] shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <h2 className="text-lg font-semibold text-white mb-1">
+                PayPal Email
+              </h2>
+              <p className="text-[#a1a1a1] text-sm">
+                {hasPayoutMethod ? (
+                  <>
+                    Payouts are sent to{" "}
+                    <span className="text-white font-medium">{paypalEmail}</span>
+                    . Make sure it&apos;s an address you can receive money at.
+                  </>
+                ) : (
+                  <>
+                    Add the PayPal email you want your money sent to. You
+                    can&apos;t request or receive a payout until this is set.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 mt-4">
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={paypalInput}
+              onChange={(e) => setPaypalInput(e.target.value)}
+              placeholder="you@example.com"
+              aria-label="PayPal email"
+              className="bg-[#0a0a0a] border-[#2a2a2a] text-white placeholder-[#666]"
+            />
+            <Button
+              onClick={handleSavePaypalEmail}
+              disabled={savingPaypal || !paypalDirty || !paypalInput.trim()}
+              className="bg-[#39b54a] text-black hover:bg-[#2e9140] disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            >
+              {savingPaypal && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              {hasPayoutMethod ? "Update" : "Save"}
+            </Button>
+          </div>
+        </div>
+
         {/* Payout Request */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 mb-8">
           <div className="flex items-center justify-between">
@@ -298,6 +401,18 @@ export default function CreatorEarningsPage() {
                           . An invoice is generated with your request.
                         </>
                       )}
+                  </>
+                ) : meetsThreshold && !hasPayoutMethod && stats ? (
+                  <>
+                    You have{" "}
+                    <span className="text-[#39b54a] font-medium">
+                      ${(stats.unpaidEarnings - stats.pendingPayout).toFixed(2)}
+                    </span>{" "}
+                    ready, but no payout destination.{" "}
+                    <span className="text-yellow-400">
+                      Add your PayPal email above
+                    </span>{" "}
+                    to request it.
                   </>
                 ) : stats && stats.pendingPayout > 0 ? (
                   <>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { nanoid } from "nanoid";
-import { Prisma } from "@prisma/client";
+import { Prisma, PresetCategory, SynthName } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredImage, removeObject } from "@/lib/storageValidate";
 
@@ -36,8 +36,10 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || "";
-    const synthName = searchParams.get("synthName") || "";
-    const category = searchParams.get("category") || "";
+    const synthRaw = searchParams.get("synthName") || "";
+    const synthName = synthRaw === "all" || synthRaw in SynthName ? synthRaw : "";
+    const categoryRaw = searchParams.get("category") || "";
+    const category = categoryRaw === "all" || categoryRaw in PresetCategory ? categoryRaw : "";
     const genre = searchParams.get("genre") || "";
     const sortBy = searchParams.get("sortBy") || "popular";
     const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
@@ -138,12 +140,12 @@ export async function GET(request: NextRequest) {
         paramIndex += 2;
       }
       if (synthName && synthName !== "all") {
-        conditions.push(`p.synth_name = $${paramIndex}`);
+        conditions.push(`p.synth_name = $${paramIndex}::"SynthName"`);
         filterParams.push(synthName);
         paramIndex++;
       }
       if (category && category !== "all") {
-        conditions.push(`p.preset_category = $${paramIndex}`);
+        conditions.push(`p.preset_category = $${paramIndex}::"PresetCategory"`);
         filterParams.push(category);
         paramIndex++;
       }

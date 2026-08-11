@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { recordReferralForNewUser } from "@/lib/referral";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
+import { fbcClickTimeMs, fbcFromCookies } from "@/lib/metaCapiServer";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET() {
@@ -318,8 +320,51 @@ export async function GET() {
       }
     }
 
+    // Bank the freshest Meta ad click id on the account. Checkout-time fbc
+    // capture is cookie-jar-bound — an ad click in the Instagram in-app
+    // browser followed by a purchase on desktop, or any checkout after
+    // Safari's 7-day expiry of the JS-set _fbc, reaches the checkout POST
+    // with no click id at all (measured at ~86% of prod checkouts). This
+    // route runs on every authenticated page load, so the id is banked at
+    // first login and refreshed by later ad clicks; checkout recovers it via
+    // withUserFbcFallback when the live cookies are gone. LATEST CLICK WINS:
+    // the click-time comparison stops a 60-day-old cookie in a second
+    // browser's jar from clobbering a newer banked click. Writes only when
+    // the value actually changed (~once per ad click, free otherwise) and
+    // never fails the request over attribution.
+    const cookieStore = await cookies();
+    const cookieFbc = fbcFromCookies((name) => cookieStore.get(name)?.value);
+    if (
+      cookieFbc &&
+      cookieFbc !== user.metaFbc &&
+      fbcClickTimeMs(cookieFbc) >= fbcClickTimeMs(user.metaFbc)
+    ) {
+      await prisma.user
+        .update({
+          where: { id: user.id },
+          data: { metaFbc: cookieFbc, metaFbcUpdatedAt: new Date() },
+        })
+        .catch((error) =>
+          console.error("Failed to bank Meta click id:", error)
+        );
+    }
+
     const credits = user.creditBalance?.balance ?? 0;
     const subscriptionStatus = user.subscriptionStatus ?? "none";
+    const isCreator = user.role === "CREATOR" || user.role === "ADMIN";
+
+    // A freshly-approved creator gets a one-time congratulations modal
+    // (CreatorWelcomeModal), which tells them whether they still have nothing
+    // uploaded. Only count while the welcome is actually pending — every other
+    // request (i.e. essentially all of them) pays no extra query.
+    let creatorContentCount: number | null = null;
+    if (isCreator && !user.creatorWelcomeSeenAt) {
+      const [sampleCount, presetCount] = await Promise.all([
+        prisma.sample.count({ where: { creatorId: user.id } }),
+        prisma.preset.count({ where: { creatorId: user.id } }),
+      ]);
+      creatorContentCount = sampleCount + presetCount;
+    }
 
     return NextResponse.json({
       user: {
@@ -327,7 +372,7 @@ export async function GET() {
         email: user.email,
         credits,
         subscription_status: subscriptionStatus,
-        is_creator: user.role === "CREATOR" || user.role === "ADMIN",
+        is_creator: isCreator,
         role: user.role,
         full_name: user.fullName,
         username: user.username,
@@ -339,6 +384,8 @@ export async function GET() {
         banner_url: user.bannerUrl,
         is_whitelisted: user.isWhitelisted ?? false,
         terms_accepted_at: user.termsAcceptedAt,
+        creator_welcome_seen_at: user.creatorWelcomeSeenAt,
+        creator_content_count: creatorContentCount,
         // Feeds Meta Pixel Advanced Matching client-side (UserContext →
         // metaSetAdvancedMatching). Sparse — the profile address is optional.
         city: user.city,
@@ -374,6 +421,7 @@ export async function PATCH(request: NextRequest) {
       avatar_url,
       banner_url,
       terms_accepted_at,
+      creator_welcome_seen_at,
     } = body;
 
     // Validate username if provided
@@ -455,6 +503,9 @@ export async function PATCH(request: NextRequest) {
     if (avatar_url !== undefined) updateData.avatarUrl = avatar_url;
     if (banner_url !== undefined) updateData.bannerUrl = banner_url;
     if (terms_accepted_at !== undefined) updateData.termsAcceptedAt = new Date(terms_accepted_at);
+    // Dismissal of the creator welcome modal. Server-stamped — the client only
+    // signals "seen", it doesn't get to choose the timestamp.
+    if (creator_welcome_seen_at !== undefined) updateData.creatorWelcomeSeenAt = new Date();
 
     const user = await prisma.user.update({
       where: { id: authUser.id },
