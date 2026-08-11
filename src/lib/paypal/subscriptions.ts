@@ -18,7 +18,10 @@ import {
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
-import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
+import {
+  VIP_LIFETIME_OFFER,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 
 const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
   GA: process.env.PAYPAL_GA_PLAN_ID?.trim(),
@@ -33,6 +36,16 @@ const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
 // fails closed rather than billing full price.
 const VIP_LIFETIME_PLAN_ID = process.env.PAYPAL_VIP_LIFETIME_PLAN_ID?.trim();
 
+// "$5.99 first month" VIP intro plan for the public /promo + /pricing offer.
+// PayPal can't apply a one-time coupon to a subscription, so the discount is a
+// separate billing plan created in the PayPal dashboard: a paid TRIAL cycle
+// (1 cycle at $5.99) followed by the REGULAR cycle at the full VIP price
+// ($17.99). The trial cycle's charge still fires PAYMENT.SALE.COMPLETED, so
+// the normal per-sale credit grant covers month one. Empty when not
+// configured → the checkout route fails closed rather than billing full price.
+const VIP_FIRST_MONTH_PLAN_ID =
+  process.env.PAYPAL_VIP_FIRST_MONTH_PLAN_ID?.trim();
+
 export function paypalPlanIdForTier(tierName: string): string | null {
   return PLAN_ENV_BY_TIER[tierName] ?? null;
 }
@@ -41,11 +54,17 @@ export function paypalVipLifetimePlanId(): string | null {
   return VIP_LIFETIME_PLAN_ID ?? null;
 }
 
+export function paypalVipFirstMonthPlanId(): string | null {
+  return VIP_FIRST_MONTH_PLAN_ID ?? null;
+}
+
 export function tierNameForPaypalPlan(planId: string): string | null {
-  // The discounted lifetime plan grants the SAME VIP tier — only the price
-  // differs — so it must resolve to VIP for credit grants + subscription sync,
-  // or a lifetime subscriber's payments wouldn't map to any tier.
+  // The discounted lifetime/first-month plans grant the SAME VIP tier — only
+  // the price differs — so they must resolve to VIP for credit grants +
+  // subscription sync, or those subscribers' payments wouldn't map to any tier.
   if (VIP_LIFETIME_PLAN_ID && planId === VIP_LIFETIME_PLAN_ID) return "VIP";
+  if (VIP_FIRST_MONTH_PLAN_ID && planId === VIP_FIRST_MONTH_PLAN_ID)
+    return "VIP";
   for (const [tierName, id] of Object.entries(PLAN_ENV_BY_TIER)) {
     if (id && id === planId) return tierName;
   }
@@ -358,13 +377,15 @@ export async function syncPaypalSubscription(
     remote.periodEnd ??
     new Date(remote.periodStart.getTime() + 1000 * 60 * 60 * 24 * 31);
 
-  // Attribution: the discounted lifetime plan is the only way this planId can
-  // appear, so it marks the row (and the analytics event) as a /vip
+  // Attribution: the discounted plans are the only way these planIds can
+  // appear, so each marks the row (and the analytics event) as its offer's
   // conversion. Full-price plans stay unattributed rather than guessing.
   const acquisitionSource =
     VIP_LIFETIME_PLAN_ID && remote.planId === VIP_LIFETIME_PLAN_ID
       ? "vip-lifetime"
-      : null;
+      : VIP_FIRST_MONTH_PLAN_ID && remote.planId === VIP_FIRST_MONTH_PLAN_ID
+        ? "vip-first-month"
+        : null;
 
   // "First activation" = the row didn't exist or belonged to a different
   // subscription; renewals and status syncs of the same sub don't re-fire the
@@ -462,13 +483,16 @@ export async function syncPaypalSubscription(
         userId,
         email: user.email,
         tier: tier.name,
-        // The discounted lifetime plan charges $11.99, which no DB row
-        // records (the discount lives in the PayPal plan itself) — the
-        // display config mirrors it and is the best server-side source.
+        // A discounted plan's charge is on no DB row (the discount lives in
+        // the PayPal plan itself) — the display config mirrors it and is the
+        // best server-side source. First-month uses the intro price: this
+        // Purchase fires once, at activation, when $5.99 is what was paid.
         valueUsdCents:
           acquisitionSource === "vip-lifetime"
             ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
-            : tier.priceUsdCents,
+            : acquisitionSource === "vip-first-month"
+              ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
+              : tier.priceUsdCents,
         transactionId: subscriptionId,
         identity: capiIdentityFromProfile(user),
         // The row's checkout-time signals, with the account-banked click id

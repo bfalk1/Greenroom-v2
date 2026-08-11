@@ -140,7 +140,7 @@ export async function updateSession(request: NextRequest) {
   // NOTE: "/explore" is a REMOVED route kept in this allowlist on purpose — it
   // lets the deleted path fall through to Next's 404 for everyone instead of the
   // auth gate bouncing anonymous visitors to /login (a hard 404, not a redirect).
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||

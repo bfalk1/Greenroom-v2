@@ -53,6 +53,22 @@ export const VIP_LIFETIME_OFFER = {
   priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
 } as const;
 
+// Public "$5.99 first month" VIP intro offer, surfaced on /promo and the
+// /pricing VIP card. The subscription rides the normal VIP price/plan — the
+// discount covers ONLY the first billing cycle (Stripe: a duration-"once"
+// coupon; PayPal: a dedicated plan with a discounted first cycle), then renews
+// at the full VIP price. New-member offer: same never-PAID eligibility rule as
+// the lifetime offer (src/lib/lifetimeEligibility.ts), enforced server-side.
+// These values are display-only and must mirror the VIP package price above +
+// the coupon/plan amounts in Stripe/PayPal.
+export const VIP_FIRST_MONTH_OFFER = {
+  tierName: "VIP",
+  credits: 200,
+  regularPrice: 17.99,
+  firstMonthPrice: 5.99,
+  priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
+} as const;
+
 export const PUBLIC_CREDIT_PACKAGES = [
   {
     credits: 50,

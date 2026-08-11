@@ -6,11 +6,15 @@ import {
   createPaypalSubscription,
   paypalPlanIdForTier,
   paypalVipLifetimePlanId,
+  paypalVipFirstMonthPlanId,
   paypalSubscriptionsConfigured,
 } from "@/lib/paypal/subscriptions";
 import { resolveCanadaTax, taxCollectionEnabled } from "@/lib/tax/canadaRates";
 import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
-import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
+import {
+  VIP_LIFETIME_OFFER,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
@@ -47,7 +51,8 @@ export async function POST(request: Request) {
       return tooManyRequests();
     }
 
-    const { tierName, country, region, lifetime } = await request.json();
+    const { tierName, country, region, lifetime, firstMonth } =
+      await request.json();
 
     // Same guard as Stripe checkout: only active tiers, and the plan id must
     // come from our env mapping — never from the client.
@@ -75,6 +80,7 @@ export async function POST(request: Request) {
     // tier must be VIP, and the discounted plan must be configured. Fail closed
     // rather than billing the full price on a mismatch.
     let isLifetime = false;
+    let isFirstMonth = false;
     if (lifetime === true) {
       const store = await cookies();
       const unlocked =
@@ -105,6 +111,30 @@ export async function POST(request: Request) {
       }
       planId = lifetimePlan;
       isLifetime = true;
+    } else if (firstMonth === true) {
+      // Public "$5.99 first month" VIP intro offer — swap in the dedicated
+      // intro plan (discounted paid-trial first cycle, then full price). No
+      // unlock cookie (the offer is public) but the same fail-closed shape as
+      // lifetime: VIP only, plan must be configured, and the never-PAID rule
+      // below applies.
+      const firstMonthPlan = paypalVipFirstMonthPlanId();
+      if (tier.name !== "VIP") {
+        return NextResponse.json(
+          { error: "The first-month offer applies to the VIP plan only." },
+          { status: 400 }
+        );
+      }
+      if (!firstMonthPlan) {
+        console.error(
+          "First-month VIP PayPal checkout requested but PAYPAL_VIP_FIRST_MONTH_PLAN_ID is not set"
+        );
+        return NextResponse.json(
+          { error: "The intro offer is temporarily unavailable." },
+          { status: 503 }
+        );
+      }
+      planId = firstMonthPlan;
+      isFirstMonth = true;
     }
 
     // One subscription per user across BOTH providers. An existing Stripe sub
@@ -132,17 +162,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // The lifetime offer is for accounts that have never PAID — a
+    // BOTH discounted offers are for accounts that have never PAID — a
     // provider-backed subscription row disqualifies; beta comps (flag only, no
     // row) stay eligible. The active/past_due case is already handled above.
     // Shared rule with /api/user/subscription and the Stripe checkout route
     // via isLifetimeEligible; enforced server-side so a direct API call can't
     // bypass the client gate.
-    if (isLifetime && !(await isLifetimeEligible(dbUser.id))) {
+    if ((isLifetime || isFirstMonth) && !(await isLifetimeEligible(dbUser.id))) {
       return NextResponse.json(
         {
-          error:
-            "The lifetime offer is for members without a prior paid subscription.",
+          error: isFirstMonth
+            ? "The first-month offer is for members without a prior paid subscription."
+            : "The lifetime offer is for members without a prior paid subscription.",
         },
         { status: 409 }
       );
@@ -185,15 +216,18 @@ export async function POST(request: Request) {
       planId,
       userId: dbUser.id,
       taxPercent,
-      // lifetime=1 tells the return route where "cancel/back out" should land
-      // (back on the offer, not full-price /pricing). PayPal appends its own
-      // params (subscription_id, ba_token) to whatever query is here.
+      // lifetime=1 / promo=1 tell the return route where "cancel/back out"
+      // should land (back on the offer, not full-price /pricing). PayPal
+      // appends its own params (subscription_id, ba_token) to whatever query
+      // is here.
       returnUrl: `${appUrl}/api/subscription/checkout-paypal/return${
-        isLifetime ? "?lifetime=1" : ""
+        isLifetime ? "?lifetime=1" : isFirstMonth ? "?promo=1" : ""
       }`,
       cancelUrl: isLifetime
         ? `${appUrl}/vip?canceled=true`
-        : `${appUrl}/pricing?canceled=true`,
+        : isFirstMonth
+          ? `${appUrl}/promo?canceled=true`
+          : `${appUrl}/pricing?canceled=true`,
     });
 
     if (!subscription.approveUrl) {
@@ -245,12 +279,14 @@ export async function POST(request: Request) {
       userId: dbUser.id,
       email: dbUser.email,
       tier: tier.name,
-      // Lifetime rides a dedicated discounted PayPal plan whose charge no DB
+      // Discounted offers ride dedicated PayPal plans whose charge no DB
       // row records — the display config mirrors it (same source the PayPal
       // activation's metaCapiPurchase uses).
       valueUsdCents: isLifetime
         ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
-        : tier.priceUsdCents,
+        : isFirstMonth
+          ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
+          : tier.priceUsdCents,
       transactionId: subscription.id,
       identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,

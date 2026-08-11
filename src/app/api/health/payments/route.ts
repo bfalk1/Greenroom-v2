@@ -5,8 +5,9 @@ import { isPaypalConfigured, paypalFetch } from "@/lib/paypal/client";
 import {
   paypalPlanIdForTier,
   paypalVipLifetimePlanId,
+  paypalVipFirstMonthPlanId,
 } from "@/lib/paypal/subscriptions";
-import { vipLifetimeCouponId } from "@/lib/vipOffer";
+import { vipLifetimeCouponId, vipFirstMonthCouponId } from "@/lib/vipOffer";
 
 // Payments config preflight: validates every env-driven payment dependency
 // against the LIVE provider APIs and reports pass/fail per check. Exists
@@ -57,26 +58,34 @@ async function checkStripePrice(
   }
 }
 
-async function checkStripeCoupon(): Promise<CheckResult> {
-  const check = "stripe lifetime coupon";
-  const id = vipLifetimeCouponId();
-  if (!id) return { check, status: "fail", detail: "STRIPE_VIP_LIFETIME_COUPON_ID unset" };
+// requiredDuration is offer-critical, not cosmetic: "forever" is what makes
+// the lifetime price a lock, and "once" is what returns the first-month offer
+// to full price on renewal — the wrong duration silently mis-bills every
+// discounted subscriber.
+async function checkStripeCoupon(
+  name: string,
+  envVar: string,
+  id: string,
+  requiredDuration: "forever" | "once"
+): Promise<CheckResult> {
+  const check = `stripe ${name} coupon`;
+  if (!id) return { check, status: "fail", detail: `${envVar} unset` };
   try {
     const coupon = await stripe.coupons.retrieve(id);
     if (!coupon.valid) {
       // Exactly the July 2026 failure: coupon exists but expired/maxed —
-      // every lifetime card checkout dies at session creation.
+      // every discounted card checkout dies at session creation.
       return {
         check,
         status: "fail",
         detail: `${id} exists but is not valid (expired or max redemptions reached)`,
       };
     }
-    if (coupon.duration !== "forever") {
+    if (coupon.duration !== requiredDuration) {
       return {
         check,
         status: "fail",
-        detail: `${id} duration is "${coupon.duration}" — the lifetime price lock requires "forever"`,
+        detail: `${id} duration is "${coupon.duration}" — the ${name} offer requires "${requiredDuration}"`,
       };
     }
     return { check, status: "pass", detail: id };
@@ -172,7 +181,22 @@ export async function GET(request: NextRequest) {
         });
       }
     }
-    results.push(await checkStripeCoupon());
+    results.push(
+      await checkStripeCoupon(
+        "lifetime",
+        "STRIPE_VIP_LIFETIME_COUPON_ID",
+        vipLifetimeCouponId(),
+        "forever"
+      )
+    );
+    results.push(
+      await checkStripeCoupon(
+        "first-month",
+        "STRIPE_VIP_FIRST_MONTH_COUPON_ID",
+        vipFirstMonthCouponId(),
+        "once"
+      )
+    );
   } else {
     results.push({
       check: "stripe",
@@ -181,13 +205,16 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // PayPal: auth + all four plans.
+  // PayPal: auth + all five plans.
   if (isPaypalConfigured()) {
     results.push(await checkPaypalPlan("GA", paypalPlanIdForTier("GA")));
     results.push(await checkPaypalPlan("VIP", paypalPlanIdForTier("VIP")));
     results.push(await checkPaypalPlan("AA", paypalPlanIdForTier("AA")));
     results.push(
       await checkPaypalPlan("VIP lifetime", paypalVipLifetimePlanId())
+    );
+    results.push(
+      await checkPaypalPlan("VIP first-month", paypalVipFirstMonthPlanId())
     );
   } else {
     results.push({

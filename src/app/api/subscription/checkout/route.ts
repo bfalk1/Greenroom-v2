@@ -5,8 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { stripeTaxCheckoutParams, tierNameForStripePrice } from "@/lib/stripe/config";
-import { VIP_OFFER_COOKIE, vipLifetimeCouponId, verifyVipUnlock } from "@/lib/vipOffer";
-import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
+import {
+  VIP_OFFER_COOKIE,
+  vipLifetimeCouponId,
+  vipFirstMonthCouponId,
+  verifyVipUnlock,
+} from "@/lib/vipOffer";
+import {
+  VIP_LIFETIME_OFFER,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 import { isLifetimeEligible } from "@/lib/lifetimeEligibility";
 import {
   capiAttributionFromRequest,
@@ -27,7 +35,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { priceId, lifetime } = await request.json();
+    const { priceId, lifetime, firstMonth } = await request.json();
 
     if (!priceId) {
       return NextResponse.json(
@@ -82,6 +90,7 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
 
     let discountCoupon: string | null = null;
+    let acquisitionSource: string | null = null;
     if (lifetime === true) {
       const unlocked =
         verifyVipUnlock(cookieStore.get(VIP_OFFER_COOKIE)?.value) ||
@@ -110,6 +119,32 @@ export async function POST(request: Request) {
         );
       }
       discountCoupon = coupon;
+      acquisitionSource = "vip-lifetime";
+    } else if (firstMonth === true) {
+      // Public "$5.99 first month" VIP intro offer (/promo + /pricing). No
+      // unlock cookie — the offer is public — but the same fail-closed shape
+      // as lifetime: VIP only, coupon must be configured, and (below, shared
+      // with lifetime) the buyer must never have PAID. The coupon's
+      // duration:"once" is what keeps renewals at full price; the payments
+      // preflight (/api/health/payments) verifies that.
+      const coupon = vipFirstMonthCouponId();
+      if (tier.name !== "VIP") {
+        return NextResponse.json(
+          { error: "The first-month offer applies to the VIP plan only." },
+          { status: 400 }
+        );
+      }
+      if (!coupon) {
+        console.error(
+          "First-month VIP checkout requested but STRIPE_VIP_FIRST_MONTH_COUPON_ID is not set"
+        );
+        return NextResponse.json(
+          { error: "The intro offer is temporarily unavailable." },
+          { status: 503 }
+        );
+      }
+      discountCoupon = coupon;
+      acquisitionSource = "vip-first-month";
     }
 
     // Cross-provider guard: a live PayPal subscription must not be joined by
@@ -135,16 +170,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // The lifetime offer is for accounts that have never PAID — a
-    // provider-backed subscription row disqualifies; beta comps (flag only, no
-    // row) stay eligible. Shared rule with /api/user/subscription via
-    // isLifetimeEligible so the UI's verdict always matches this enforcement.
-    // Enforced server-side so a direct API call can't bypass the client gate.
+    // BOTH discounts are for accounts that have never PAID — a provider-backed
+    // subscription row disqualifies; beta comps (flag only, no row) stay
+    // eligible. Shared rule with /api/user/subscription via isLifetimeEligible
+    // so the UI's verdict always matches this enforcement. Enforced
+    // server-side so a direct API call can't bypass the client gate.
     if (discountCoupon && !(await isLifetimeEligible(dbUser.id))) {
       return NextResponse.json(
         {
           error:
-            "The lifetime offer is for members without a prior paid subscription.",
+            acquisitionSource === "vip-first-month"
+              ? "The first-month offer is for members without a prior paid subscription."
+              : "The lifetime offer is for members without a prior paid subscription.",
         },
         { status: 409 }
       );
@@ -180,7 +217,6 @@ export async function POST(request: Request) {
     // IP, user agent) to the server-side Meta CAPI Purchase fired at
     // activation — this request is the last moment they exist; the webhook
     // and reconcile cron only ever see provider-originated requests.
-    const acquisitionSource = discountCoupon ? "vip-lifetime" : null;
     // Live cookies first; when the click id is gone from this jar (the ad
     // click happened in another browser, or _fbc expired), recover the one
     // /api/user/me banked on the account — it rides into the session and
@@ -211,9 +247,14 @@ export async function POST(request: Request) {
       ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
       ...stripeTaxCheckoutParams(),
       success_url: `${appUrl}/checkout/complete?provider=stripe&tier=${encodeURIComponent(tier.name)}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: discountCoupon
-        ? `${appUrl}/vip?canceled=true`
-        : `${appUrl}/pricing?canceled=true`,
+      // Back out lands on the page that made the offer — leaking a discounted
+      // buyer into full-price /pricing quietly costs them the deal.
+      cancel_url:
+        acquisitionSource === "vip-lifetime"
+          ? `${appUrl}/vip?canceled=true`
+          : acquisitionSource === "vip-first-month"
+            ? `${appUrl}/promo?canceled=true`
+            : `${appUrl}/pricing?canceled=true`,
     });
 
     // Server-side AddPaymentInfo (CAPI): the buyer just committed to Stripe.
@@ -223,12 +264,15 @@ export async function POST(request: Request) {
       userId: dbUser.id,
       email: dbUser.email,
       tier: tier.name,
-      // The committed price: the lifetime coupon's discounted charge isn't on
-      // any DB row (it lives in the Stripe coupon) — the display config
-      // mirrors it, same source metaCapiPurchase uses at activation.
-      valueUsdCents: discountCoupon
-        ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
-        : tier.priceUsdCents,
+      // The committed price: a coupon's discounted charge isn't on any DB row
+      // (it lives in the Stripe coupon) — the display config mirrors it, same
+      // source metaCapiPurchase uses at activation.
+      valueUsdCents:
+        acquisitionSource === "vip-lifetime"
+          ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
+          : acquisitionSource === "vip-first-month"
+            ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
+            : tier.priceUsdCents,
       transactionId: session.id,
       identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,

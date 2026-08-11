@@ -5,7 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
-import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
+import {
+  PUBLIC_SUBSCRIPTION_PACKAGES,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
 import {
   trackPaywallViewed,
@@ -38,6 +41,14 @@ function PricingContent() {
   // Which provider owns the user's current subscription (null = none) —
   // decides whether PayPal buttons subscribe, switch plans, or hide.
   const [subProvider, setSubProvider] = useState<string | null>(null);
+  // Server never-PAID verdict for the $5.99-first-month VIP offer (same rule
+  // /checkout and the checkout APIs use). null = anonymous or still loading —
+  // treated as eligible below (most /pricing traffic is anonymous ad-clickers,
+  // and the server re-verifies before charging), so only a confirmed "false"
+  // hides the offer.
+  const [firstMonthEligible, setFirstMonthEligible] = useState<boolean | null>(
+    null
+  );
   const { user, loading: userLoading, error: userError } = useUser();
   const searchParams = useSearchParams();
 
@@ -98,12 +109,18 @@ function PricingContent() {
     }
   }, [searchParams]);
 
-  // Load which provider owns the active subscription (for PayPal buttons).
+  // Load which provider owns the active subscription (for PayPal buttons) and
+  // the first-month-offer eligibility verdict.
   useEffect(() => {
     if (!user) return;
     fetch("/api/user/subscription")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setSubProvider(data?.subscription?.provider ?? null))
+      .then((data) => {
+        setSubProvider(data?.subscription?.provider ?? null);
+        if (typeof data?.lifetimeEligible === "boolean") {
+          setFirstMonthEligible(data.lifetimeEligible);
+        }
+      })
       .catch(() => {});
   }, [user]);
 
@@ -141,6 +158,13 @@ function PricingContent() {
   const hasActiveSub =
     user?.subscription_status === "active" ||
     user?.subscription_status === "past_due";
+
+  // The $5.99-first-month VIP offer, shown on the VIP card. Hidden for active
+  // subscribers (their CTA is "Change Plan" — plan changes never carry the
+  // intro price) and for accounts the server confirmed have already paid.
+  // Everyone else — anonymous visitors included — sees it; the checkout APIs
+  // re-verify eligibility before any charge.
+  const showFirstMonthOffer = !hasActiveSub && firstMonthEligible !== false;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -203,7 +227,11 @@ function PricingContent() {
 
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => (
+          {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => {
+            const firstMonthCard =
+              pkg.tierName === VIP_FIRST_MONTH_OFFER.tierName &&
+              showFirstMonthOffer;
+            return (
             <div
               key={pkg.name}
               className={`relative rounded-2xl border transition-all ${
@@ -215,7 +243,9 @@ function PricingContent() {
               {pkg.highlighted && (
                 <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                   <span className="bg-[#39b54a] text-black text-sm font-semibold px-4 py-1 rounded-full">
-                    Most Popular
+                    {firstMonthCard
+                      ? `First month $${VIP_FIRST_MONTH_OFFER.firstMonthPrice}`
+                      : "Most Popular"}
                   </span>
                 </div>
               )}
@@ -228,12 +258,31 @@ function PricingContent() {
                 <p className="text-sm text-[#39b54a] mb-4">
                   Monthly Subscription
                 </p>
-                <div className="flex items-baseline gap-2 mb-6">
-                  <span className="text-5xl font-bold text-white">
-                    ${pkg.price}
-                  </span>
-                  <span className="text-[#a1a1a1]">/month</span>
-                </div>
+                {firstMonthCard ? (
+                  <div className="mb-6">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-semibold text-[#6a6a6a] line-through">
+                        ${pkg.price}
+                      </span>
+                      <span className="text-5xl font-bold text-white">
+                        ${VIP_FIRST_MONTH_OFFER.firstMonthPrice}
+                      </span>
+                      <span className="text-sm text-[#a1a1a1] whitespace-nowrap">
+                        first month
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-[#39b54a]">
+                      Then ${pkg.price}/month · cancel anytime
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-2 mb-6">
+                    <span className="text-5xl font-bold text-white">
+                      ${pkg.price}
+                    </span>
+                    <span className="text-[#a1a1a1]">/month</span>
+                  </div>
+                )}
 
                 {/* Credits */}
                 <div className="bg-[#0a0a0a] rounded-lg p-4 mb-6 border border-[#2a2a2a]">
@@ -266,8 +315,11 @@ function PricingContent() {
                     trackPricingPlanSelected(pkg.tierName, {
                       signedIn: Boolean(user || userError),
                       destination: "checkout",
+                      firstMonth: firstMonthCard,
                     });
-                    router.push(`/checkout?tier=${pkg.tierName}`);
+                    router.push(
+                      `/checkout?tier=${pkg.tierName}${firstMonthCard ? "&promo=1" : ""}`
+                    );
                   }}
                   disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
                   className={`w-full py-3 font-semibold ${
@@ -288,11 +340,14 @@ function PricingContent() {
                 </Button>
 
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">
-                  Billed monthly
+                  {firstMonthCard
+                    ? `$${VIP_FIRST_MONTH_OFFER.firstMonthPrice} today, then $${pkg.price}/month`
+                    : "Billed monthly"}
                 </p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* FAQ Section */}

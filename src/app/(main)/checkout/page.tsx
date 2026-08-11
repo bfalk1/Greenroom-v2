@@ -8,6 +8,7 @@ import { ArrowLeft, Check, CreditCard, Loader2, Zap } from "lucide-react";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
   VIP_LIFETIME_OFFER,
+  VIP_FIRST_MONTH_OFFER,
 } from "@/lib/stripe/publicPriceConfig";
 import {
   CA_PROVINCES,
@@ -88,29 +89,35 @@ function CheckoutContent() {
   // authenticated session whose /api/user/me load failed (handled below).
   const anonymous = !user && !userLoading && !userError;
 
-  // checkout_viewed fires once, after auth state and (for signed-in lifetime
-  // buyers) the eligibility verdict resolve — so the event carries whether the
-  // buyer saw $11.99 or the ineligible fallback. Anonymous visitors have no
-  // verdict (the eligibility API needs a session): fires with null.
+  // checkout_viewed fires once, after auth state and (for signed-in
+  // discounted-offer buyers) the eligibility verdict resolve — so the event
+  // carries whether the buyer saw the discount or the ineligible fallback.
+  // Anonymous visitors have no verdict (the eligibility API needs a session):
+  // fires with null.
   const viewTracked = useRef(false);
   useEffect(() => {
     if (viewTracked.current || !pkg || userLoading) return;
     const lt = searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
+    const fm =
+      !lt && searchParams.get("promo") === "1" && pkg.tierName === "VIP";
     const anon = !user && !userError;
-    if (lt && !anon && lifetimeEligible === null) return;
+    if ((lt || fm) && !anon && lifetimeEligible === null) return;
     viewTracked.current = true;
     // The price on screen at this moment — same rule as the render's
-    // applyLifetime below (anonymous lifetime visitors see the discounted
-    // price optimistically; the guard above already waited out a signed-in
-    // buyer's pending verdict).
+    // applyLifetime/applyFirstMonth below (anonymous offer visitors see the
+    // discounted price optimistically; the guard above already waited out a
+    // signed-in buyer's pending verdict).
     const shownPrice =
-      lt && (anon || lifetimeEligible === true)
-        ? VIP_LIFETIME_OFFER.lifetimePrice
+      (lt || fm) && (anon || lifetimeEligible === true)
+        ? lt
+          ? VIP_LIFETIME_OFFER.lifetimePrice
+          : VIP_FIRST_MONTH_OFFER.firstMonthPrice
         : pkg.price;
     trackCheckoutViewed({
       tier: pkg.tierName,
       lifetime: lt,
-      lifetimeEligible: lt ? lifetimeEligible : null,
+      firstMonth: fm,
+      lifetimeEligible: lt || fm ? lifetimeEligible : null,
       signedIn: !anon,
       valueUsdCents: Math.round(shownPrice * 100),
     });
@@ -167,31 +174,42 @@ function CheckoutContent() {
     sub != null && (sub.status === "ACTIVE" || sub.status === "PAST_DUE");
   const samePlan = hasActiveSub && sub!.tierName === pkg.tierName;
 
-  // Lifetime VIP offer (arrived via /vip → /checkout?tier=VIP&lifetime=1). The
-  // discount is authorized server-side from the gr_vip_offer unlock cookie —
-  // here we just show the discounted price and pass the flag through.
-  // Eligibility is the server's never-PAID verdict from /api/user/subscription
-  // (same rule the checkout APIs enforce via isLifetimeEligible), NOT the
+  // Discounted VIP offers: lifetime (arrived via /vip →
+  // /checkout?tier=VIP&lifetime=1, authorized server-side from the
+  // gr_vip_offer unlock cookie) and the public $5.99 first month (arrived via
+  // /promo or /pricing → ?tier=VIP&promo=1, no unlock needed). Here we just
+  // show the discounted price and pass the flag through; lifetime wins if
+  // both flags are somehow present. Eligibility (shared by both offers) is
+  // the server's never-PAID verdict from /api/user/subscription (same rule
+  // the checkout APIs enforce via isLifetimeEligible), NOT the
   // subscription_status flag — that flag is set by beta comps and has drifted
   // stale before, which wrongly showed full price to eligible buyers. While
   // the verdict is loading (null) the price area renders a skeleton.
   // Anonymous visitors can't be checked (the API needs a session) but a
-  // brand-new account is never-paid by definition, so show the lifetime price;
-  // signing IN to an existing account re-resolves the real verdict, and the
-  // checkout APIs refuse (not full-charge) an unauthorized lifetime request.
+  // brand-new account is never-paid by definition, so show the discounted
+  // price; signing IN to an existing account re-resolves the real verdict,
+  // and the checkout APIs refuse (not full-charge) an unauthorized request.
   const isLifetime =
     searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
-  const lifetimeVerdict = anonymous ? true : lifetimeEligible;
-  const applyLifetime = isLifetime && lifetimeVerdict === true;
-  const lifetimeUndetermined = isLifetime && lifetimeVerdict === null;
-  const price = applyLifetime ? VIP_LIFETIME_OFFER.lifetimePrice : pkg.price;
+  const isFirstMonth =
+    !isLifetime && searchParams.get("promo") === "1" && pkg.tierName === "VIP";
+  const offerVerdict = anonymous ? true : lifetimeEligible;
+  const applyLifetime = isLifetime && offerVerdict === true;
+  const applyFirstMonth = isFirstMonth && offerVerdict === true;
+  const offerUndetermined =
+    (isLifetime || isFirstMonth) && offerVerdict === null;
+  const price = applyLifetime
+    ? VIP_LIFETIME_OFFER.lifetimePrice
+    : applyFirstMonth
+      ? VIP_FIRST_MONTH_OFFER.firstMonthPrice
+      : pkg.price;
 
   // Canonical self-URL, threaded through every auth round trip out of the
   // inline signup step (Google OAuth, email confirmation, sign-in cross-link)
-  // so the buyer lands back here with tier/lifetime intact.
+  // so the buyer lands back here with tier/offer intact.
   const selfPath = `/checkout?tier=${encodeURIComponent(pkg.tierName)}${
     isLifetime ? "&lifetime=1" : ""
-  }`;
+  }${isFirstMonth ? "&promo=1" : ""}`;
 
   // A live subscription pins the payment method to its own provider: PayPal
   // subs change plans via revise, Stripe subs via a new checkout session —
@@ -249,10 +267,14 @@ function CheckoutContent() {
 
       if (effectiveMethod === "card") {
         endpoint = "/api/subscription/checkout";
-        // lifetime is only honored server-side when the unlock cookie is valid,
-        // the tier is VIP, and the user has no active sub — the flag alone never
-        // discounts.
-        body = { priceId: pkg.priceId, lifetime: applyLifetime };
+        // The offer flags are only honored server-side (lifetime additionally
+        // needs the unlock cookie; both need VIP + never-paid) — a flag alone
+        // never discounts.
+        body = {
+          priceId: pkg.priceId,
+          lifetime: applyLifetime,
+          firstMonth: applyFirstMonth,
+        };
       } else if (isPaypalSwitch) {
         endpoint = "/api/subscription/revise-paypal";
         body = { tierName: pkg.tierName };
@@ -264,6 +286,7 @@ function CheckoutContent() {
           country,
           region,
           lifetime: applyLifetime,
+          firstMonth: applyFirstMonth,
         };
       }
 
@@ -296,6 +319,7 @@ function CheckoutContent() {
           {
             tier: pkg.tierName,
             lifetime: applyLifetime,
+            firstMonth: applyFirstMonth,
             method: effectiveMethod,
             valueUsdCents: Math.round(price * 100),
             metaEventId:
@@ -332,15 +356,19 @@ function CheckoutContent() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        {/* The lifetime flow's escape hatch goes back to the offer, not to
+        {/* A discounted flow's escape hatch goes back to its offer, not to
             full-price /pricing — leaking a discounted buyer into the standard
             grid quietly costs them the deal. */}
         <Link
-          href={isLifetime ? "/vip" : "/pricing"}
+          href={isLifetime ? "/vip" : isFirstMonth ? "/promo" : "/pricing"}
           className="inline-flex items-center gap-2 text-sm text-[#a1a1a1] hover:text-white transition-colors mb-10"
         >
           <ArrowLeft className="w-4 h-4" />
-          {isLifetime ? "Back to VIP offer" : "All plans"}
+          {isLifetime
+            ? "Back to VIP offer"
+            : isFirstMonth
+              ? "Back to the offer"
+              : "All plans"}
         </Link>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-12 items-start">
@@ -510,10 +538,10 @@ function CheckoutContent() {
                         // Plan/eligibility state unknown (fetch failed) — never
                         // let a buyer continue blind.
                         subLoadError ||
-                        // Lifetime flow with the eligibility verdict still unknown:
-                        // the summary is a skeleton and the charge could silently
-                        // be full price.
-                        lifetimeUndetermined ||
+                        // Discounted flow with the eligibility verdict still
+                        // unknown: the summary is a skeleton and the charge
+                        // could silently be full price.
+                        offerUndetermined ||
                         taxRegionIncomplete ||
                         // No payable method at all (no Stripe price ID and PayPal
                         // subs disabled) — reachable by direct URL even though
@@ -530,15 +558,18 @@ function CheckoutContent() {
                       ) : hasActiveSub ? (
                         `Switch to ${pkg.name}`
                       ) : taxPercent > 0 ? (
-                        `Continue — $${(price + taxAmount).toFixed(2)}/month`
+                        `Continue — $${(price + taxAmount).toFixed(2)}${applyFirstMonth ? " first month" : "/month"}`
                       ) : (
-                        `Continue — $${price}/month`
+                        `Continue — $${price}${applyFirstMonth ? " first month" : "/month"}`
                       )}
                     </Button>
 
                     <p className="text-xs text-[#6a6a6a] mt-4 text-center">
                       You&apos;ll confirm on {effectiveMethod === "card" ? "Stripe" : "PayPal"}&apos;s
-                      secure page before anything is charged. Renews monthly, cancel
+                      secure page before anything is charged.{" "}
+                      {applyFirstMonth
+                        ? `Renews at $${pkg.price}/month after your first month, cancel`
+                        : "Renews monthly, cancel"}{" "}
                       anytime from your account.
                     </p>
                   </>
@@ -557,21 +588,23 @@ function CheckoutContent() {
                   <span>Monthly Pass</span>
                 </div>
                 <h2 className="text-2xl font-bold text-white">{pkg.name}</h2>
-                {lifetimeUndetermined ? (
+                {offerUndetermined ? (
                   // Eligibility still loading: a skeleton beats flashing the
                   // full price at an eligible buyer for a second.
                   <div className="mt-2 mb-5 h-10 w-40 rounded-lg bg-[#2a2a2a] animate-pulse" />
                 ) : (
                   <div className="flex items-baseline gap-2 mt-1 mb-5">
-                    {applyLifetime && (
+                    {(applyLifetime || applyFirstMonth) && (
                       <span className="text-xl font-semibold text-[#6a6a6a] line-through">
-                        ${VIP_LIFETIME_OFFER.regularPrice}
+                        ${pkg.price}
                       </span>
                     )}
                     <span className="text-4xl font-bold text-[#39b54a]">
                       ${price}
                     </span>
-                    <span className="text-[#a1a1a1]">/month USD</span>
+                    <span className="text-[#a1a1a1]">
+                      {applyFirstMonth ? "first month USD" : "/month USD"}
+                    </span>
                   </div>
                 )}
                 {applyLifetime && (
@@ -579,12 +612,25 @@ function CheckoutContent() {
                     Lifetime price · locked forever
                   </p>
                 )}
-                {isLifetime && !applyLifetime && !lifetimeUndetermined && (
+                {applyFirstMonth && (
+                  <p className="-mt-3 mb-5 text-xs font-semibold uppercase tracking-wider text-[#39b54a]">
+                    Then ${pkg.price}/mo · cancel anytime
+                  </p>
+                )}
+                {isLifetime && !applyLifetime && !offerUndetermined && (
                   <p className="-mt-3 mb-5 text-xs text-[#a1a1a1]">
                     The $11.99 lifetime price is for members without a prior
                     paid subscription, so this shows your standard price. Think
                     that&apos;s a mistake? Contact support@greenroom.fm before
                     subscribing.
+                  </p>
+                )}
+                {isFirstMonth && !applyFirstMonth && !offerUndetermined && (
+                  <p className="-mt-3 mb-5 text-xs text-[#a1a1a1]">
+                    The ${VIP_FIRST_MONTH_OFFER.firstMonthPrice} first month is
+                    for members without a prior paid subscription, so this
+                    shows your standard price. Think that&apos;s a mistake?
+                    Contact support@greenroom.fm before subscribing.
                   </p>
                 )}
                 <div className="bg-[#0a0a0a] rounded-lg p-3 border border-[#2a2a2a] flex items-center gap-2">
@@ -624,7 +670,10 @@ function CheckoutContent() {
                     </div>
                     <div className="flex items-center justify-between text-white font-semibold pt-2 border-t border-[#2a2a2a]">
                       <span>Total</span>
-                      <span>${(price + taxAmount).toFixed(2)}/mo</span>
+                      <span>
+                        ${(price + taxAmount).toFixed(2)}
+                        {applyFirstMonth ? " first month" : "/mo"}
+                      </span>
                     </div>
                   </div>
                 )}

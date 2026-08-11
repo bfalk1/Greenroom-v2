@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
+import {
+  VIP_LIFETIME_OFFER,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 
 export async function GET() {
   try {
@@ -56,13 +59,17 @@ export async function GET() {
         // What the buyer is actually CHARGED — feeds the Meta Pixel Purchase
         // value on /checkout/complete so the browser and Conversions API
         // sides of a deduplicated Purchase report the same amount no matter
-        // which one Meta keeps. Only the vip-lifetime discount diverges from
-        // list; its charged price lives in the provider config, mirrored by
-        // the display constant.
+        // which one Meta keeps. Only the discounted offers diverge from list;
+        // their charged prices live in the provider config, mirrored by the
+        // display constants. (The Purchase fires once, at activation — for the
+        // first-month offer that's the $5.99 cycle; renewals emit no Purchase,
+        // so the intro price is the right value here.)
         chargedUsdCents:
           subscription.acquisitionSource === "vip-lifetime"
             ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
-            : subscription.tier.priceUsdCents,
+            : subscription.acquisitionSource === "vip-first-month"
+              ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
+              : subscription.tier.priceUsdCents,
       },
     });
   } catch (error) {
