@@ -7,34 +7,55 @@
 // silently over-/under-reports conversion value to Meta and biases ad optimization.
 // config.test.ts asserts these stay equal to publicPriceConfig — keep all three
 // (this, publicPriceConfig, the provider dashboards) in lockstep on any price change.
+// annualPriceUsdCents/annualStripePriceId: the yearly-billing option. The
+// annual price rides the SAME tier (name, credits) — only the billing interval
+// and charge differ; credits are granted 12× per yearly invoice. Values must
+// mirror publicPriceConfig's annualPrice (config.test.ts asserts it).
 export const SUBSCRIPTION_TIERS = {
   GA: {
     name: "GA",
     displayName: "General Admission",
     creditsPerMonth: 100,
     priceUsdCents: 999,
+    annualPriceUsdCents: 10099,
     stripePriceId:
       process.env.STRIPE_GA_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID ?? "",
+    annualStripePriceId:
+      process.env.STRIPE_GA_ANNUAL_PRICE_ID ??
+      process.env.NEXT_PUBLIC_STRIPE_GA_ANNUAL_PRICE_ID ??
+      "",
   },
   VIP: {
     name: "VIP",
     displayName: "VIP",
     creditsPerMonth: 200,
     priceUsdCents: 1799,
+    annualPriceUsdCents: 18299,
     stripePriceId:
       process.env.STRIPE_VIP_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
+    annualStripePriceId:
+      process.env.STRIPE_VIP_ANNUAL_PRICE_ID ??
+      process.env.NEXT_PUBLIC_STRIPE_VIP_ANNUAL_PRICE_ID ??
+      "",
   },
   AA: {
     name: "AA",
     displayName: "All Access",
     creditsPerMonth: 500,
     priceUsdCents: 3499,
+    annualPriceUsdCents: 35599,
     stripePriceId:
       process.env.STRIPE_AA_PRICE_ID ?? process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID ?? "",
+    annualStripePriceId:
+      process.env.STRIPE_AA_ANNUAL_PRICE_ID ??
+      process.env.NEXT_PUBLIC_STRIPE_AA_ANNUAL_PRICE_ID ??
+      "",
   },
 } as const;
 
 export type TierName = keyof typeof SUBSCRIPTION_TIERS;
+
+export type BillingInterval = "month" | "year";
 
 // Reverse-map a Stripe price ID to its tier name using the env-driven config
 // above — the price↔tier mapping lives ONLY in env (this mirrors PayPal's
@@ -42,13 +63,35 @@ export type TierName = keyof typeof SUBSCRIPTION_TIERS;
 // stable `name`, so rotating a Stripe price ID is an env-only change: it can't
 // drift from the subscription_tiers.stripe_price_id column and strand a
 // checkout ("Invalid subscription plan") or a webhook credit grant.
+// Matches BOTH the monthly and annual price of a tier — use
+// stripeBillingIntervalForPrice when the cycle length matters (credit grants,
+// charged-amount reporting).
 export function tierNameForStripePrice(priceId: string): TierName | null {
   if (!priceId) return null;
   for (const name of Object.keys(SUBSCRIPTION_TIERS) as TierName[]) {
-    const configured = SUBSCRIPTION_TIERS[name].stripePriceId;
-    // An unset env var collapses stripePriceId to "" — never match on empty, or
-    // a missing price ID would resolve to whichever tier is also unconfigured.
-    if (configured && configured === priceId) return name;
+    const tier = SUBSCRIPTION_TIERS[name];
+    // An unset env var collapses the id to "" — never match on empty, or a
+    // missing price ID would resolve to whichever tier is also unconfigured.
+    if (tier.stripePriceId && tier.stripePriceId === priceId) return name;
+    if (tier.annualStripePriceId && tier.annualStripePriceId === priceId)
+      return name;
+  }
+  return null;
+}
+
+// Which billing interval a configured price ID represents. null for unknown
+// ids — callers that already resolved a tier can treat null as "month" only
+// when the id came from the monthly map; grant paths should prefer the
+// provider's own interval (subscription.items price.recurring) when available.
+export function stripeBillingIntervalForPrice(
+  priceId: string
+): BillingInterval | null {
+  if (!priceId) return null;
+  for (const name of Object.keys(SUBSCRIPTION_TIERS) as TierName[]) {
+    const tier = SUBSCRIPTION_TIERS[name];
+    if (tier.stripePriceId && tier.stripePriceId === priceId) return "month";
+    if (tier.annualStripePriceId && tier.annualStripePriceId === priceId)
+      return "year";
   }
   return null;
 }

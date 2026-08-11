@@ -21,6 +21,7 @@ import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import {
   VIP_LIFETIME_OFFER,
   VIP_FIRST_MONTH_OFFER,
+  PUBLIC_SUBSCRIPTION_PACKAGES,
 } from "@/lib/stripe/publicPriceConfig";
 
 const PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
@@ -46,6 +47,16 @@ const VIP_LIFETIME_PLAN_ID = process.env.PAYPAL_VIP_LIFETIME_PLAN_ID?.trim();
 const VIP_FIRST_MONTH_PLAN_ID =
   process.env.PAYPAL_VIP_FIRST_MONTH_PLAN_ID?.trim();
 
+// Annual billing plans (YEAR interval, one charge covering 12 months — the
+// per-sale grant multiplies credits by 12 for these). Same tier as their
+// monthly counterparts; create with scripts/create-paypal-annual-plans.ts.
+// Unset → the checkout route fails closed for that tier's annual option.
+const ANNUAL_PLAN_ENV_BY_TIER: Record<string, string | undefined> = {
+  GA: process.env.PAYPAL_GA_ANNUAL_PLAN_ID?.trim(),
+  VIP: process.env.PAYPAL_VIP_ANNUAL_PLAN_ID?.trim(),
+  AA: process.env.PAYPAL_AA_ANNUAL_PLAN_ID?.trim(),
+};
+
 export function paypalPlanIdForTier(tierName: string): string | null {
   return PLAN_ENV_BY_TIER[tierName] ?? null;
 }
@@ -58,17 +69,41 @@ export function paypalVipFirstMonthPlanId(): string | null {
   return VIP_FIRST_MONTH_PLAN_ID ?? null;
 }
 
+export function paypalAnnualPlanIdForTier(tierName: string): string | null {
+  return ANNUAL_PLAN_ENV_BY_TIER[tierName] ?? null;
+}
+
 export function tierNameForPaypalPlan(planId: string): string | null {
   // The discounted lifetime/first-month plans grant the SAME VIP tier — only
   // the price differs — so they must resolve to VIP for credit grants +
   // subscription sync, or those subscribers' payments wouldn't map to any tier.
+  // Annual plans likewise resolve to their tier; the cycle length is a
+  // separate question (paypalPlanBillingInterval).
   if (VIP_LIFETIME_PLAN_ID && planId === VIP_LIFETIME_PLAN_ID) return "VIP";
   if (VIP_FIRST_MONTH_PLAN_ID && planId === VIP_FIRST_MONTH_PLAN_ID)
     return "VIP";
+  for (const [tierName, id] of Object.entries(ANNUAL_PLAN_ENV_BY_TIER)) {
+    if (id && id === planId) return tierName;
+  }
   for (const [tierName, id] of Object.entries(PLAN_ENV_BY_TIER)) {
     if (id && id === planId) return tierName;
   }
   return null;
+}
+
+// Billing cycle length for a configured plan id. Every non-annual plan
+// (monthly, lifetime, first-month) bills monthly; annual plans bill one year
+// per sale, so their per-sale credit grant is 12× creditsPerMonth.
+export function paypalPlanBillingInterval(
+  planId: string | null
+): "month" | "year" {
+  if (
+    planId &&
+    Object.values(ANNUAL_PLAN_ENV_BY_TIER).some((id) => id && id === planId)
+  ) {
+    return "year";
+  }
+  return "month";
 }
 
 export function paypalSubscriptionsConfigured(): boolean {
@@ -291,6 +326,11 @@ export async function syncPaypalSubscription(
   userId: string;
   tierId: string;
   creditsPerMonth: number;
+  // Credits one completed sale pays for: creditsPerMonth ×12 on annual plans
+  // (a yearly sale covers 12 months, granted upfront), ×1 otherwise. Grant
+  // callers must use THIS, not creditsPerMonth.
+  creditsPerCycle: number;
+  interval: "month" | "year";
   tierDisplayName: string;
   status: string;
 } | null> {
@@ -373,9 +413,15 @@ export async function syncPaypalSubscription(
   }
 
   const isActive = remote.status === "ACTIVE";
+  const interval = paypalPlanBillingInterval(remote.planId);
+  // Fallback window when PayPal omits next_billing_time — one cycle long, so
+  // an annual sub isn't lapsed by the expiry cron after a month.
   const periodEnd =
     remote.periodEnd ??
-    new Date(remote.periodStart.getTime() + 1000 * 60 * 60 * 24 * 31);
+    new Date(
+      remote.periodStart.getTime() +
+        1000 * 60 * 60 * 24 * (interval === "year" ? 366 : 31)
+    );
 
   // Attribution: the discounted plans are the only way these planIds can
   // appear, so each marks the row (and the analytics event) as its offer's
@@ -465,6 +511,7 @@ export async function syncPaypalSubscription(
         provider: "paypal",
         lifetime: acquisitionSource === "vip-lifetime",
         source: acquisitionSource,
+        interval,
         via,
       });
       // (The referral reward is granted in the unconditional VIP block above.)
@@ -483,16 +530,20 @@ export async function syncPaypalSubscription(
         userId,
         email: user.email,
         tier: tier.name,
-        // A discounted plan's charge is on no DB row (the discount lives in
-        // the PayPal plan itself) — the display config mirrors it and is the
+        // A discounted/annual plan's charge is on no DB row (it lives in the
+        // PayPal plan itself) — the display config mirrors it and is the
         // best server-side source. First-month uses the intro price: this
         // Purchase fires once, at activation, when $5.99 is what was paid.
+        // Annual reports the full yearly charge.
         valueUsdCents:
           acquisitionSource === "vip-lifetime"
             ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
             : acquisitionSource === "vip-first-month"
               ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
-              : tier.priceUsdCents,
+              : interval === "year"
+                ? (annualPriceCentsForTier(tier.name) ??
+                  tier.priceUsdCents * 12)
+                : tier.priceUsdCents,
         transactionId: subscriptionId,
         identity: capiIdentityFromProfile(user),
         // The row's checkout-time signals, with the account-banked click id
@@ -516,21 +567,35 @@ export async function syncPaypalSubscription(
     userId,
     tierId: tier.id,
     creditsPerMonth: tier.creditsPerMonth,
+    creditsPerCycle: tier.creditsPerMonth * (interval === "year" ? 12 : 1),
+    interval,
     tierDisplayName: tier.displayName,
     status: remote.status,
   };
+}
+
+// Display-config annual price for a tier, in cents — the PayPal annual plans
+// are created from the same constants, so this mirrors what the plan charges.
+function annualPriceCentsForTier(tierName: string): number | null {
+  const pkg = PUBLIC_SUBSCRIPTION_PACKAGES.find(
+    (p) => p.tierName === tierName
+  );
+  return pkg ? Math.round(pkg.annualPrice * 100) : null;
 }
 
 /**
  * Grant one billing cycle's credits, exactly once per PayPal transaction id.
  * Safe to call from any path (return route, ACTIVATED, SALE webhook) — the
  * "sale:<id>" marker conflicts on redelivery/overlap and rolls the grant back.
+ * `credits` is the CYCLE's worth — callers pass creditsPerCycle from
+ * syncPaypalSubscription (12× monthly for annual plans, whose one sale covers
+ * the whole year).
  */
 export async function grantPaypalSubscriptionCycle(params: {
   saleId: string;
   eventType: string;
   userId: string;
-  creditsPerMonth: number;
+  credits: number;
   tierDisplayName: string;
 }): Promise<"granted" | "already_granted"> {
   try {
@@ -540,8 +605,8 @@ export async function grantPaypalSubscriptionCycle(params: {
       }),
       prisma.creditBalance.upsert({
         where: { userId: params.userId },
-        update: { balance: { increment: params.creditsPerMonth } },
-        create: { userId: params.userId, balance: params.creditsPerMonth },
+        update: { balance: { increment: params.credits } },
+        create: { userId: params.userId, balance: params.credits },
       }),
       prisma.user.update({
         where: { id: params.userId },
@@ -550,10 +615,10 @@ export async function grantPaypalSubscriptionCycle(params: {
       prisma.creditTransaction.create({
         data: {
           userId: params.userId,
-          amount: params.creditsPerMonth,
+          amount: params.credits,
           type: "SUBSCRIPTION",
           referenceId: params.saleId,
-          note: `${params.tierDisplayName} subscription (PayPal) — ${params.creditsPerMonth} credits`,
+          note: `${params.tierDisplayName} subscription (PayPal) — ${params.credits} credits`,
         },
       }),
     ]);
@@ -570,7 +635,7 @@ export async function grantPaypalSubscriptionCycle(params: {
   }
 
   console.log(
-    `Granted ${params.creditsPerMonth} credits to user ${params.userId} (PayPal sale ${params.saleId})`
+    `Granted ${params.credits} credits to user ${params.userId} (PayPal sale ${params.saleId})`
   );
   return "granted";
 }
@@ -602,7 +667,7 @@ export async function activatePaypalSubscription(
         saleId: txn.id,
         eventType: "activation-sync",
         userId: synced.userId,
-        creditsPerMonth: synced.creditsPerMonth,
+        credits: synced.creditsPerCycle,
         tierDisplayName: synced.tierDisplayName,
       });
     }

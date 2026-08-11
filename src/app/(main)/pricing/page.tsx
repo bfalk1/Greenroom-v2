@@ -49,6 +49,9 @@ function PricingContent() {
   const [firstMonthEligible, setFirstMonthEligible] = useState<boolean | null>(
     null
   );
+  // Billing toggle — annual bills once a year at ~15% off, with all 12
+  // months of credits granted upfront.
+  const [billing, setBilling] = useState<"month" | "year">("month");
   const { user, loading: userLoading, error: userError } = useUser();
   const searchParams = useSearchParams();
 
@@ -191,7 +194,7 @@ function PricingContent() {
             {isWelcome && !hasActiveSub ? "Choose Your Plan" : "Simple Pricing"}
           </h1>
           <p className="text-xl text-[#a1a1a1]">
-            Choose your monthly subscription and get fresh credits every month
+            Choose your subscription and get fresh credits every month
           </p>
         </div>
 
@@ -225,12 +228,65 @@ function PricingContent() {
           </div>
         )}
 
+        {/* Billing toggle */}
+        <div className="flex justify-center mb-12">
+          <div
+            className="inline-flex items-center rounded-full border border-[#2a2a2a] bg-[#1a1a1a] p-1"
+            role="radiogroup"
+            aria-label="Billing period"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={billing === "month"}
+              onClick={() => setBilling("month")}
+              className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+                billing === "month"
+                  ? "bg-[#39b54a] text-black"
+                  : "text-[#a1a1a1] hover:text-white"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={billing === "year"}
+              onClick={() => setBilling("year")}
+              className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition ${
+                billing === "year"
+                  ? "bg-[#39b54a] text-black"
+                  : "text-[#a1a1a1] hover:text-white"
+              }`}
+            >
+              Annual
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  billing === "year"
+                    ? "bg-black/20 text-black"
+                    : "bg-[#39b54a]/15 text-[#39b54a]"
+                }`}
+              >
+                Save 15%
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => {
+            const annual = billing === "year";
+            // The first-month intro is a monthly-billing construct — the
+            // annual view never shows it (the checkout APIs reject the combo).
             const firstMonthCard =
+              !annual &&
               pkg.tierName === VIP_FIRST_MONTH_OFFER.tierName &&
               showFirstMonthOffer;
+            // Card availability follows the toggled view's Stripe price id —
+            // an unset annual env disables annual cards exactly like an unset
+            // monthly id does (unless PayPal subs can cover it).
+            const viewPriceId = annual ? pkg.annualPriceId : pkg.priceId;
             return (
             <div
               key={pkg.name}
@@ -256,7 +312,7 @@ function PricingContent() {
                   {pkg.name}
                 </h3>
                 <p className="text-sm text-[#39b54a] mb-4">
-                  Monthly Subscription
+                  {annual ? "Annual Subscription" : "Monthly Subscription"}
                 </p>
                 {firstMonthCard ? (
                   <div className="mb-6">
@@ -275,6 +331,18 @@ function PricingContent() {
                       Then ${pkg.price}/month · cancel anytime
                     </p>
                   </div>
+                ) : annual ? (
+                  <div className="mb-6">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-bold text-white">
+                        ${(pkg.annualPrice / 12).toFixed(2)}
+                      </span>
+                      <span className="text-[#a1a1a1]">/month</span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-[#39b54a]">
+                      Billed ${pkg.annualPrice}/year · save 15%
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex items-baseline gap-2 mb-6">
                     <span className="text-5xl font-bold text-white">
@@ -289,7 +357,9 @@ function PricingContent() {
                   <div className="flex items-center gap-2">
                     <Zap className="w-5 h-5 text-[#39b54a]" />
                     <span className="text-white font-semibold">
-                      {pkg.credits} Credits
+                      {annual
+                        ? `${pkg.credits * 12} Credits upfront`
+                        : `${pkg.credits} Credits`}
                     </span>
                   </div>
                 </div>
@@ -316,12 +386,13 @@ function PricingContent() {
                       signedIn: Boolean(user || userError),
                       destination: "checkout",
                       firstMonth: firstMonthCard,
+                      interval: annual ? "year" : "month",
                     });
                     router.push(
-                      `/checkout?tier=${pkg.tierName}${firstMonthCard ? "&promo=1" : ""}`
+                      `/checkout?tier=${pkg.tierName}${firstMonthCard ? "&promo=1" : ""}${annual ? "&annual=1" : ""}`
                     );
                   }}
-                  disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
+                  disabled={userLoading || (!viewPriceId && !paypalSubsEnabled)}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted
                       ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
@@ -332,7 +403,7 @@ function PricingContent() {
                       button-click tracking can tell the three plan selections
                       apart (a shared "Get Started" label collapses them into
                       one indistinguishable event). */}
-                  {!pkg.priceId && !paypalSubsEnabled
+                  {!viewPriceId && !paypalSubsEnabled
                     ? "Unavailable"
                     : hasActiveSub
                       ? "Change Plan"
@@ -342,7 +413,9 @@ function PricingContent() {
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">
                   {firstMonthCard
                     ? `$${VIP_FIRST_MONTH_OFFER.firstMonthPrice} today, then $${pkg.price}/month`
-                    : "Billed monthly"}
+                    : annual
+                      ? `Billed $${pkg.annualPrice} yearly`
+                      : "Billed monthly"}
                 </p>
               </div>
             </div>
@@ -373,9 +446,10 @@ function PricingContent() {
                 How does billing work?
               </h3>
               <p className="text-[#a1a1a1]">
-                You&apos;ll be charged monthly and receive fresh credits at the
-                start of each billing cycle. Unused credits roll over to the
-                next month.
+                On monthly billing you&apos;re charged each month and receive
+                fresh credits at the start of each cycle. On annual billing
+                you&apos;re charged once a year at 15% off and get all 12
+                months of credits upfront. Unused credits roll over either way.
               </p>
             </div>
 

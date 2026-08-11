@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
-import { tierNameForStripePrice } from "@/lib/stripe/config";
+import {
+  tierNameForStripePrice,
+  SUBSCRIPTION_TIERS,
+  type TierName,
+} from "@/lib/stripe/config";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import {
   capiAttributionFromMetadata,
@@ -194,6 +198,14 @@ async function reconcileOne(
     },
   });
 
+  // Annual subs get 12 months of credits per grant — interval from Stripe's
+  // own subscription item (same authority the webhook uses).
+  const interval =
+    subscription.items.data[0]?.price.recurring?.interval === "year"
+      ? ("year" as const)
+      : ("month" as const);
+  const grantCredits = tier.creditsPerMonth * (interval === "year" ? 12 : 1);
+
   if (!alreadyGranted) {
     try {
       await prisma.$transaction([
@@ -202,8 +214,8 @@ async function reconcileOne(
         }),
         prisma.creditBalance.upsert({
           where: { userId },
-          update: { balance: { increment: tier.creditsPerMonth } },
-          create: { userId, balance: tier.creditsPerMonth },
+          update: { balance: { increment: grantCredits } },
+          create: { userId, balance: grantCredits },
         }),
         prisma.user.update({
           where: { id: userId },
@@ -212,10 +224,12 @@ async function reconcileOne(
         prisma.creditTransaction.create({
           data: {
             userId,
-            amount: tier.creditsPerMonth,
+            amount: grantCredits,
             type: "SUBSCRIPTION",
             referenceId: subscription.id,
-            note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits (reconciled)`,
+            note: `${tier.displayName} subscription — initial ${grantCredits} credits${
+              interval === "year" ? " (annual, 12 months upfront)" : ""
+            } (reconciled)`,
           },
         }),
       ]);
@@ -226,6 +240,7 @@ async function reconcileOne(
         provider: "stripe",
         lifetime: acquisitionSource === "vip-lifetime",
         source: acquisitionSource,
+        interval,
         via: "reconcile",
       });
       // (The referral reward is granted unconditionally at the top of
@@ -263,7 +278,14 @@ async function reconcileOne(
           userId,
           email: userRow?.email,
           tier: tier.name,
-          valueUsdCents: originSession?.amount_total ?? tier.priceUsdCents,
+          // Fallback mirrors the charged interval — an annual sub with no
+          // recoverable session must not report the monthly price.
+          valueUsdCents:
+            originSession?.amount_total ??
+            (interval === "year"
+              ? (SUBSCRIPTION_TIERS[tier.name as TierName]
+                  ?.annualPriceUsdCents ?? tier.priceUsdCents * 12)
+              : tier.priceUsdCents),
           currency: originSession?.currency,
           transactionId: originSession?.id ?? subscription.id,
           identity: userRow ? capiIdentityFromProfile(userRow) : undefined,

@@ -100,6 +100,7 @@ function CheckoutContent() {
     const lt = searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
     const fm =
       !lt && searchParams.get("promo") === "1" && pkg.tierName === "VIP";
+    const yr = !lt && !fm && searchParams.get("annual") === "1";
     const anon = !user && !userError;
     if ((lt || fm) && !anon && lifetimeEligible === null) return;
     viewTracked.current = true;
@@ -112,11 +113,14 @@ function CheckoutContent() {
         ? lt
           ? VIP_LIFETIME_OFFER.lifetimePrice
           : VIP_FIRST_MONTH_OFFER.firstMonthPrice
-        : pkg.price;
+        : yr
+          ? pkg.annualPrice
+          : pkg.price;
     trackCheckoutViewed({
       tier: pkg.tierName,
       lifetime: lt,
       firstMonth: fm,
+      interval: yr ? "year" : "month",
       lifetimeEligible: lt || fm ? lifetimeEligible : null,
       signedIn: !anon,
       valueUsdCents: Math.round(shownPrice * 100),
@@ -193,6 +197,16 @@ function CheckoutContent() {
     searchParams.get("lifetime") === "1" && pkg.tierName === "VIP";
   const isFirstMonth =
     !isLifetime && searchParams.get("promo") === "1" && pkg.tierName === "VIP";
+  // Annual billing (?annual=1, any tier — from the /pricing toggle). Never
+  // combines with the discounted offers (they're monthly-only; the APIs
+  // reject the combo), and a PayPal plan CHANGE stays monthly — the revise
+  // flow only maps monthly plans, so honoring annual display there would show
+  // a price the revise wouldn't charge.
+  const isAnnual =
+    searchParams.get("annual") === "1" &&
+    !isLifetime &&
+    !isFirstMonth &&
+    !(hasActiveSub && sub!.provider === "paypal");
   const offerVerdict = anonymous ? true : lifetimeEligible;
   const applyLifetime = isLifetime && offerVerdict === true;
   const applyFirstMonth = isFirstMonth && offerVerdict === true;
@@ -202,21 +216,26 @@ function CheckoutContent() {
     ? VIP_LIFETIME_OFFER.lifetimePrice
     : applyFirstMonth
       ? VIP_FIRST_MONTH_OFFER.firstMonthPrice
-      : pkg.price;
+      : isAnnual
+        ? pkg.annualPrice
+        : pkg.price;
 
   // Canonical self-URL, threaded through every auth round trip out of the
   // inline signup step (Google OAuth, email confirmation, sign-in cross-link)
   // so the buyer lands back here with tier/offer intact.
   const selfPath = `/checkout?tier=${encodeURIComponent(pkg.tierName)}${
     isLifetime ? "&lifetime=1" : ""
-  }${isFirstMonth ? "&promo=1" : ""}`;
+  }${isFirstMonth ? "&promo=1" : ""}${isAnnual ? "&annual=1" : ""}`;
 
   // A live subscription pins the payment method to its own provider: PayPal
   // subs change plans via revise, Stripe subs via a new checkout session —
   // crossing providers would double-bill (the API routes reject it anyway).
   const isPaypalSwitch = hasActiveSub && sub!.provider === "paypal";
   const isStripeChange = hasActiveSub && sub!.provider === "stripe";
-  const cardAvailable = !isPaypalSwitch && Boolean(pkg.priceId);
+  // Annual checkout POSTs the annual price id — an unset annual env must
+  // disable the card path exactly like an unset monthly id does.
+  const effectivePriceId = isAnnual ? pkg.annualPriceId : pkg.priceId;
+  const cardAvailable = !isPaypalSwitch && Boolean(effectivePriceId);
   const paypalAvailable = paypalSubsEnabled && !isStripeChange;
 
   // Besides provider pinning, fall back to PayPal when card isn't available
@@ -269,9 +288,9 @@ function CheckoutContent() {
         endpoint = "/api/subscription/checkout";
         // The offer flags are only honored server-side (lifetime additionally
         // needs the unlock cookie; both need VIP + never-paid) — a flag alone
-        // never discounts.
+        // never discounts. Annual is expressed by WHICH price id is sent.
         body = {
-          priceId: pkg.priceId,
+          priceId: effectivePriceId,
           lifetime: applyLifetime,
           firstMonth: applyFirstMonth,
         };
@@ -287,6 +306,7 @@ function CheckoutContent() {
           region,
           lifetime: applyLifetime,
           firstMonth: applyFirstMonth,
+          annual: isAnnual,
         };
       }
 
@@ -315,11 +335,14 @@ function CheckoutContent() {
       if (data.url) {
         trackSubscriptionCheckout(
           pkg.name,
-          effectiveMethod === "card" ? pkg.priceId : `paypal-${pkg.tierName}`,
+          effectiveMethod === "card"
+            ? effectivePriceId
+            : `paypal-${pkg.tierName}${isAnnual ? "-annual" : ""}`,
           {
             tier: pkg.tierName,
             lifetime: applyLifetime,
             firstMonth: applyFirstMonth,
+            interval: isAnnual ? "year" : "month",
             method: effectiveMethod,
             valueUsdCents: Math.round(price * 100),
             metaEventId:
@@ -558,9 +581,9 @@ function CheckoutContent() {
                       ) : hasActiveSub ? (
                         `Switch to ${pkg.name}`
                       ) : taxPercent > 0 ? (
-                        `Continue — $${(price + taxAmount).toFixed(2)}${applyFirstMonth ? " first month" : "/month"}`
+                        `Continue — $${(price + taxAmount).toFixed(2)}${applyFirstMonth ? " first month" : isAnnual ? "/year" : "/month"}`
                       ) : (
-                        `Continue — $${price}${applyFirstMonth ? " first month" : "/month"}`
+                        `Continue — $${price}${applyFirstMonth ? " first month" : isAnnual ? "/year" : "/month"}`
                       )}
                     </Button>
 
@@ -569,7 +592,9 @@ function CheckoutContent() {
                       secure page before anything is charged.{" "}
                       {applyFirstMonth
                         ? `Renews at $${pkg.price}/month after your first month, cancel`
-                        : "Renews monthly, cancel"}{" "}
+                        : isAnnual
+                          ? "Renews yearly, cancel"
+                          : "Renews monthly, cancel"}{" "}
                       anytime from your account.
                     </p>
                   </>
@@ -585,7 +610,7 @@ function CheckoutContent() {
               <div className="px-6 pt-6 pb-5">
                 <div className="flex items-center justify-between font-mono text-[10px] tracking-[0.2em] text-[#6a6a6a] uppercase mb-5">
                   <span>Greenroom</span>
-                  <span>Monthly Pass</span>
+                  <span>{isAnnual ? "Annual Pass" : "Monthly Pass"}</span>
                 </div>
                 <h2 className="text-2xl font-bold text-white">{pkg.name}</h2>
                 {offerUndetermined ? (
@@ -603,9 +628,19 @@ function CheckoutContent() {
                       ${price}
                     </span>
                     <span className="text-[#a1a1a1]">
-                      {applyFirstMonth ? "first month USD" : "/month USD"}
+                      {applyFirstMonth
+                        ? "first month USD"
+                        : isAnnual
+                          ? "/year USD"
+                          : "/month USD"}
                     </span>
                   </div>
+                )}
+                {isAnnual && (
+                  <p className="-mt-3 mb-5 text-xs font-semibold uppercase tracking-wider text-[#39b54a]">
+                    ≈ ${(pkg.annualPrice / 12).toFixed(2)}/mo · save 15% vs
+                    monthly
+                  </p>
                 )}
                 {applyLifetime && (
                   <p className="-mt-3 mb-5 text-xs font-semibold uppercase tracking-wider text-[#39b54a]">
@@ -636,7 +671,9 @@ function CheckoutContent() {
                 <div className="bg-[#0a0a0a] rounded-lg p-3 border border-[#2a2a2a] flex items-center gap-2">
                   <Zap className="w-4 h-4 text-[#39b54a]" />
                   <span className="text-white text-sm font-semibold">
-                    {pkg.credits} credits every month
+                    {isAnnual
+                      ? `${pkg.credits * 12} credits upfront, every year`
+                      : `${pkg.credits} credits every month`}
                   </span>
                 </div>
               </div>
@@ -672,14 +709,22 @@ function CheckoutContent() {
                       <span>Total</span>
                       <span>
                         ${(price + taxAmount).toFixed(2)}
-                        {applyFirstMonth ? " first month" : "/mo"}
+                        {applyFirstMonth
+                          ? " first month"
+                          : isAnnual
+                            ? "/yr"
+                            : "/mo"}
                       </span>
                     </div>
                   </div>
                 )}
                 <div className="flex items-center justify-between font-mono text-[10px] tracking-[0.15em] text-[#6a6a6a] uppercase">
                   <span>Admit One</span>
-                  <span>{pkg.credits} credits/mo</span>
+                  <span>
+                    {isAnnual
+                      ? `${pkg.credits * 12} credits/yr`
+                      : `${pkg.credits} credits/mo`}
+                  </span>
                 </div>
                 {/* Barcode */}
                 <div

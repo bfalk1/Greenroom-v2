@@ -6,6 +6,7 @@ import {
   paypalPlanIdForTier,
   paypalVipLifetimePlanId,
   paypalVipFirstMonthPlanId,
+  paypalAnnualPlanIdForTier,
 } from "@/lib/paypal/subscriptions";
 import { vipLifetimeCouponId, vipFirstMonthCouponId } from "@/lib/vipOffer";
 
@@ -163,15 +164,18 @@ export async function GET(request: NextRequest) {
   // (STRIPE_* takes precedence in src/lib/stripe/config.ts) — skew between
   // the two 400s every checkout as "Invalid subscription plan".
   if (process.env.STRIPE_SECRET_KEY?.trim()) {
-    for (const [name, clientVar] of [
-      ["GA", process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID],
-      ["VIP", process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID],
-      ["AA", process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID],
+    // Monthly AND annual price per tier — each with its client/server skew
+    // check (server-side STRIPE_* takes precedence in src/lib/stripe/config.ts;
+    // skew between the two 400s every checkout as "Invalid subscription plan").
+    for (const [name, clientVar, serverSide] of [
+      ["GA", process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID, SUBSCRIPTION_TIERS.GA.stripePriceId],
+      ["VIP", process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID, SUBSCRIPTION_TIERS.VIP.stripePriceId],
+      ["AA", process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID, SUBSCRIPTION_TIERS.AA.stripePriceId],
+      ["GA annual", process.env.NEXT_PUBLIC_STRIPE_GA_ANNUAL_PRICE_ID, SUBSCRIPTION_TIERS.GA.annualStripePriceId],
+      ["VIP annual", process.env.NEXT_PUBLIC_STRIPE_VIP_ANNUAL_PRICE_ID, SUBSCRIPTION_TIERS.VIP.annualStripePriceId],
+      ["AA annual", process.env.NEXT_PUBLIC_STRIPE_AA_ANNUAL_PRICE_ID, SUBSCRIPTION_TIERS.AA.annualStripePriceId],
     ] as const) {
       results.push(await checkStripePrice(name, clientVar));
-      const serverSide =
-        SUBSCRIPTION_TIERS[name as keyof typeof SUBSCRIPTION_TIERS]
-          ?.stripePriceId;
       const clientSide = (clientVar ?? "").trim();
       if (serverSide && clientSide && serverSide !== clientSide) {
         results.push({
@@ -205,7 +209,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // PayPal: auth + all five plans.
+  // PayPal: auth + every plan (monthly, offers, annual).
   if (isPaypalConfigured()) {
     results.push(await checkPaypalPlan("GA", paypalPlanIdForTier("GA")));
     results.push(await checkPaypalPlan("VIP", paypalPlanIdForTier("VIP")));
@@ -215,6 +219,15 @@ export async function GET(request: NextRequest) {
     );
     results.push(
       await checkPaypalPlan("VIP first-month", paypalVipFirstMonthPlanId())
+    );
+    results.push(
+      await checkPaypalPlan("GA annual", paypalAnnualPlanIdForTier("GA"))
+    );
+    results.push(
+      await checkPaypalPlan("VIP annual", paypalAnnualPlanIdForTier("VIP"))
+    );
+    results.push(
+      await checkPaypalPlan("AA annual", paypalAnnualPlanIdForTier("AA"))
     );
   } else {
     results.push({

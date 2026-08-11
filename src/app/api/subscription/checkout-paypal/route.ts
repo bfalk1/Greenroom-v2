@@ -7,6 +7,7 @@ import {
   paypalPlanIdForTier,
   paypalVipLifetimePlanId,
   paypalVipFirstMonthPlanId,
+  paypalAnnualPlanIdForTier,
   paypalSubscriptionsConfigured,
 } from "@/lib/paypal/subscriptions";
 import { resolveCanadaTax, taxCollectionEnabled } from "@/lib/tax/canadaRates";
@@ -14,6 +15,7 @@ import { VIP_OFFER_COOKIE, verifyVipUnlock } from "@/lib/vipOffer";
 import {
   VIP_LIFETIME_OFFER,
   VIP_FIRST_MONTH_OFFER,
+  PUBLIC_SUBSCRIPTION_PACKAGES,
 } from "@/lib/stripe/publicPriceConfig";
 import { cookies } from "next/headers";
 import { rateLimit, tooManyRequests } from "@/lib/ratelimit";
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
       return tooManyRequests();
     }
 
-    const { tierName, country, region, lifetime, firstMonth } =
+    const { tierName, country, region, lifetime, firstMonth, annual } =
       await request.json();
 
     // Same guard as Stripe checkout: only active tiers, and the plan id must
@@ -67,6 +69,31 @@ export async function POST(request: Request) {
         { error: "Invalid subscription plan" },
         { status: 400 }
       );
+    }
+
+    // Annual billing rides a dedicated YEAR-interval plan for the same tier.
+    // The discounted VIP offers are monthly-only constructs — an annual
+    // request never combines with them. Fail closed when the annual plan
+    // isn't configured rather than silently billing monthly.
+    const isAnnual = annual === true;
+    if (isAnnual) {
+      if (lifetime === true || firstMonth === true) {
+        return NextResponse.json(
+          { error: "Discounted offers apply to monthly billing only." },
+          { status: 400 }
+        );
+      }
+      const annualPlan = paypalAnnualPlanIdForTier(tier.name);
+      if (!annualPlan) {
+        console.error(
+          `Annual PayPal checkout requested for ${tier.name} but PAYPAL_${tier.name}_ANNUAL_PLAN_ID is not set`
+        );
+        return NextResponse.json(
+          { error: "Annual billing is temporarily unavailable." },
+          { status: 503 }
+        );
+      }
+      planId = annualPlan;
     }
 
     const dbUser = await prisma.user.findUnique({ where: { id: user.id } });
@@ -279,14 +306,21 @@ export async function POST(request: Request) {
       userId: dbUser.id,
       email: dbUser.email,
       tier: tier.name,
-      // Discounted offers ride dedicated PayPal plans whose charge no DB
-      // row records — the display config mirrors it (same source the PayPal
-      // activation's metaCapiPurchase uses).
+      // Discounted/annual offers ride dedicated PayPal plans whose charge no
+      // DB row records — the display config mirrors it (same source the
+      // PayPal activation's metaCapiPurchase uses). Annual commits the full
+      // yearly charge.
       valueUsdCents: isLifetime
         ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
         : isFirstMonth
           ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
-          : tier.priceUsdCents,
+          : isAnnual
+            ? Math.round(
+                (PUBLIC_SUBSCRIPTION_PACKAGES.find(
+                  (p) => p.tierName === tier.name
+                )?.annualPrice ?? (tier.priceUsdCents / 100) * 12) * 100
+              )
+            : tier.priceUsdCents,
       transactionId: subscription.id,
       identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,

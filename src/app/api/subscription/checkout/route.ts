@@ -4,7 +4,12 @@ import Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
-import { stripeTaxCheckoutParams, tierNameForStripePrice } from "@/lib/stripe/config";
+import {
+  stripeTaxCheckoutParams,
+  tierNameForStripePrice,
+  stripeBillingIntervalForPrice,
+  SUBSCRIPTION_TIERS,
+} from "@/lib/stripe/config";
 import {
   VIP_OFFER_COOKIE,
   vipLifetimeCouponId,
@@ -62,6 +67,20 @@ export async function POST(request: Request) {
     if (!tier) {
       return NextResponse.json(
         { error: "Invalid subscription plan" },
+        { status: 400 }
+      );
+    }
+
+    // Monthly vs annual comes from WHICH configured price id was sent — the
+    // tier is the same either way. Annual bills once a year (12 months of
+    // credits granted by the webhook); the discounted VIP offers are
+    // monthly-only constructs (a "first month" or per-month lifetime price
+    // makes no sense against a yearly invoice), so an annual request never
+    // combines with them.
+    const interval = stripeBillingIntervalForPrice(priceId) ?? "month";
+    if (interval === "year" && (lifetime === true || firstMonth === true)) {
+      return NextResponse.json(
+        { error: "Discounted offers apply to monthly billing only." },
         { status: 400 }
       );
     }
@@ -266,13 +285,16 @@ export async function POST(request: Request) {
       tier: tier.name,
       // The committed price: a coupon's discounted charge isn't on any DB row
       // (it lives in the Stripe coupon) — the display config mirrors it, same
-      // source metaCapiPurchase uses at activation.
+      // source metaCapiPurchase uses at activation. Annual commits the full
+      // yearly charge.
       valueUsdCents:
         acquisitionSource === "vip-lifetime"
           ? Math.round(VIP_LIFETIME_OFFER.lifetimePrice * 100)
           : acquisitionSource === "vip-first-month"
             ? Math.round(VIP_FIRST_MONTH_OFFER.firstMonthPrice * 100)
-            : tier.priceUsdCents,
+            : interval === "year" && tierName
+              ? SUBSCRIPTION_TIERS[tierName].annualPriceUsdCents
+              : tier.priceUsdCents,
       transactionId: session.id,
       identity: capiIdentityFromProfile(dbUser),
       attribution: capiAttribution,

@@ -218,40 +218,43 @@ export async function POST(request: Request) {
         if (!saleId || !subscriptionId) break;
 
         // Events can arrive out of order — a SALE may beat ACTIVATED, so
-        // sync (which upserts the local row) before granting.
-        const sub = await prisma.subscription.findUnique({
-          where: { paypalSubscriptionId: subscriptionId },
-          include: { tier: true },
-        });
+        // sync (which upserts the local row and refreshes period dates)
+        // BEFORE granting. The sync result also carries the plan's cycle
+        // length, which decides the grant size — an annual plan's one sale
+        // pays for 12 months of credits.
+        const synced = await syncPaypalSubscription(subscriptionId);
 
-        if (!sub) {
-          const synced = await syncPaypalSubscription(subscriptionId);
-          if (!synced) {
-            console.log(
-              `PayPal sale ${saleId} for unknown subscription ${subscriptionId} — ignored`
-            );
-            break;
-          }
+        if (synced) {
           await grantPaypalSubscriptionCycle({
             saleId,
             eventType: event.event_type,
             userId: synced.userId,
-            creditsPerMonth: synced.creditsPerMonth,
+            credits: synced.creditsPerCycle,
             tierDisplayName: synced.tierDisplayName,
           });
           break;
         }
 
+        // Remote couldn't be attributed (shouldn't coincide with a completed
+        // sale) — fall back to the local row's monthly credits so a paying
+        // subscriber is never silently skipped.
+        const sub = await prisma.subscription.findUnique({
+          where: { paypalSubscriptionId: subscriptionId },
+          include: { tier: true },
+        });
+        if (!sub) {
+          console.log(
+            `PayPal sale ${saleId} for unknown subscription ${subscriptionId} — ignored`
+          );
+          break;
+        }
         await grantPaypalSubscriptionCycle({
           saleId,
           eventType: event.event_type,
           userId: sub.userId,
-          creditsPerMonth: sub.tier.creditsPerMonth,
+          credits: sub.tier.creditsPerMonth,
           tierDisplayName: sub.tier.displayName,
         });
-
-        // Refresh period dates (renewal moved the window forward).
-        await syncPaypalSubscription(subscriptionId);
         break;
       }
 

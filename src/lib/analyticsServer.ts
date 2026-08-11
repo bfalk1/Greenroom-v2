@@ -37,6 +37,9 @@ export function trackSubscriptionActivatedServer(props: {
   provider: "stripe" | "paypal";
   lifetime: boolean;
   source?: string | null;
+  // Billing cycle length — "year" for the annual plans. Optional so older
+  // call sites default to monthly.
+  interval?: "month" | "year";
   via: "webhook" | "return" | "cron" | "reconcile";
 }) {
   const ph = client();
@@ -49,6 +52,7 @@ export function trackSubscriptionActivatedServer(props: {
       provider: props.provider,
       lifetime: props.lifetime,
       acquisition_source: props.source ?? null,
+      billing_interval: props.interval ?? "month",
       via: props.via,
     },
   });

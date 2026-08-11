@@ -155,6 +155,8 @@ export function trackPricingPlanSelected(
     // The click carried the $5.99-first-month VIP offer (the /pricing VIP card
     // shows it to eligible visitors).
     firstMonth?: boolean;
+    // Which billing toggle was active — "year" for the annual option.
+    interval?: "month" | "year";
   }
 ) {
   posthog.capture("pricing_plan_selected", {
@@ -162,6 +164,7 @@ export function trackPricingPlanSelected(
     signed_in: opts.signedIn,
     destination: opts.destination,
     first_month: opts.firstMonth ?? false,
+    billing_interval: opts.interval ?? "month",
   });
 }
 
@@ -172,6 +175,7 @@ export function trackSubscriptionCheckout(
     tier?: string;
     lifetime?: boolean;
     firstMonth?: boolean;
+    interval?: "month" | "year";
     method?: string;
     // The price the buyer committed to (discount applied), in cents.
     valueUsdCents?: number;
@@ -188,6 +192,7 @@ export function trackSubscriptionCheckout(
     tier: opts?.tier,
     lifetime: opts?.lifetime ?? false,
     first_month: opts?.firstMonth ?? false,
+    billing_interval: opts?.interval ?? "month",
     payment_method: opts?.method,
   });
   metaTrack(
@@ -312,6 +317,8 @@ export function trackCheckoutViewed(props: {
   // lifetime's eligibility field below — both offers use the same never-paid
   // verdict.
   firstMonth?: boolean;
+  // "year" when the annual billing option is being checked out.
+  interval?: "month" | "year";
   lifetimeEligible: boolean | null;
   signedIn: boolean;
   // The price the buyer is being shown at render, in cents (discount applied
@@ -324,11 +331,14 @@ export function trackCheckoutViewed(props: {
     ? "-lifetime"
     : props.firstMonth
       ? "-first-month"
-      : "";
+      : props.interval === "year"
+        ? "-annual"
+        : "";
   posthog.capture("checkout_viewed", {
     tier: props.tier,
     lifetime: props.lifetime,
     first_month: props.firstMonth ?? false,
+    billing_interval: props.interval ?? "month",
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
