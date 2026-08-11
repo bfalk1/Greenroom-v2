@@ -8,6 +8,7 @@ import { DesktopTitleBar } from "./DesktopTitleBar";
 import { DesktopLibrarySync } from "@/components/desktop/DesktopLibrarySync";
 import { NowPlayingBar } from "@/components/audio/NowPlayingBar";
 import { TermsReacceptanceGate } from "@/components/legal/TermsReacceptanceGate";
+import { CreatorWelcomeModal } from "@/components/creator/CreatorWelcomeModal";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -61,6 +62,7 @@ export function AppShell({ children }: AppShellProps) {
         <Footer />
         <NowPlayingBar />
         <TermsReacceptanceGate />
+        <CreatorWelcomeModal isDesktop={false} />
       </div>
     );
   }
@@ -78,6 +80,7 @@ export function AppShell({ children }: AppShellProps) {
         <main className="ml-52 pt-10 pb-24 min-h-screen">{children}</main>
         <NowPlayingBar />
         <TermsReacceptanceGate />
+        <CreatorWelcomeModal isDesktop />
       </div>
     );
   }
@@ -90,6 +93,7 @@ export function AppShell({ children }: AppShellProps) {
       <Footer />
       <NowPlayingBar />
       <TermsReacceptanceGate />
+      <CreatorWelcomeModal isDesktop={false} />
     </div>
   );
 }

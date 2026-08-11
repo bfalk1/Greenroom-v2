@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: authUser.id },
-      select: { role: true },
+      select: { role: true, paypalEmail: true },
     });
 
     if (!dbUser || (dbUser.role !== "CREATOR" && dbUser.role !== "ADMIN")) {
@@ -158,6 +158,9 @@ export async function GET(_request: NextRequest) {
         // Processing fee (covered by the creator, deducted from each payout)
         payoutFeeBps: feeConfig.feeBps,
         payoutFeeFixedCents: feeConfig.feeFixedCents,
+        // Destination for the money. Null until the creator sets it, which every
+        // payout path requires — the page surfaces it as a blocking prompt.
+        paypalEmail: dbUser.paypalEmail,
       },
       purchases: mappedPurchases,
       payouts: payouts.map((p) => ({

@@ -8,6 +8,7 @@ import {
   capiAttributionFromMetadata,
   metaCapiPurchase,
   capiIdentityFromProfile,
+  withUserFbcFallback,
 } from "@/lib/metaCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
@@ -217,6 +218,15 @@ async function handleCheckoutCompleted(
   // come back from the metadata the checkout route stashed; the charged
   // amount (post-coupon, pre-anything-else the tier table doesn't know) is
   // the session's amount_total.
+  // The account-banked click id backstops metadata written before the
+  // durable-fbc fallback shipped (or banked after the checkout POST).
+  // Best-effort: attribution is never worth failing the webhook.
+  const fbcUser = await prisma.user
+    .findUnique({
+      where: { id: userId },
+      select: { metaFbc: true, metaFbcUpdatedAt: true },
+    })
+    .catch(() => null);
   metaCapiPurchase({
     userId,
     email: session.customer_details?.email ?? undefined,
@@ -233,7 +243,10 @@ async function handleCheckoutCompleted(
       state: session.customer_details?.address?.state,
       postalCode: session.customer_details?.address?.postal_code,
     }),
-    attribution: capiAttributionFromMetadata(session.metadata ?? undefined),
+    attribution: withUserFbcFallback(
+      capiAttributionFromMetadata(session.metadata ?? undefined),
+      fbcUser
+    ),
   });
 
   // A VIP activation is the trigger that pays out a pending referral — only for
