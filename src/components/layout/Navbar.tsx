@@ -6,11 +6,15 @@ import { usePathname } from "next/navigation";
 import { Settings, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/useUser";
+import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const { user, loading, logout } = useUser();
+  // Self-disables (returns zeros, no polling) for non-staff users.
+  const { total: staffUnread } = useUnreadCount({ staff: true });
 
   const hasActiveSub =
     user?.subscription_status === "active" ||
@@ -70,6 +74,23 @@ export function Navbar() {
                   {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                     navLink("/mod/samples", "Moderation")}
+                  {(user.role === "MODERATOR" || user.role === "ADMIN") && (
+                    <Link
+                      href="/mod/inbox"
+                      className={`text-sm font-medium transition flex items-center gap-1.5 ${
+                        pathname === "/mod/inbox"
+                          ? "text-[#39b54a]"
+                          : "text-[#a1a1a1] hover:text-white"
+                      }`}
+                    >
+                      Inbox
+                      {staffUnread > 0 && (
+                        <span className="bg-[#39b54a] text-black text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                          {staffUnread}
+                        </span>
+                      )}
+                    </Link>
+                  )}
                   {user.role === "ADMIN" && navLink("/admin/dashboard", "Admin")}
                   {downloadBubble}
                 </>
@@ -103,6 +124,9 @@ export function Navbar() {
                     </span>
                   </div>
                 )}
+
+                {/* Notifications */}
+                <NotificationBell />
 
                 {/* Account */}
                 <Link
@@ -189,6 +213,16 @@ export function Navbar() {
                   {(user.role === "MODERATOR" || user.role === "ADMIN") && (
                     <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                       Moderation
+                    </Link>
+                  )}
+                  {(user.role === "MODERATOR" || user.role === "ADMIN") && (
+                    <Link href="/mod/inbox" className="text-sm font-medium text-[#a1a1a1] hover:text-white flex items-center gap-1.5">
+                      Inbox
+                      {staffUnread > 0 && (
+                        <span className="bg-[#39b54a] text-black text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                          {staffUnread}
+                        </span>
+                      )}
                     </Link>
                   )}
                   {user.role === "ADMIN" && (

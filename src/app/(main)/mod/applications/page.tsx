@@ -9,9 +9,11 @@ import {
   XCircle,
   Clock,
   Filter,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { MessageUserModal } from "@/components/admin/MessageUserModal";
 
 interface ApplicationUser {
   id: string;
@@ -48,6 +50,7 @@ export default function ModApplicationsPage() {
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [messagingApp, setMessagingApp] = useState<Application | null>(null);
 
   const fetchApplications = useCallback(async () => {
     try {
@@ -333,7 +336,29 @@ export default function ModApplicationsPage() {
                         )}
                         Deny
                       </Button>
+                      <Button
+                        onClick={() => setMessagingApp(app)}
+                        variant="ghost"
+                        className="border border-[#2a2a2a] hover:bg-[#1a1a1a] text-[#a1a1a1]"
+                      >
+                        <MessageSquare className="w-4 h-4 mr-2" />
+                        Message applicant
+                      </Button>
                     </div>
+                  </div>
+                )}
+
+                {/* Message applicant (already reviewed) */}
+                {app.status !== "PENDING" && (
+                  <div className="border-t border-[#2a2a2a] pt-4 mt-4">
+                    <Button
+                      onClick={() => setMessagingApp(app)}
+                      variant="ghost"
+                      className="border border-[#2a2a2a] hover:bg-[#1a1a1a] text-[#a1a1a1]"
+                    >
+                      <MessageSquare className="w-4 h-4 mr-2" />
+                      Message applicant
+                    </Button>
                   </div>
                 )}
               </div>
@@ -353,6 +378,22 @@ export default function ModApplicationsPage() {
           </div>
         )}
       </div>
+
+      <MessageUserModal
+        open={!!messagingApp}
+        onClose={() => setMessagingApp(null)}
+        defaultUser={
+          messagingApp
+            ? {
+                id: messagingApp.userId,
+                label: `${messagingApp.artistName} (${messagingApp.user.email})`,
+              }
+            : undefined
+        }
+        contextType="CreatorApplication"
+        contextId={messagingApp?.id}
+        defaultSubject="About your creator application"
+      />
     </div>
   );
 }

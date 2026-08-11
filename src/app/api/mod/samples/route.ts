@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { notifyModerationSafe } from "@/lib/notifications";
 
 // GET /api/mod/samples — list samples with search, filters, stats
 export async function GET(req: NextRequest) {
@@ -184,6 +185,10 @@ export async function PATCH(req: NextRequest) {
           targetId: sampleId,
         },
       });
+
+      await notifyModerationSafe("sample", "approved", [
+        { id: sample.id, name: sample.name, creatorId: sample.creatorId },
+      ]);
     } else {
       await prisma.sample.update({
         where: { id: sampleId },
@@ -198,6 +203,10 @@ export async function PATCH(req: NextRequest) {
           targetId: sampleId,
         },
       });
+
+      await notifyModerationSafe("sample", "rejected", [
+        { id: sample.id, name: sample.name, creatorId: sample.creatorId },
+      ]);
     }
 
     return NextResponse.json({ success: true });
@@ -308,6 +317,10 @@ export async function DELETE(req: NextRequest) {
       metadata: JSON.stringify({ name: sample.name, creatorId: sample.creatorId }),
     },
   });
+
+  await notifyModerationSafe("sample", "removed", [
+    { id: sample.id, name: sample.name, creatorId: sample.creatorId },
+  ]);
 
   return NextResponse.json({ success: true });
 }
