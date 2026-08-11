@@ -18,8 +18,6 @@ import {
   Shield,
   CheckSquare,
   Square,
-  Pencil,
-  X,
   Sliders,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,6 +25,8 @@ import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
 import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
+import { BulkActionBar } from "@/components/admin/BulkActionBar";
+import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
 import { PresetModeration } from "@/components/admin/PresetModeration";
 import { formatSampleType } from "@/lib/utils/sampleType";
 import { toast } from "sonner";
@@ -125,6 +125,12 @@ export default function ModSamplesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Pending reject/takedown awaiting a reason. One sample id = single action,
+  // many = the bulk endpoint.
+  const [reasonPrompt, setReasonPrompt] = useState<{
+    kind: "reject" | "delete";
+    sampleIds: string[];
+  } | null>(null);
 
   const fetchData = useCallback(
     async (
@@ -233,15 +239,29 @@ export default function ModSamplesPage() {
     fetchData(view, search, { offset: samples.length, append: true });
   };
 
+  // Rejections and takedowns route through the reason modal; approvals go
+  // straight through (nothing to explain).
   const handleSampleModerate = async (
     sampleId: string,
     action: "approve" | "reject"
+  ) => {
+    if (action === "reject") {
+      setReasonPrompt({ kind: "reject", sampleIds: [sampleId] });
+      return;
+    }
+    await submitSampleModeration(sampleId, "approve");
+  };
+
+  const submitSampleModeration = async (
+    sampleId: string,
+    action: "approve" | "reject",
+    reviewNote?: string
   ) => {
     try {
       const res = await fetch("/api/mod/samples", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId, action }),
+        body: JSON.stringify({ sampleId, action, reviewNote }),
       });
 
       if (!res.ok) {
@@ -260,11 +280,15 @@ export default function ModSamplesPage() {
     }
   };
 
-  const handleDeleteSample = async (sampleId: string) => {
-    if (!confirm("Delete this sample? It will be unpublished and removed from the marketplace.")) return;
-    
+  const handleDeleteSample = (sampleId: string) => {
+    setReasonPrompt({ kind: "delete", sampleIds: [sampleId] });
+  };
+
+  const submitDeleteSample = async (sampleId: string, reviewNote: string) => {
     try {
-      const res = await fetch(`/api/mod/samples?sampleId=${sampleId}`, {
+      const params = new URLSearchParams({ sampleId });
+      if (reviewNote) params.set("reviewNote", reviewNote);
+      const res = await fetch(`/api/mod/samples?${params.toString()}`, {
         method: "DELETE",
       });
 
@@ -275,7 +299,7 @@ export default function ModSamplesPage() {
       toast.success("Sample deleted");
       refreshCurrent();
       fetchLowestRated();
-    } catch (error) {
+    } catch {
       toast.error("Failed to delete sample");
     }
   };
@@ -333,6 +357,7 @@ export default function ModSamplesPage() {
   const runBulk = async (payload: {
     action?: "approve" | "reject" | "delete";
     metadata?: Record<string, unknown>;
+    reviewNote?: string;
   }) => {
     if (selectedIds.size === 0) return;
     setBulkBusy(true);
@@ -359,14 +384,32 @@ export default function ModSamplesPage() {
     }
   };
 
+  // The modal is the confirmation step for both — it names the count and can't
+  // be submitted without a reason (rejects), so a second confirm() is noise.
   const handleBulkReject = () => {
-    if (!confirm(`Reject ${selectedIds.size} selected sample(s)?`)) return;
-    runBulk({ action: "reject" });
+    if (selectedIds.size === 0) return;
+    setReasonPrompt({ kind: "reject", sampleIds: [...selectedIds] });
   };
 
   const handleBulkDelete = () => {
-    if (!confirm(`Delete ${selectedIds.size} selected sample(s)? They'll be unpublished and removed from the marketplace.`)) return;
-    runBulk({ action: "delete" });
+    if (selectedIds.size === 0) return;
+    setReasonPrompt({ kind: "delete", sampleIds: [...selectedIds] });
+  };
+
+  const handleReasonConfirm = async (reason: string) => {
+    if (!reasonPrompt) return;
+    const { kind, sampleIds } = reasonPrompt;
+    setReasonPrompt(null);
+
+    if (sampleIds.length === 1) {
+      if (kind === "reject") {
+        await submitSampleModeration(sampleIds[0], "reject", reason);
+      } else {
+        await submitDeleteSample(sampleIds[0], reason);
+      }
+      return;
+    }
+    await runBulk({ action: kind === "reject" ? "reject" : "delete", reviewNote: reason });
   };
 
   if (loading && samples.length === 0) {
@@ -397,54 +440,15 @@ export default function ModSamplesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {selectedIds.size > 0 && (
-          <div className="sticky top-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 mb-4 bg-[#141414]/95 backdrop-blur border-b border-[#39b54a]/30 flex flex-wrap items-center gap-3">
-            <span className="text-sm font-medium text-white">{selectedIds.size} selected</span>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                onClick={() => setBulkEditOpen(true)}
-                disabled={bulkBusy}
-                className="bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white"
-              >
-                <Pencil className="w-4 h-4 mr-1" /> Edit
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => runBulk({ action: "approve" })}
-                disabled={bulkBusy}
-                className="bg-[#39b54a] text-black hover:bg-[#2e9140]"
-              >
-                <CheckCircle2 className="w-4 h-4 mr-1" /> Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleBulkReject}
-                disabled={bulkBusy}
-                className="border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
-              >
-                Reject
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleBulkDelete}
-                disabled={bulkBusy}
-                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-              >
-                <Trash2 className="w-4 h-4 mr-1" /> Delete
-              </Button>
-            </div>
-            {bulkBusy && <Loader2 className="w-4 h-4 animate-spin text-[#39b54a]" />}
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              className="ml-auto text-xs text-[#a1a1a1] hover:text-white flex items-center gap-1"
-            >
-              <X className="w-3.5 h-3.5" /> Clear
-            </button>
-          </div>
-        )}
+        <BulkActionBar
+          count={selectedIds.size}
+          busy={bulkBusy}
+          onEdit={() => setBulkEditOpen(true)}
+          onApprove={() => runBulk({ action: "approve" })}
+          onReject={handleBulkReject}
+          onDelete={handleBulkDelete}
+          onClear={() => setSelectedIds(new Set())}
+        />
 
         <h1 className="text-3xl font-bold text-white mb-8">
           Moderation Dashboard
@@ -893,6 +897,33 @@ export default function ModSamplesPage() {
           count={selectedIds.size}
           onClose={() => setBulkEditOpen(false)}
           onApply={(changes) => runBulk({ metadata: changes })}
+        />
+
+        {/* Reject / takedown reason — single and bulk share it */}
+        <ModerationReasonModal
+          open={reasonPrompt !== null}
+          onClose={() => setReasonPrompt(null)}
+          onConfirm={handleReasonConfirm}
+          required={reasonPrompt?.kind === "reject"}
+          confirmLabel={
+            reasonPrompt?.kind === "reject"
+              ? `Reject ${reasonPrompt.sampleIds.length > 1 ? `${reasonPrompt.sampleIds.length} samples` : "sample"}`
+              : `Remove ${reasonPrompt && reasonPrompt.sampleIds.length > 1 ? `${reasonPrompt.sampleIds.length} samples` : "sample"}`
+          }
+          title={
+            reasonPrompt?.kind === "reject"
+              ? reasonPrompt.sampleIds.length > 1
+                ? `Reject ${reasonPrompt.sampleIds.length} samples`
+                : "Reject sample"
+              : reasonPrompt && reasonPrompt.sampleIds.length > 1
+              ? `Remove ${reasonPrompt.sampleIds.length} samples`
+              : "Remove sample"
+          }
+          description={
+            reasonPrompt?.kind === "reject"
+              ? "Sent back to draft so the creator can revise and resubmit."
+              : "Unpublished permanently. The creator can't resubmit it."
+          }
         />
       </div>
     </div>

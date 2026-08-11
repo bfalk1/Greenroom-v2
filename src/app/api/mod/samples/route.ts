@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { notifyModerationSafe } from "@/lib/notifications";
+import { notifyModerationSafe, parseReviewNote } from "@/lib/notifications";
 
 // GET /api/mod/samples — list samples with search, filters, stats
 export async function GET(req: NextRequest) {
@@ -141,9 +141,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sampleId, action, ...metadata } = body as { 
-    sampleId: string; 
+  const { sampleId, action, reviewNote: rawReviewNote, ...metadata } = body as {
+    sampleId: string;
     action?: "approve" | "reject";
+    reviewNote?: unknown;
     [key: string]: unknown;
   };
 
@@ -172,9 +173,11 @@ export async function PATCH(req: NextRequest) {
 
       // Publish and (re)activate. isActive is reset here because reject sets it
       // false — a sample sent back, revised, and re-approved must go live again.
+      // reviewNote is cleared for the same reason: the old rejection reason no
+      // longer applies once the sample is live.
       await prisma.sample.update({
         where: { id: sampleId },
-        data: { status: "PUBLISHED", isActive: true },
+        data: { status: "PUBLISHED", isActive: true, reviewNote: null },
       });
 
       await prisma.auditLog.create({
@@ -190,9 +193,16 @@ export async function PATCH(req: NextRequest) {
         { id: sample.id, name: sample.name, creatorId: sample.creatorId },
       ]);
     } else {
+      // A rejection without a reason is the thing this exists to prevent —
+      // reject the request, not just the sample.
+      const parsed = parseReviewNote("rejected", rawReviewNote);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+
       await prisma.sample.update({
         where: { id: sampleId },
-        data: { status: "DRAFT", isActive: false },
+        data: { status: "DRAFT", isActive: false, reviewNote: parsed.note },
       });
 
       await prisma.auditLog.create({
@@ -201,12 +211,16 @@ export async function PATCH(req: NextRequest) {
           action: "SAMPLE_REJECTED",
           targetType: "Sample",
           targetId: sampleId,
+          metadata: JSON.stringify({ reviewNote: parsed.note }),
         },
       });
 
-      await notifyModerationSafe("sample", "rejected", [
-        { id: sample.id, name: sample.name, creatorId: sample.creatorId },
-      ]);
+      await notifyModerationSafe(
+        "sample",
+        "rejected",
+        [{ id: sample.id, name: sample.name, creatorId: sample.creatorId }],
+        parsed.note
+      );
     }
 
     return NextResponse.json({ success: true });
@@ -296,6 +310,13 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "sampleId required" }, { status: 400 });
   }
 
+  // Optional on a takedown (unlike a reject, there's nothing to revise) but
+  // still surfaced to the creator when the moderator gives one.
+  const parsed = parseReviewNote("removed", searchParams.get("reviewNote"));
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
   const sample = await prisma.sample.findUnique({ where: { id: sampleId } });
   if (!sample) {
     return NextResponse.json({ error: "Sample not found" }, { status: 404 });
@@ -305,7 +326,7 @@ export async function DELETE(req: NextRequest) {
   // it stays out of the moderation queue and the creator can't resubmit it.
   await prisma.sample.update({
     where: { id: sampleId },
-    data: { isActive: false, status: "REMOVED" },
+    data: { isActive: false, status: "REMOVED", reviewNote: parsed.note },
   });
 
   await prisma.auditLog.create({
@@ -314,13 +335,20 @@ export async function DELETE(req: NextRequest) {
       action: "SAMPLE_DELETED",
       targetType: "Sample",
       targetId: sampleId,
-      metadata: JSON.stringify({ name: sample.name, creatorId: sample.creatorId }),
+      metadata: JSON.stringify({
+        name: sample.name,
+        creatorId: sample.creatorId,
+        reviewNote: parsed.note,
+      }),
     },
   });
 
-  await notifyModerationSafe("sample", "removed", [
-    { id: sample.id, name: sample.name, creatorId: sample.creatorId },
-  ]);
+  await notifyModerationSafe(
+    "sample",
+    "removed",
+    [{ id: sample.id, name: sample.name, creatorId: sample.creatorId }],
+    parsed.note
+  );
 
   return NextResponse.json({ success: true });
 }

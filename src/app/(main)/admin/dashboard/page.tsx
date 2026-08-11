@@ -27,6 +27,7 @@ import {
   Upload,
   Inbox,
   MessageSquare,
+  Megaphone,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,7 @@ import AnalyticsOverview from "@/components/admin/analytics/AnalyticsOverview";
 import { MessageUserModal } from "@/components/admin/MessageUserModal";
 import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
 import { SubscribersPanel } from "@/components/admin/SubscribersPanel";
+import { BroadcastPanel } from "@/components/admin/BroadcastPanel";
 import { toast } from "sonner";
 
 type AdminSection =
@@ -62,6 +64,7 @@ type AdminSection =
   | "infinite-invites"
   | "moderators"
   | "audit-log"
+  | "notifications"
   | "exports";
 
 interface Stats {
@@ -271,6 +274,7 @@ export default function AdminDashboardPage() {
       icon: Inbox,
       badge: staffUnread || undefined,
     },
+    { id: "notifications", label: "Notifications", icon: Megaphone },
     { id: "tools", label: "Tools", icon: Settings },
   ];
 
@@ -665,6 +669,7 @@ export default function AdminDashboardPage() {
             />
           )}
           {activeSection === "subscribers" && <SubscribersPanel />}
+          {activeSection === "notifications" && <BroadcastPanel />}
           {activeSection === "applications" && (
             <div>
               {applications.length > 0 ? (

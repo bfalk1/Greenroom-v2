@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   groupModerationByCreator,
   moderationTitle,
+  parseReviewNote,
+  REVIEW_NOTE_MAX,
 } from "./notificationFormat";
 
 test("single item gets a named title and direct context id", () => {
@@ -86,4 +88,72 @@ test("moderation titles read naturally across kinds and actions", () => {
     moderationTitle("sample", "removed", 1),
     "Your sample was removed"
   );
+});
+
+test("a rejection reason lands in the body and metadata", () => {
+  const rows = groupModerationByCreator(
+    "preset",
+    "rejected",
+    [{ id: "p1", name: "Warm Pad", creatorId: "c1" }],
+    "  Audio clips at the tail.  "
+  );
+  assert.equal(rows[0].type, "PRESET_REJECTED");
+  assert.equal(rows[0].body, "Audio clips at the tail.");
+  assert.deepEqual(rows[0].metadata, {
+    count: 1,
+    itemNames: ["Warm Pad"],
+    itemIds: ["p1"],
+    reviewNote: "Audio clips at the tail.",
+  });
+});
+
+test("one reason is shared across every creator in a bulk reject", () => {
+  const rows = groupModerationByCreator(
+    "sample",
+    "rejected",
+    [
+      { id: "s1", name: "A", creatorId: "c1" },
+      { id: "s2", name: "B", creatorId: "c2" },
+    ],
+    "Mislabeled BPM."
+  );
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.body === "Mislabeled BPM."));
+});
+
+test("no reason leaves the body null rather than empty-string", () => {
+  const rows = groupModerationByCreator("sample", "approved", [
+    { id: "s1", name: "A", creatorId: "c1" },
+  ]);
+  assert.equal(rows[0].body, null);
+  assert.equal("reviewNote" in (rows[0].metadata as object), false);
+
+  const blank = groupModerationByCreator(
+    "sample",
+    "removed",
+    [{ id: "s1", name: "A", creatorId: "c1" }],
+    "   "
+  );
+  assert.equal(blank[0].body, null);
+});
+
+test("parseReviewNote requires a reason to reject but not to remove", () => {
+  assert.deepEqual(parseReviewNote("removed", ""), { ok: true, note: null });
+  assert.deepEqual(parseReviewNote("removed", undefined), { ok: true, note: null });
+  assert.deepEqual(parseReviewNote("rejected", "  Too noisy "), {
+    ok: true,
+    note: "Too noisy",
+  });
+
+  const missing = parseReviewNote("rejected", "   ");
+  assert.equal(missing.ok, false);
+
+  const nonString = parseReviewNote("rejected", 42);
+  assert.equal(nonString.ok, false);
+
+  const tooLong = parseReviewNote("rejected", "x".repeat(REVIEW_NOTE_MAX + 1));
+  assert.equal(tooLong.ok, false);
+
+  const atLimit = parseReviewNote("rejected", "x".repeat(REVIEW_NOTE_MAX));
+  assert.equal(atLimit.ok, true);
 });
