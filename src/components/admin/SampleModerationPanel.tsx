@@ -44,14 +44,10 @@ export function SampleModerationPanel({
     }
   };
 
+  // No confirm() here — every mount point routes reject through
+  // ModerationReasonModal, which is the real gate (it collects the required
+  // reason). A confirm on top of it means two popups for one decision.
   const handleReject = async () => {
-    if (
-      !confirm(
-        "Reject this sample? It will be sent back to draft and won't appear in the marketplace."
-      )
-    )
-      return;
-
     setSubmitting(true);
     try {
       onModerate("reject");
