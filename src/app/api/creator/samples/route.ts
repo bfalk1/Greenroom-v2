@@ -143,6 +143,7 @@ export async function GET(_request: NextRequest) {
         previewUrl: signedPreviewUrl,
         waveformData: s.waveformData,
         status: s.status,
+        reviewNote: s.reviewNote,
         downloadCount: s.downloadCount,
         ratingAvg: s.ratingAvg,
         ratingCount: s.ratingCount,

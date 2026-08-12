@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import {
+  createNotification,
+  sendApplicationDecisionEmailSafe,
+} from "@/lib/notifications";
 
 // POST /api/mod/applications/[id]/review — approve or deny a creator application
 export async function POST(
@@ -87,6 +91,10 @@ export async function POST(
       // Only set role to CREATOR if user is currently a regular USER
       if (applicant?.role === "USER") {
         updateData.role = "CREATOR";
+        // Arm the congratulations modal (CreatorWelcomeModal). Explicitly
+        // nulled rather than relying on the column default so a re-approval
+        // after a demotion shows the welcome again.
+        updateData.creatorWelcomeSeenAt = null;
       }
 
       await tx.user.update({
@@ -112,6 +120,30 @@ export async function POST(
 
     return updated;
   });
+
+  // Notify the applicant (in-app + email). Never allowed to break the review.
+  try {
+    await createNotification(prisma, {
+      userId: application.userId,
+      type:
+        decision === "approve" ? "APPLICATION_APPROVED" : "APPLICATION_DENIED",
+      title:
+        decision === "approve"
+          ? "Your creator application was approved"
+          : "Your creator application was not approved",
+      body: decision === "approve" ? null : note || null,
+      contextType: "CreatorApplication",
+      contextId: application.id,
+      metadata: { reviewNote: note ?? null },
+    });
+    await sendApplicationDecisionEmailSafe(
+      application.userId,
+      decision === "approve" ? "approved" : "denied",
+      note
+    );
+  } catch (error) {
+    console.error("POST /api/mod/applications/[id]/review notification error:", error);
+  }
 
   return NextResponse.json({ application: result });
 }

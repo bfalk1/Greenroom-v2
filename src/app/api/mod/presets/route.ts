@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { notifyModerationSafe, parseReviewNote } from "@/lib/notifications";
 
 // GET /api/mod/presets — list presets for moderation
 export async function GET(req: NextRequest) {
@@ -172,9 +173,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { presetId, action } = body as {
+  const { presetId, action, reviewNote: rawReviewNote } = body as {
     presetId: string;
     action: "approve" | "reject";
+    reviewNote?: unknown;
   };
 
   if (!presetId || !action) {
@@ -188,10 +190,11 @@ export async function PATCH(req: NextRequest) {
 
   if (action === "approve") {
     // Reactivate on publish — reject sets isActive:false, so a sent-back preset
-    // that's re-approved must go live again.
+    // that's re-approved must go live again, and the old rejection reason no
+    // longer applies.
     await prisma.preset.update({
       where: { id: presetId },
-      data: { status: "PUBLISHED", isActive: true },
+      data: { status: "PUBLISHED", isActive: true, reviewNote: null },
     });
 
     await prisma.auditLog.create({
@@ -202,10 +205,19 @@ export async function PATCH(req: NextRequest) {
         targetId: presetId,
       },
     });
+
+    await notifyModerationSafe("preset", "approved", [
+      { id: preset.id, name: preset.name, creatorId: preset.creatorId },
+    ]);
   } else if (action === "reject") {
+    const parsed = parseReviewNote("rejected", rawReviewNote);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+
     await prisma.preset.update({
       where: { id: presetId },
-      data: { status: "DRAFT", isActive: false },
+      data: { status: "DRAFT", isActive: false, reviewNote: parsed.note },
     });
 
     await prisma.auditLog.create({
@@ -214,8 +226,16 @@ export async function PATCH(req: NextRequest) {
         action: "PRESET_REJECTED",
         targetType: "Preset",
         targetId: presetId,
+        metadata: JSON.stringify({ reviewNote: parsed.note }),
       },
     });
+
+    await notifyModerationSafe(
+      "preset",
+      "rejected",
+      [{ id: preset.id, name: preset.name, creatorId: preset.creatorId }],
+      parsed.note
+    );
   } else {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
@@ -250,6 +270,13 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "presetId required" }, { status: 400 });
   }
 
+  // Optional on a takedown (unlike a reject, there's nothing to revise) but
+  // still surfaced to the creator when the moderator gives one.
+  const parsed = parseReviewNote("removed", searchParams.get("reviewNote"));
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
   const preset = await prisma.preset.findUnique({ where: { id: presetId } });
   if (!preset) {
     return NextResponse.json({ error: "Preset not found" }, { status: 404 });
@@ -259,7 +286,7 @@ export async function DELETE(req: NextRequest) {
   // moderation queue and the creator can't bring it back.
   await prisma.preset.update({
     where: { id: presetId },
-    data: { isActive: false, status: "REMOVED" },
+    data: { isActive: false, status: "REMOVED", reviewNote: parsed.note },
   });
 
   await prisma.auditLog.create({
@@ -268,9 +295,20 @@ export async function DELETE(req: NextRequest) {
       action: "PRESET_DELETED",
       targetType: "Preset",
       targetId: presetId,
-      metadata: JSON.stringify({ name: preset.name, creatorId: preset.creatorId }),
+      metadata: JSON.stringify({
+        name: preset.name,
+        creatorId: preset.creatorId,
+        reviewNote: parsed.note,
+      }),
     },
   });
+
+  await notifyModerationSafe(
+    "preset",
+    "removed",
+    [{ id: preset.id, name: preset.name, creatorId: preset.creatorId }],
+    parsed.note
+  );
 
   return NextResponse.json({ success: true });
 }

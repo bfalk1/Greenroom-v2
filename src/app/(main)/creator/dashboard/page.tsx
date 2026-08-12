@@ -29,6 +29,7 @@ interface CreatorSample {
   bpm: number | null;
   creditPrice: number;
   status: string;
+  reviewNote?: string | null;
   downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
@@ -273,6 +274,16 @@ function CreatorSampleRow({
         >
           {sample.status === "REMOVED" ? "Removed by moderator" : sample.status}
         </span>
+        {/* Why it was sent back — shown next to the sample being revised, not
+            just in the notification the creator may have already dismissed. */}
+        {sample.reviewNote && sample.status !== "PUBLISHED" && (
+          <p
+            className="mt-1 line-clamp-2 text-[11px] leading-snug text-yellow-400/90"
+            title={sample.reviewNote}
+          >
+            {sample.reviewNote}
+          </p>
+        )}
       </div>
 
       {/* Actions */}
@@ -350,6 +361,7 @@ interface CreatorPreset {
   creatorAvatarUrl?: string | null;
   previewUrl?: string | null;
   status: string;
+  reviewNote?: string | null;
   downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
@@ -497,6 +509,14 @@ function CreatorPresetRow({
         >
           {preset.status === "REMOVED" ? "Removed by moderator" : preset.status}
         </span>
+        {preset.reviewNote && preset.status !== "PUBLISHED" && (
+          <p
+            className="mt-1 line-clamp-2 text-[11px] leading-snug text-yellow-400/90"
+            title={preset.reviewNote}
+          >
+            {preset.reviewNote}
+          </p>
+        )}
       </div>
 
       {/* Actions */}

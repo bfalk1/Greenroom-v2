@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { removeObject, verifyStoredZip } from "@/lib/storageValidate";
+import {
+  notifyApplicationSubmittedSafe,
+  sendApplicationReceivedEmailSafe,
+} from "@/lib/notifications";
 
 // GET /api/creator/apply — return user's existing application (if any)
 export async function GET() {
@@ -98,6 +102,17 @@ export async function POST(req: NextRequest) {
         reviewedAt: null,
       },
     });
+
+    // Notify staff + confirm to the applicant. Both are *Safe (never throw)
+    // and must never fail the submission itself.
+    await notifyApplicationSubmittedSafe({
+      applicationId: updated.id,
+      applicantUserId: user.id,
+      artistName,
+      resubmission: true,
+    });
+    await sendApplicationReceivedEmailSafe(user.id, true);
+
     return NextResponse.json({ application: updated }, { status: 200 });
   }
 
@@ -113,6 +128,16 @@ export async function POST(req: NextRequest) {
       status: "PENDING",
     },
   });
+
+  // Notify staff + confirm to the applicant. Both are *Safe (never throw)
+  // and must never fail the submission itself.
+  await notifyApplicationSubmittedSafe({
+    applicationId: application.id,
+    applicantUserId: user.id,
+    artistName,
+    resubmission: false,
+  });
+  await sendApplicationReceivedEmailSafe(user.id, false);
 
   return NextResponse.json({ application }, { status: 201 });
 }

@@ -365,21 +365,93 @@ function boundedIdentifier(
   return v && v.length <= max ? v : null;
 }
 
+// A click id is only worth carrying in Meta's own shape —
+// fb.<subdomainIndex>.<creation-ms>.<fbclid> — anything else is a mangled or
+// forged cookie that pollutes match quality instead of improving it. This
+// guards both what we send to Meta and what we bank on the user row.
+const FBC_FORMAT = /^fb\.\d+\.\d+\.\S{1,400}$/;
+
+export function normalizeFbc(value: string | null | undefined): string | null {
+  const v = boundedIdentifier(value, 500);
+  return v && FBC_FORMAT.test(v) ? v : null;
+}
+
+// The single home of the cookie precedence: Meta's own _fbc (fbevents mints
+// it from the fbclid on an ad landing) first, then gr_fbc, the first-party
+// click id our middleware persists from the fbclid URL param. gr_fbc is the
+// only fbc source for the cohort CAPI exists to recover — ad-blocker /
+// Safari-ITP / Brave visitors whose browser never loaded fbevents (so _fbc
+// was never written), plus any redirect that stripped fbclid before the
+// pixel ran. Used at checkout capture AND by /api/user/me when banking the
+// id on the account, so the two can never disagree on precedence or format.
+export function fbcFromCookies(
+  cookieValue: (name: string) => string | undefined
+): string | null {
+  return normalizeFbc(cookieValue("_fbc")) ?? normalizeFbc(cookieValue("gr_fbc"));
+}
+
+// How long a banked click id stays usable as a checkout fallback — mirrors
+// the 90-day TTL of the _fbc/gr_fbc cookies it was copied from. Meta's
+// click-attribution windows are shorter, so an over-age id would add noise,
+// not conversions.
+export const USER_FBC_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+// The click time embedded in an fbc value (fb.<n>.<ms>.<fbclid>); 0 for an
+// absent/malformed value so comparisons treat "nothing" as oldest. For gr_fbc
+// the ms is our first-sight stamp, for a Meta-minted _fbc it is fbevents'
+// cookie-write time — either way the closest thing to click time we hold.
+export function fbcClickTimeMs(value: string | null | undefined): number {
+  const v = normalizeFbc(value);
+  if (!v) return 0;
+  const ms = Number(v.split(".")[2]);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Fall back to the click id banked on the user row (see /api/user/me) when
+ * the live request carried none. Cookie capture is jar-bound: an ad click in
+ * the Instagram in-app browser followed by a purchase on desktop, or any
+ * checkout after Safari ITP's 7-day expiry of the JS-set _fbc, reaches the
+ * checkout POST with no fbc at all — measured at ~86% of prod checkouts in
+ * 2026-07/08. A live cookie always wins; the stored id must be fresh.
+ */
+export function withUserFbcFallback(
+  attr: CapiAttribution,
+  user:
+    | { metaFbc: string | null; metaFbcUpdatedAt: Date | null }
+    | null
+    | undefined,
+  nowMs: number = Date.now()
+): CapiAttribution {
+  // Normalize the live value too — the PayPal activation feeds this from a
+  // checkout_attributions row that may predate the format guard, and a
+  // mangled id must neither be sent nor block recovery of a good banked one.
+  const live = normalizeFbc(attr.fbc);
+  if (live) return { ...attr, fbc: live };
+  const stored = normalizeFbc(user?.metaFbc);
+  const bankedAt = user?.metaFbcUpdatedAt?.getTime();
+  // Two age bounds: bank time (defends against a stamp-less legacy row) and
+  // the click time embedded in the value itself — a cookie first banked on
+  // day 89 of its life must not gain a second 90-day lease from the fresh
+  // bank stamp.
+  if (
+    !stored ||
+    !bankedAt ||
+    nowMs - bankedAt > USER_FBC_MAX_AGE_MS ||
+    nowMs - fbcClickTimeMs(stored) > USER_FBC_MAX_AGE_MS
+  ) {
+    return { ...attr, fbc: live };
+  }
+  return { ...attr, fbc: stored };
+}
+
 export function capiAttributionFromRequest(
   request: Request,
   cookieValue: (name: string) => string | undefined
 ): CapiAttribution {
   return {
     fbp: boundedIdentifier(cookieValue("_fbp"), 500),
-    // fbc: prefer Meta's own _fbc cookie (fbevents mints it from the fbclid on
-    // an ad landing); fall back to gr_fbc, the first-party click id our
-    // middleware persists from the fbclid URL param. The fallback is the only
-    // fbc source for the cohort CAPI exists to recover — ad-blocker / Safari-ITP
-    // / Brave visitors whose browser never loaded fbevents (so _fbc was never
-    // written), plus any redirect that stripped fbclid before the pixel ran.
-    fbc:
-      boundedIdentifier(cookieValue("_fbc"), 500) ??
-      boundedIdentifier(cookieValue("gr_fbc"), 500),
+    fbc: fbcFromCookies(cookieValue),
     clientIp: boundedIdentifier(
       request.headers.get("x-forwarded-for")?.split(",")[0],
       64
