@@ -38,6 +38,7 @@ import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
 import { ExportPanel } from "@/components/admin/ExportPanel";
 import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
 import { EditSampleModal } from "@/components/admin/EditSampleModal";
+import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
 import { FlaggedAccountsPanel } from "@/components/admin/FlaggedAccountsPanel";
 import { CreatorInvitePanel } from "@/components/admin/CreatorInvitePanel";
 import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
@@ -234,6 +235,9 @@ export default function AdminDashboardPage() {
   const [editingSample, setEditingSample] = useState<ReturnType<
     typeof mapSampleForPanel
   > | null>(null);
+  const [rejectingSampleId, setRejectingSampleId] = useState<string | null>(
+    null
+  );
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [messagingApp, setMessagingApp] = useState<Application | null>(null);
@@ -468,13 +472,14 @@ export default function AdminDashboardPage() {
 
   const handleSampleModerate = async (
     sampleId: string,
-    action: "approve" | "reject"
+    action: "approve" | "reject",
+    reviewNote?: string
   ) => {
     try {
       const res = await fetch("/api/mod/samples", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId, action }),
+        body: JSON.stringify({ sampleId, action, reviewNote }),
       });
 
       if (!res.ok) {
@@ -862,7 +867,9 @@ export default function AdminDashboardPage() {
                               "Unknown",
                           }}
                           onModerate={(action) =>
-                            handleSampleModerate(sample.id, action)
+                            action === "reject"
+                              ? setRejectingSampleId(sample.id)
+                              : handleSampleModerate(sample.id, action)
                           }
                         />
                         <div className="absolute top-4 right-4 flex gap-2">
@@ -1478,6 +1485,20 @@ export default function AdminDashboardPage() {
             }}
           />
         )}
+
+        {/* Reject reason — the API refuses a reason-less rejection */}
+        <ModerationReasonModal
+          open={rejectingSampleId !== null}
+          onClose={() => setRejectingSampleId(null)}
+          onConfirm={async (reason) => {
+            if (!rejectingSampleId) return;
+            await handleSampleModerate(rejectingSampleId, "reject", reason);
+            setRejectingSampleId(null);
+          }}
+          title="Reject sample"
+          description="Sent back to draft so the creator can revise and resubmit."
+          confirmLabel="Reject sample"
+        />
 
         {/* Message Applicant Modal */}
         <MessageUserModal
