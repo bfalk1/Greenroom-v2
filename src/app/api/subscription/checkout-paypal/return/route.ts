@@ -33,12 +33,14 @@ export async function GET(request: Request) {
     const subscriptionId = params.get("subscription_id");
 
     if (!subscriptionId) {
-      // Buyer backed out on PayPal — not a payment outcome. A lifetime buyer
-      // goes back to the offer, not to the full-price grid.
+      // Buyer backed out on PayPal — not a payment outcome. A discounted-offer
+      // buyer goes back to their offer, not to the full-price grid.
       return NextResponse.redirect(
         params.get("lifetime") === "1"
           ? `${appUrl}/vip?canceled=true`
-          : `${appUrl}/pricing?canceled=true`
+          : params.get("promo") === "1"
+            ? `${appUrl}/promo?canceled=true`
+            : `${appUrl}/pricing?canceled=true`
       );
     }
 

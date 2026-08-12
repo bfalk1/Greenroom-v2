@@ -39,4 +39,23 @@ for (const name of Object.keys(SUBSCRIPTION_TIERS) as TierName[]) {
       `${name}: config.ts grants ${tier.creditsPerMonth} credits but /pricing advertises ${pkg!.credits}`
     );
   });
+
+  test(`tier ${name} annual price matches the displayed/charged price`, () => {
+    assert.equal(
+      tier.annualPriceUsdCents,
+      Math.round(pkg!.annualPrice * 100),
+      `${name}: config.ts charges ${tier.annualPriceUsdCents}¢/yr but /pricing shows $${pkg!.annualPrice}/yr — reconcile config.ts, publicPriceConfig, and the Stripe/PayPal dashboards together`
+    );
+  });
+
+  // The annual toggle advertises "Save 15%" — a price change that quietly
+  // drops the real saving below 15% would turn that into a false claim.
+  test(`tier ${name} annual saving is at least the advertised 15%`, () => {
+    const yearAtMonthly = Math.round(pkg!.price * 100) * 12;
+    const saving = 1 - tier.annualPriceUsdCents / yearAtMonthly;
+    assert.ok(
+      saving >= 0.15,
+      `${name}: annual saves ${(saving * 100).toFixed(2)}% vs 12× monthly — below the advertised 15%`
+    );
+  });
 }

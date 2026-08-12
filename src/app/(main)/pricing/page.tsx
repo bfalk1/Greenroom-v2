@@ -5,7 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Check, Zap, Loader2 } from "lucide-react";
-import { PUBLIC_SUBSCRIPTION_PACKAGES } from "@/lib/stripe/publicPriceConfig";
+import {
+  PUBLIC_SUBSCRIPTION_PACKAGES,
+  VIP_FIRST_MONTH_OFFER,
+} from "@/lib/stripe/publicPriceConfig";
 import { useUser } from "@/lib/hooks/useUser";
 import {
   trackPaywallViewed,
@@ -38,6 +41,17 @@ function PricingContent() {
   // Which provider owns the user's current subscription (null = none) —
   // decides whether PayPal buttons subscribe, switch plans, or hide.
   const [subProvider, setSubProvider] = useState<string | null>(null);
+  // Server never-PAID verdict for the $5.99-first-month VIP offer (same rule
+  // /checkout and the checkout APIs use). null = anonymous or still loading —
+  // treated as eligible below (most /pricing traffic is anonymous ad-clickers,
+  // and the server re-verifies before charging), so only a confirmed "false"
+  // hides the offer.
+  const [firstMonthEligible, setFirstMonthEligible] = useState<boolean | null>(
+    null
+  );
+  // Billing toggle — annual bills once a year at ~15% off, with all 12
+  // months of credits granted upfront.
+  const [billing, setBilling] = useState<"month" | "year">("month");
   const { user, loading: userLoading, error: userError } = useUser();
   const searchParams = useSearchParams();
 
@@ -98,12 +112,18 @@ function PricingContent() {
     }
   }, [searchParams]);
 
-  // Load which provider owns the active subscription (for PayPal buttons).
+  // Load which provider owns the active subscription (for PayPal buttons) and
+  // the first-month-offer eligibility verdict.
   useEffect(() => {
     if (!user) return;
     fetch("/api/user/subscription")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setSubProvider(data?.subscription?.provider ?? null))
+      .then((data) => {
+        setSubProvider(data?.subscription?.provider ?? null);
+        if (typeof data?.lifetimeEligible === "boolean") {
+          setFirstMonthEligible(data.lifetimeEligible);
+        }
+      })
       .catch(() => {});
   }, [user]);
 
@@ -142,6 +162,13 @@ function PricingContent() {
     user?.subscription_status === "active" ||
     user?.subscription_status === "past_due";
 
+  // The $5.99-first-month VIP offer, shown on the VIP card. Hidden for active
+  // subscribers (their CTA is "Change Plan" — plan changes never carry the
+  // intro price) and for accounts the server confirmed have already paid.
+  // Everyone else — anonymous visitors included — sees it; the checkout APIs
+  // re-verify eligibility before any charge.
+  const showFirstMonthOffer = !hasActiveSub && firstMonthEligible !== false;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       {/* Header */}
@@ -167,7 +194,7 @@ function PricingContent() {
             {isWelcome && !hasActiveSub ? "Choose Your Plan" : "Simple Pricing"}
           </h1>
           <p className="text-xl text-[#a1a1a1]">
-            Choose your monthly subscription and get fresh credits every month
+            Choose your subscription and get fresh credits every month
           </p>
         </div>
 
@@ -201,9 +228,66 @@ function PricingContent() {
           </div>
         )}
 
+        {/* Billing toggle */}
+        <div className="flex justify-center mb-12">
+          <div
+            className="inline-flex items-center rounded-full border border-[#2a2a2a] bg-[#1a1a1a] p-1"
+            role="radiogroup"
+            aria-label="Billing period"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={billing === "month"}
+              onClick={() => setBilling("month")}
+              className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+                billing === "month"
+                  ? "bg-[#39b54a] text-black"
+                  : "text-[#a1a1a1] hover:text-white"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={billing === "year"}
+              onClick={() => setBilling("year")}
+              className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition ${
+                billing === "year"
+                  ? "bg-[#39b54a] text-black"
+                  : "text-[#a1a1a1] hover:text-white"
+              }`}
+            >
+              Annual
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  billing === "year"
+                    ? "bg-black/20 text-black"
+                    : "bg-[#39b54a]/15 text-[#39b54a]"
+                }`}
+              >
+                Save 15%
+              </span>
+            </button>
+          </div>
+        </div>
+
         {/* Pricing Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => (
+          {PUBLIC_SUBSCRIPTION_PACKAGES.map((pkg) => {
+            const annual = billing === "year";
+            // The first-month intro is a monthly-billing construct — the
+            // annual view never shows it (the checkout APIs reject the combo).
+            const firstMonthCard =
+              !annual &&
+              pkg.tierName === VIP_FIRST_MONTH_OFFER.tierName &&
+              showFirstMonthOffer;
+            // Card availability follows the toggled view's Stripe price id —
+            // an unset annual env disables annual cards exactly like an unset
+            // monthly id does (unless PayPal subs can cover it).
+            const viewPriceId = annual ? pkg.annualPriceId : pkg.priceId;
+            return (
             <div
               key={pkg.name}
               className={`relative rounded-2xl border transition-all ${
@@ -215,7 +299,9 @@ function PricingContent() {
               {pkg.highlighted && (
                 <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                   <span className="bg-[#39b54a] text-black text-sm font-semibold px-4 py-1 rounded-full">
-                    Most Popular
+                    {firstMonthCard
+                      ? `First month $${VIP_FIRST_MONTH_OFFER.firstMonthPrice}`
+                      : "Most Popular"}
                   </span>
                 </div>
               )}
@@ -226,21 +312,54 @@ function PricingContent() {
                   {pkg.name}
                 </h3>
                 <p className="text-sm text-[#39b54a] mb-4">
-                  Monthly Subscription
+                  {annual ? "Annual Subscription" : "Monthly Subscription"}
                 </p>
-                <div className="flex items-baseline gap-2 mb-6">
-                  <span className="text-5xl font-bold text-white">
-                    ${pkg.price}
-                  </span>
-                  <span className="text-[#a1a1a1]">/month</span>
-                </div>
+                {firstMonthCard ? (
+                  <div className="mb-6">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-semibold text-[#6a6a6a] line-through">
+                        ${pkg.price}
+                      </span>
+                      <span className="text-5xl font-bold text-white">
+                        ${VIP_FIRST_MONTH_OFFER.firstMonthPrice}
+                      </span>
+                      <span className="text-sm text-[#a1a1a1] whitespace-nowrap">
+                        first month
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-[#39b54a]">
+                      Then ${pkg.price}/month · cancel anytime
+                    </p>
+                  </div>
+                ) : annual ? (
+                  <div className="mb-6">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-bold text-white">
+                        ${(pkg.annualPrice / 12).toFixed(2)}
+                      </span>
+                      <span className="text-[#a1a1a1]">/month</span>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-[#39b54a]">
+                      Billed ${pkg.annualPrice}/year · save 15%
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-2 mb-6">
+                    <span className="text-5xl font-bold text-white">
+                      ${pkg.price}
+                    </span>
+                    <span className="text-[#a1a1a1]">/month</span>
+                  </div>
+                )}
 
                 {/* Credits */}
                 <div className="bg-[#0a0a0a] rounded-lg p-4 mb-6 border border-[#2a2a2a]">
                   <div className="flex items-center gap-2">
                     <Zap className="w-5 h-5 text-[#39b54a]" />
                     <span className="text-white font-semibold">
-                      {pkg.credits} Credits
+                      {annual
+                        ? `${pkg.credits * 12} Credits upfront`
+                        : `${pkg.credits} Credits`}
                     </span>
                   </div>
                 </div>
@@ -266,10 +385,14 @@ function PricingContent() {
                     trackPricingPlanSelected(pkg.tierName, {
                       signedIn: Boolean(user || userError),
                       destination: "checkout",
+                      firstMonth: firstMonthCard,
+                      interval: annual ? "year" : "month",
                     });
-                    router.push(`/checkout?tier=${pkg.tierName}`);
+                    router.push(
+                      `/checkout?tier=${pkg.tierName}${firstMonthCard ? "&promo=1" : ""}${annual ? "&annual=1" : ""}`
+                    );
                   }}
-                  disabled={userLoading || (!pkg.priceId && !paypalSubsEnabled)}
+                  disabled={userLoading || (!viewPriceId && !paypalSubsEnabled)}
                   className={`w-full py-3 font-semibold ${
                     pkg.highlighted
                       ? "bg-[#39b54a] text-black hover:bg-[#2e9140]"
@@ -280,7 +403,7 @@ function PricingContent() {
                       button-click tracking can tell the three plan selections
                       apart (a shared "Get Started" label collapses them into
                       one indistinguishable event). */}
-                  {!pkg.priceId && !paypalSubsEnabled
+                  {!viewPriceId && !paypalSubsEnabled
                     ? "Unavailable"
                     : hasActiveSub
                       ? "Change Plan"
@@ -288,11 +411,16 @@ function PricingContent() {
                 </Button>
 
                 <p className="text-center text-xs text-[#a1a1a1] mt-4">
-                  Billed monthly
+                  {firstMonthCard
+                    ? `$${VIP_FIRST_MONTH_OFFER.firstMonthPrice} today, then $${pkg.price}/month`
+                    : annual
+                      ? `Billed $${pkg.annualPrice} yearly`
+                      : "Billed monthly"}
                 </p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* FAQ Section */}
@@ -318,9 +446,10 @@ function PricingContent() {
                 How does billing work?
               </h3>
               <p className="text-[#a1a1a1]">
-                You&apos;ll be charged monthly and receive fresh credits at the
-                start of each billing cycle. Unused credits roll over to the
-                next month.
+                On monthly billing you&apos;re charged each month and receive
+                fresh credits at the start of each cycle. On annual billing
+                you&apos;re charged once a year at 15% off and get all 12
+                months of credits upfront. Unused credits roll over either way.
               </p>
             </div>
 

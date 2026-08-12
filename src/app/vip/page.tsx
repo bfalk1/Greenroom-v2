@@ -24,41 +24,12 @@ import {
   trackVipPlanSelected,
   trackVipLifetimeConfirmed,
 } from "@/lib/analytics";
+import { DemoVideo } from "@/components/marketing/DemoVideo";
 
 type Pkg = (typeof PUBLIC_SUBSCRIPTION_PACKAGES)[number];
 
 const GRAIN_BG =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
-
-// Hides itself if /greenroom-demo.mp4 is missing or fails to load, so a broken
-// player never shows while the asset is still pending.
-function DemoVideo() {
-  const [failed, setFailed] = useState(false);
-  if (failed) return null;
-
-  return (
-    <section className="relative z-10 px-5 pb-6 pt-8 sm:pt-10">
-      <div className="relative mx-auto max-w-3xl">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -inset-8 -z-0 rounded-[2.5rem] opacity-35 blur-[80px]"
-          style={{ background: "radial-gradient(circle, rgba(57,181,74,0.45), transparent 70%)" }}
-        />
-        <video
-          src="/greenroom-demo.mp4"
-          autoPlay
-          muted
-          loop
-          playsInline
-          controls
-          preload="metadata"
-          onError={() => setFailed(true)}
-          className="relative z-10 w-full rounded-2xl border border-white/10 bg-black shadow-[0_30px_90px_-25px_rgba(0,0,0,0.9)]"
-        />
-      </div>
-    </section>
-  );
-}
 
 export default function VipOfferPage() {
   const router = useRouter();

@@ -1,3 +1,9 @@
+// annualPrice: yearly billing at a "Save 15%" discount — each value is 12× the
+// monthly price rounded DOWN to the nearest .99 below exactly-15%-off, so every
+// tier's real saving is ≥ 15% (15.8% / 15.2% / 15.2%) and the marketing claim
+// is never an overstatement. config.test.ts asserts both the cents mirror in
+// stripe/config.ts and the ≥15% floor. Annual subscribers get all 12 months of
+// credits upfront at purchase and again at each yearly renewal.
 export const PUBLIC_SUBSCRIPTION_PACKAGES = [
   {
     name: "General Admission",
@@ -5,6 +11,8 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
     credits: 100,
     price: 9.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_GA_PRICE_ID ?? "",
+    annualPrice: 100.99,
+    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_GA_ANNUAL_PRICE_ID ?? "",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
@@ -18,6 +26,8 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
     credits: 200,
     price: 17.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
+    annualPrice: 182.99,
+    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_VIP_ANNUAL_PRICE_ID ?? "",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
@@ -31,6 +41,8 @@ export const PUBLIC_SUBSCRIPTION_PACKAGES = [
     credits: 500,
     price: 34.99,
     priceId: process.env.NEXT_PUBLIC_STRIPE_AA_PRICE_ID ?? "",
+    annualPrice: 355.99,
+    annualPriceId: process.env.NEXT_PUBLIC_STRIPE_AA_ANNUAL_PRICE_ID ?? "",
     features: [
       "Unused credits roll over",
       "Cancel anytime",
@@ -50,6 +62,22 @@ export const VIP_LIFETIME_OFFER = {
   credits: 200,
   regularPrice: 17.99,
   lifetimePrice: 11.99,
+  priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
+} as const;
+
+// Public "$5.99 first month" VIP intro offer, surfaced on /promo and the
+// /pricing VIP card. The subscription rides the normal VIP price/plan — the
+// discount covers ONLY the first billing cycle (Stripe: a duration-"once"
+// coupon; PayPal: a dedicated plan with a discounted first cycle), then renews
+// at the full VIP price. New-member offer: same never-PAID eligibility rule as
+// the lifetime offer (src/lib/lifetimeEligibility.ts), enforced server-side.
+// These values are display-only and must mirror the VIP package price above +
+// the coupon/plan amounts in Stripe/PayPal.
+export const VIP_FIRST_MONTH_OFFER = {
+  tierName: "VIP",
+  credits: 200,
+  regularPrice: 17.99,
+  firstMonthPrice: 5.99,
   priceId: process.env.NEXT_PUBLIC_STRIPE_VIP_PRICE_ID ?? "",
 } as const;
 

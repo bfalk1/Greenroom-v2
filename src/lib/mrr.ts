@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { VIP_LIFETIME_OFFER } from "@/lib/stripe/publicPriceConfig";
+import {
+  VIP_LIFETIME_OFFER,
+  PUBLIC_SUBSCRIPTION_PACKAGES,
+} from "@/lib/stripe/publicPriceConfig";
 
 /**
  * Recurring revenue currently on the books, computed from the subscription
@@ -23,13 +26,13 @@ export const VIP_LIFETIME_CENTS = Math.round(
 export const VIP_LIFETIME_SOURCE = "vip-lifetime";
 
 export type MrrTierBreakdown = {
-  /** Tier name (GA/VIP/AA), suffixed for the discounted lifetime cohort. */
+  /** Tier name (GA/VIP/AA), suffixed for the lifetime/annual cohorts. */
   tier: string;
   /** True for the discounted VIP lifetime-offer cohort. */
   lifetime: boolean;
   subs: number;
   mrrCents: number;
-  /** Per-sub billing amount for this bucket, in cents. */
+  /** Per-sub MONTHLY-equivalent billing amount for this bucket, in cents. */
   unitCents: number;
 };
 
@@ -61,10 +64,23 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
         provider: true,
         acquisitionSource: true,
         cancelAtPeriodEnd: true,
+        currentPeriodStart: true,
         currentPeriodEnd: true,
       },
     }),
   ]);
+
+  // Annual subs (recognized by period span — billing periods are ~1 month or
+  // ~1 year, nothing in between) bill their yearly price once; their
+  // monthly-equivalent contribution is that charge ÷ 12, NOT the tier's
+  // monthly list price (which would overstate them by the annual discount).
+  const annualCentsByTier = new Map(
+    PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => [
+      p.tierName as string,
+      Math.round(p.annualPrice * 100),
+    ])
+  );
+  const ANNUAL_SPAN_MS = 1000 * 60 * 60 * 24 * 300;
 
   const tierById = new Map(tiers.map((t) => [t.id, t]));
   const active = subs.filter((s) => s.currentPeriodEnd > now);
@@ -80,15 +96,30 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
   for (const sub of active) {
     const tier = tierById.get(sub.tierId);
     const lifetime = sub.acquisitionSource === VIP_LIFETIME_SOURCE;
+    const annual =
+      sub.currentPeriodEnd.getTime() - sub.currentPeriodStart.getTime() >
+      ANNUAL_SPAN_MS;
     // The lifetime discount is applied at the processor (Stripe coupon / PayPal
     // plan), so the tier's list price would overstate these by $6/mo each.
-    const unitCents = lifetime ? VIP_LIFETIME_CENTS : (tier?.priceUsdCents ?? 0);
+    // (The offers are monthly-only, so lifetime and annual never coincide.)
+    const unitCents = lifetime
+      ? VIP_LIFETIME_CENTS
+      : annual
+        ? Math.round(
+            (annualCentsByTier.get(tier?.name ?? "") ??
+              (tier?.priceUsdCents ?? 0) * 12) / 12
+          )
+        : (tier?.priceUsdCents ?? 0);
     if (!tier) unpricedSubs++;
 
     const tierName = tier?.name ?? "UNKNOWN";
-    const key = `${tierName}:${lifetime}`;
+    const key = `${tierName}:${lifetime}:${annual}`;
     const bucket = tierBuckets.get(key) ?? {
-      tier: lifetime ? `${tierName} (lifetime offer)` : tierName,
+      tier: lifetime
+        ? `${tierName} (lifetime offer)`
+        : annual
+          ? `${tierName} (annual)`
+          : tierName,
       lifetime,
       subs: 0,
       mrrCents: 0,

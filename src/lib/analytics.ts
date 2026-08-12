@@ -1,7 +1,10 @@
 import posthog from "posthog-js";
 import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
 import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
-import { PUBLIC_SUBSCRIPTION_PACKAGES } from "./stripe/publicPriceConfig";
+import {
+  PUBLIC_SUBSCRIPTION_PACKAGES,
+  VIP_FIRST_MONTH_OFFER,
+} from "./stripe/publicPriceConfig";
 import { currentPlatform } from "./platform";
 
 // Some funnel functions below ALSO send ad-pixel standard events — Meta
@@ -158,12 +161,22 @@ export function trackPricingViewed() {
 // the old anonymous-intent leak. (/vip has its own vip_plan_selected.)
 export function trackPricingPlanSelected(
   tier: string,
-  opts: { signedIn: boolean; destination: "checkout" | "signup" }
+  opts: {
+    signedIn: boolean;
+    destination: "checkout" | "signup";
+    // The click carried the $5.99-first-month VIP offer (the /pricing VIP card
+    // shows it to eligible visitors).
+    firstMonth?: boolean;
+    // Which billing toggle was active — "year" for the annual option.
+    interval?: "month" | "year";
+  }
 ) {
   posthog.capture("pricing_plan_selected", {
     tier,
     signed_in: opts.signedIn,
     destination: opts.destination,
+    first_month: opts.firstMonth ?? false,
+    billing_interval: opts.interval ?? "month",
   });
 }
 
@@ -173,6 +186,8 @@ export function trackSubscriptionCheckout(
   opts?: {
     tier?: string;
     lifetime?: boolean;
+    firstMonth?: boolean;
+    interval?: "month" | "year";
     method?: string;
     // The price the buyer committed to (discount applied), in cents.
     valueUsdCents?: number;
@@ -188,6 +203,8 @@ export function trackSubscriptionCheckout(
     price_id: priceId,
     tier: opts?.tier,
     lifetime: opts?.lifetime ?? false,
+    first_month: opts?.firstMonth ?? false,
+    billing_interval: opts?.interval ?? "month",
     payment_method: opts?.method,
   });
   metaTrack(
@@ -261,6 +278,46 @@ export function trackVipLifetimeConfirmed() {
   posthog.capture("vip_lifetime_confirmed");
 }
 
+// --- Funnel: VIP first-month promo (/promo) ---
+
+// Fired once per /promo page load — the denominator for the promo funnel.
+// Also the Meta/TikTok ViewContent product view: /promo is an ad landing page
+// like /pricing, and its visitors are anonymous, so the product view fires
+// for everyone and only to the pixels (single-channel — no CAPI twin/dedup
+// needed, same reasoning as trackPricingViewed).
+export function trackPromoOfferViewed() {
+  posthog.capture("promo_offer_viewed");
+  metaTrack("ViewContent", {
+    content_category: "subscription",
+    content_type: "product",
+    content_ids: [VIP_FIRST_MONTH_OFFER.tierName],
+    contents: [
+      {
+        id: VIP_FIRST_MONTH_OFFER.tierName,
+        quantity: 1,
+        item_price: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
+      },
+    ],
+  });
+  tiktokTrack("ViewContent", {
+    content_type: "product",
+    contents: [
+      {
+        content_id: VIP_FIRST_MONTH_OFFER.tierName,
+        content_name: VIP_FIRST_MONTH_OFFER.tierName,
+        quantity: 1,
+        price: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
+      },
+    ],
+    currency: "USD",
+  });
+}
+
+// CTA click on /promo, headed to /checkout with the first-month flag.
+export function trackPromoPlanSelected(tier: string) {
+  posthog.capture("promo_plan_selected", { tier, first_month: true });
+}
+
 // --- Funnel: checkout page ---
 
 // signed_in=false is the new anonymous entry (inline signup step showing);
@@ -268,23 +325,38 @@ export function trackVipLifetimeConfirmed() {
 export function trackCheckoutViewed(props: {
   tier: string;
   lifetime: boolean;
+  // The $5.99-first-month flow (/promo or the /pricing VIP card). Shares
+  // lifetime's eligibility field below — both offers use the same never-paid
+  // verdict.
+  firstMonth?: boolean;
+  // "year" when the annual billing option is being checked out.
+  interval?: "month" | "year";
   lifetimeEligible: boolean | null;
   signedIn: boolean;
-  // The price the buyer is being shown at render, in cents (lifetime discount
-  // applied when the page is applying it). An estimate is fine here — the
-  // exact charge rides on AddPaymentInfo/Purchase — but the field itself is
+  // The price the buyer is being shown at render, in cents (discount applied
+  // when the page is applying it). An estimate is fine here — the exact
+  // charge rides on AddPaymentInfo/Purchase — but the field itself is
   // required: see the commerce-events note at the top of this file.
   valueUsdCents: number;
 }) {
+  const offerSuffix = props.lifetime
+    ? "-lifetime"
+    : props.firstMonth
+      ? "-first-month"
+      : props.interval === "year"
+        ? "-annual"
+        : "";
   posthog.capture("checkout_viewed", {
     tier: props.tier,
     lifetime: props.lifetime,
+    first_month: props.firstMonth ?? false,
+    billing_interval: props.interval ?? "month",
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
   metaTrack("InitiateCheckout", {
     content_category: "subscription",
-    content_name: props.lifetime ? `${props.tier}-lifetime` : props.tier,
+    content_name: `${props.tier}${offerSuffix}`,
     content_type: "product",
     contents: [{ id: props.tier, quantity: 1 }],
     value: props.valueUsdCents / 100,
@@ -292,7 +364,7 @@ export function trackCheckoutViewed(props: {
   });
   tiktokTrack("InitiateCheckout", {
     content_type: "product",
-    content_name: props.lifetime ? `${props.tier}-lifetime` : props.tier,
+    content_name: `${props.tier}${offerSuffix}`,
     contents: [
       {
         content_id: props.tier,

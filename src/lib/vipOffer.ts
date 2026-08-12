@@ -30,6 +30,17 @@ export function vipLifetimeCouponId(): string {
   return process.env.STRIPE_VIP_LIFETIME_COUPON_ID ?? "";
 }
 
+// Stripe coupon for the PUBLIC "$5.99 first month" VIP intro offer (/promo +
+// /pricing) — unlike the lifetime coupon above it has no password gate. Must be
+// created in the Stripe Dashboard as $12.00 off (amount_off = 1200, currency
+// usd) with duration = "once", so it discounts ONLY the first invoice and
+// renewals bill at the full VIP price. Empty string means not configured —
+// checkout refuses an intro-offer request rather than silently charging full
+// price.
+export function vipFirstMonthCouponId(): string {
+  return process.env.STRIPE_VIP_FIRST_MONTH_COUPON_ID ?? "";
+}
+
 // Secret that signs the unlock cookie. Prefer a dedicated value (stable across
 // deploys); otherwise reuse the Stripe secret, which is always set in prod and
 // never reaches the client. The dev fallback only matters locally.

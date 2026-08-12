@@ -123,6 +123,15 @@ async function handleCheckoutCompleted(
     subscription.metadata?.acquisitionSource ??
     null;
 
+  // Billing interval from Stripe's own subscription item — authoritative even
+  // if the env price maps go stale. An annual sub's single yearly invoice
+  // covers 12 months, so the grant below is 12× creditsPerMonth (upfront).
+  const interval =
+    subscription.items.data[0]?.price.recurring?.interval === "year"
+      ? ("year" as const)
+      : ("month" as const);
+  const grantCredits = tier.creditsPerMonth * (interval === "year" ? 12 : 1);
+
   const { periodStart, periodEnd } = getPeriodDates(subscription);
 
   // Create or update subscription. Status lives on users.subscription_status
@@ -181,8 +190,8 @@ async function handleCheckoutCompleted(
     }),
     prisma.creditBalance.upsert({
       where: { userId },
-      update: { balance: { increment: tier.creditsPerMonth } },
-      create: { userId, balance: tier.creditsPerMonth },
+      update: { balance: { increment: grantCredits } },
+      create: { userId, balance: grantCredits },
     }),
     prisma.user.update({
       where: { id: userId },
@@ -191,10 +200,12 @@ async function handleCheckoutCompleted(
     prisma.creditTransaction.create({
       data: {
         userId,
-        amount: tier.creditsPerMonth,
+        amount: grantCredits,
         type: "SUBSCRIPTION",
         referenceId: subscription.id,
-        note: `${tier.displayName} subscription — initial ${tier.creditsPerMonth} credits`,
+        note: `${tier.displayName} subscription — initial ${grantCredits} credits${
+          interval === "year" ? " (annual, 12 months upfront)" : ""
+        }`,
       },
     }),
   ]);
@@ -208,6 +219,7 @@ async function handleCheckoutCompleted(
     provider: "stripe",
     lifetime: acquisitionSource === "vip-lifetime",
     source: acquisitionSource,
+    interval,
     via: "webhook",
   });
 
@@ -303,9 +315,16 @@ async function handleInvoicePaid(
   const tier = user.subscription.tier;
   const stripeSubId = user.subscription.stripeSubscriptionId;
 
-  // Fetch subscription for updated period dates
+  // Fetch subscription for updated period dates — and the billing interval:
+  // an annual renewal's single invoice covers 12 months of credits. Stripe's
+  // own subscription item is the authority; without a sub id (shouldn't
+  // happen for a renewal) the grant conservatively stays 1 month.
+  let interval: "month" | "year" = "month";
   if (stripeSubId) {
     const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+    if (stripeSub.items.data[0]?.price.recurring?.interval === "year") {
+      interval = "year";
+    }
     const { periodStart, periodEnd } = getPeriodDates(stripeSub);
 
     await prisma.subscription.update({
@@ -316,6 +335,7 @@ async function handleInvoicePaid(
       },
     });
   }
+  const grantCredits = tier.creditsPerMonth * (interval === "year" ? 12 : 1);
 
   // Atomic: event marker + balance + subscription_status flag + transaction
   // must commit together (idempotency — see handleCreditPurchase).
@@ -323,8 +343,8 @@ async function handleInvoicePaid(
     prisma.stripeWebhookEvent.create({ data: { id: eventId, type: eventType } }),
     prisma.creditBalance.upsert({
       where: { userId: user.id },
-      update: { balance: { increment: tier.creditsPerMonth } },
-      create: { userId: user.id, balance: tier.creditsPerMonth },
+      update: { balance: { increment: grantCredits } },
+      create: { userId: user.id, balance: grantCredits },
     }),
     prisma.user.update({
       where: { id: user.id },
@@ -333,10 +353,12 @@ async function handleInvoicePaid(
     prisma.creditTransaction.create({
       data: {
         userId: user.id,
-        amount: tier.creditsPerMonth,
+        amount: grantCredits,
         type: "SUBSCRIPTION",
         referenceId: invoice.id,
-        note: `${tier.displayName} renewal — ${tier.creditsPerMonth} credits`,
+        note: `${tier.displayName} renewal — ${grantCredits} credits${
+          interval === "year" ? " (annual, 12 months upfront)" : ""
+        }`,
       },
     }),
   ]);
