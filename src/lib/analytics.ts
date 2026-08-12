@@ -164,9 +164,6 @@ export function trackPricingPlanSelected(
   opts: {
     signedIn: boolean;
     destination: "checkout" | "signup";
-    // The click carried the $5.99-first-month VIP offer (the /pricing VIP card
-    // shows it to eligible visitors).
-    firstMonth?: boolean;
     // Which billing toggle was active — "year" for the annual option.
     interval?: "month" | "year";
   }
@@ -175,7 +172,6 @@ export function trackPricingPlanSelected(
     tier,
     signed_in: opts.signedIn,
     destination: opts.destination,
-    first_month: opts.firstMonth ?? false,
     billing_interval: opts.interval ?? "month",
   });
 }
