@@ -11,12 +11,15 @@ import {
   Settings,
   LogOut,
   Search,
+  MessageSquare,
 } from "lucide-react";
 import { useUser } from "@/lib/hooks/useUser";
+import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
 
 export function DesktopSidebar() {
   const pathname = usePathname();
   const { user, logout } = useUser();
+  const { total: unreadTotal } = useUnreadCount();
 
   const isActive = (href: string) => pathname === href;
 
@@ -24,10 +27,12 @@ export function DesktopSidebar() {
     href,
     icon: Icon,
     label,
+    badge,
   }: {
     href: string;
     icon: React.ElementType;
     label: string;
+    badge?: number;
   }) => (
     <Link
       href={href}
@@ -38,7 +43,12 @@ export function DesktopSidebar() {
       }`}
     >
       <Icon className="w-5 h-5 flex-shrink-0" />
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge != null && badge > 0 && (
+        <span className="bg-[#39b54a] text-black text-[10px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center flex-shrink-0">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </Link>
   );
 
@@ -64,6 +74,12 @@ export function DesktopSidebar() {
         <NavItem href="/library" icon={Library} label="Library" />
         <NavItem href="/favorites" icon={Heart} label="Favorites" />
         <NavItem href="/following" icon={Users} label="Following" />
+        <NavItem
+          href="/messages"
+          icon={MessageSquare}
+          label="Messages"
+          badge={unreadTotal}
+        />
       </nav>
 
       {/* Bottom section */}

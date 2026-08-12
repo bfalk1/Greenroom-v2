@@ -119,6 +119,7 @@ export async function GET(_request: NextRequest) {
         creatorAvatarUrl: dbUser.avatarUrl,
         previewUrl: signedPreviewUrl,
         status: p.status,
+        reviewNote: p.reviewNote,
         downloadCount: p.downloadCount,
         ratingAvg: p.ratingAvg,
         ratingCount: p.ratingCount,

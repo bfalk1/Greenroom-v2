@@ -25,6 +25,9 @@ import {
   Infinity as InfinityIcon,
   FileText,
   Upload,
+  Inbox,
+  MessageSquare,
+  Megaphone,
   AlertTriangle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -41,7 +44,10 @@ import { BetaInvitePanel } from "@/components/admin/BetaInvitePanel";
 import { InviteInfiniteUserPanel } from "@/components/admin/InviteInfiniteUserPanel";
 import { CreatorUploadsPanel } from "@/components/admin/CreatorUploadsPanel";
 import AnalyticsOverview from "@/components/admin/analytics/AnalyticsOverview";
+import { MessageUserModal } from "@/components/admin/MessageUserModal";
+import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
 import { SubscribersPanel } from "@/components/admin/SubscribersPanel";
+import { BroadcastPanel } from "@/components/admin/BroadcastPanel";
 import { toast } from "sonner";
 
 type AdminSection =
@@ -59,6 +65,7 @@ type AdminSection =
   | "infinite-invites"
   | "moderators"
   | "audit-log"
+  | "notifications"
   | "exports";
 
 interface Stats {
@@ -229,7 +236,9 @@ export default function AdminDashboardPage() {
   > | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
-  
+  const [messagingApp, setMessagingApp] = useState<Application | null>(null);
+  const { total: staffUnread } = useUnreadCount({ staff: true });
+
   // Settings state
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
     creatorPayoutRate: 7,
@@ -262,6 +271,13 @@ export default function AdminDashboardPage() {
     { id: "creator-uploads", label: "Creator Uploads", icon: Upload },
     { id: "payouts", label: "Payouts", icon: DollarSign },
     { id: "flagged", label: "Flagged", icon: Flag },
+    {
+      id: "messages",
+      label: "Messages",
+      icon: Inbox,
+      badge: staffUnread || undefined,
+    },
+    { id: "notifications", label: "Notifications", icon: Megaphone },
     { id: "tools", label: "Tools", icon: Settings },
   ];
 
@@ -615,6 +631,12 @@ export default function AdminDashboardPage() {
             items={sidebarItems}
             activeId={activeSection}
             onSelect={(id) => {
+              // Messaging lives on the staff inbox page, not in a dashboard
+              // section (same cross-nav pattern as presets).
+              if (id === "messages") {
+                router.push("/mod/inbox");
+                return;
+              }
               const next = id as AdminSection;
               setActiveSection(next);
               if (next === "payouts") {
@@ -650,6 +672,7 @@ export default function AdminDashboardPage() {
             />
           )}
           {activeSection === "subscribers" && <SubscribersPanel />}
+          {activeSection === "notifications" && <BroadcastPanel />}
           {activeSection === "applications" && (
             <div>
               {applications.length > 0 ? (
@@ -779,7 +802,29 @@ export default function AdminDashboardPage() {
                               )}
                               Deny
                             </Button>
+                            <Button
+                              onClick={() => setMessagingApp(app)}
+                              variant="ghost"
+                              className="border border-[#2a2a2a] hover:bg-[#1a1a1a] text-[#a1a1a1]"
+                            >
+                              <MessageSquare className="w-4 h-4 mr-2" />
+                              Message applicant
+                            </Button>
                           </div>
+                        </div>
+                      )}
+
+                      {/* Message applicant (already reviewed) */}
+                      {app.status !== "PENDING" && (
+                        <div className="border-t border-[#2a2a2a] pt-4 mt-4">
+                          <Button
+                            onClick={() => setMessagingApp(app)}
+                            variant="ghost"
+                            className="border border-[#2a2a2a] hover:bg-[#1a1a1a] text-[#a1a1a1]"
+                          >
+                            <MessageSquare className="w-4 h-4 mr-2" />
+                            Message applicant
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1433,6 +1478,23 @@ export default function AdminDashboardPage() {
             }}
           />
         )}
+
+        {/* Message Applicant Modal */}
+        <MessageUserModal
+          open={!!messagingApp}
+          onClose={() => setMessagingApp(null)}
+          defaultUser={
+            messagingApp
+              ? {
+                  id: messagingApp.userId,
+                  label: `${messagingApp.artistName} (${messagingApp.user.email})`,
+                }
+              : undefined
+          }
+          contextType="CreatorApplication"
+          contextId={messagingApp?.id}
+          defaultSubject="About your creator application"
+        />
       </div>
     </div>
   );
