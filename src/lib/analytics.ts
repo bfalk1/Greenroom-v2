@@ -2,6 +2,7 @@ import posthog from "posthog-js";
 import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
 import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
 import { PUBLIC_SUBSCRIPTION_PACKAGES } from "./stripe/publicPriceConfig";
+import { currentPlatform } from "./platform";
 
 // Some funnel functions below ALSO send ad-pixel standard events — Meta
 // (src/lib/metaPixel.ts) and TikTok (src/lib/tiktokPixel.ts) — so those ad
@@ -27,12 +28,23 @@ export function identifyUser(user: {
   subscription_status: string;
   is_creator: boolean;
 }) {
-  posthog.identify(user.id, {
-    email: user.email,
-    role: user.role,
-    subscription_status: user.subscription_status,
-    is_creator: user.is_creator,
-  });
+  // last_platform/first_platform answer "who uses the desktop app vs the
+  // website" at the person level (identify fires on app load, so
+  // last_platform tracks the surface each user most recently opened).
+  // "Uses both" needs the event-level `platform` super property instead —
+  // person props only keep one value.
+  const platform = currentPlatform();
+  posthog.identify(
+    user.id,
+    {
+      email: user.email,
+      role: user.role,
+      subscription_status: user.subscription_status,
+      is_creator: user.is_creator,
+      last_platform: platform,
+    },
+    { first_platform: platform }
+  );
 }
 
 export function resetAnalytics() {
