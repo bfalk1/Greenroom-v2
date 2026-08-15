@@ -6,7 +6,8 @@ import { notifyModerationSafe, parseReviewNote } from "@/lib/notifications";
 
 const MAX_BULK = 500;
 
-// POST /api/mod/samples/bulk — bulk edit / approve / reject / delete (MOD/ADMIN).
+// POST /api/mod/samples/bulk — bulk metadata edit (MOD/ADMIN), or bulk
+// approve / reject / delete (ADMIN only).
 // Body: { sampleIds: string[], action?: "approve"|"reject"|"delete", metadata?: {...} }
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -34,6 +35,16 @@ export async function POST(req: NextRequest) {
     metadata?: Record<string, unknown>;
     reviewNote?: unknown;
   };
+
+  // Bulk approve/reject/delete is admin-only — one click publishes or takes down
+  // hundreds of samples and notifies every affected creator. Moderators keep the
+  // per-sample decisions and bulk metadata edit.
+  if (action && dbUser.role !== "ADMIN") {
+    return NextResponse.json(
+      { error: "Only admins can bulk approve, reject, or delete samples" },
+      { status: 403 }
+    );
+  }
 
   if (!Array.isArray(sampleIds) || sampleIds.length === 0) {
     return NextResponse.json({ error: "sampleIds required" }, { status: 400 });
