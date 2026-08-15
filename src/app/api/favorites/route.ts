@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,10 +17,19 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const offset = Math.max(0, Math.min(parseInt(searchParams.get("offset") || "0") || 0, 10000));
 
-    // Fetch sample favorites (existing behavior)
+    // Availability is filtered in the query (not after take/skip) so `total`
+    // matches what actually renders. Filtering post-pagination made the count
+    // include taken-down samples the list dropped, which left "Load More"
+    // permanently visible and shifted the offset window so rows repeated.
+    const where: Prisma.FavoriteWhereInput = {
+      userId: authUser.id,
+      sampleId: { not: null },
+      sample: { status: "PUBLISHED", isActive: true },
+    };
+
     const [favorites, total] = await Promise.all([
       prisma.favorite.findMany({
-        where: { userId: authUser.id, sampleId: { not: null } },
+        where,
         orderBy: { createdAt: "desc" },
         skip: offset,
         take: limit,
@@ -38,12 +48,11 @@ export async function GET(request: NextRequest) {
           },
         },
       }),
-      prisma.favorite.count({ where: { userId: authUser.id, sampleId: { not: null } } }),
+      prisma.favorite.count({ where }),
     ]);
 
     // Map to frontend format
     const samples = favorites
-      .filter((f) => f.sample && f.sample.status === "PUBLISHED" && f.sample.isActive)
       .map((f) => ({
         id: f.sample!.id,
         name: f.sample!.name,
@@ -136,12 +145,23 @@ export async function POST(request: NextRequest) {
       if (existing) {
         await prisma.favorite.delete({ where: { id: existing.id } });
         return NextResponse.json({ favorited: false, sampleId });
-      } else {
+      }
+
+      try {
         await prisma.favorite.create({
           data: { userId: authUser.id, sampleId },
         });
-        return NextResponse.json({ favorited: true, sampleId });
+      } catch (err) {
+        // Double-tapping the heart races two POSTs; the loser hits the
+        // (user, sample) unique index. Favorited is the intended end state
+        // either way, so report it rather than 500ing.
+        if (
+          !(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")
+        ) {
+          throw err;
+        }
       }
+      return NextResponse.json({ favorited: true, sampleId });
     } else {
       // Preset favorite toggle
       const preset = await prisma.preset.findUnique({
@@ -165,12 +185,20 @@ export async function POST(request: NextRequest) {
       if (existing) {
         await prisma.favorite.delete({ where: { id: existing.id } });
         return NextResponse.json({ favorited: false, presetId });
-      } else {
+      }
+
+      try {
         await prisma.favorite.create({
           data: { userId: authUser.id, presetId },
         });
-        return NextResponse.json({ favorited: true, presetId });
+      } catch (err) {
+        if (
+          !(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002")
+        ) {
+          throw err;
+        }
       }
+      return NextResponse.json({ favorited: true, presetId });
     }
   } catch (error) {
     console.error("POST /api/favorites error:", error);
