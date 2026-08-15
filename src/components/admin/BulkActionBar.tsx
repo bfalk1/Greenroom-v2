@@ -13,6 +13,7 @@ import { CheckCircle2, Loader2, Pencil, Trash2, X } from "lucide-react";
 export function BulkActionBar({
   count,
   busy,
+  canModerate,
   onEdit,
   onApprove,
   onReject,
@@ -22,6 +23,9 @@ export function BulkActionBar({
 }: {
   count: number;
   busy?: boolean;
+  // Approve/reject/delete in bulk is admin-only; moderators get Edit alone.
+  // Required rather than defaulted so a new caller can't grant it by omission.
+  canModerate: boolean;
   onEdit: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -55,32 +59,36 @@ export function BulkActionBar({
           >
             <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
           </Button>
-          <Button
-            size="sm"
-            onClick={onApprove}
-            disabled={busy}
-            className="h-8 bg-[#39b54a] text-black hover:bg-[#2e9140]"
-          >
-            <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onReject}
-            disabled={busy}
-            className="h-8 border-yellow-500/30 bg-transparent text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
-          >
-            Reject
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onDelete}
-            disabled={busy}
-            className="h-8 border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
-          </Button>
+          {canModerate && (
+            <>
+              <Button
+                size="sm"
+                onClick={onApprove}
+                disabled={busy}
+                className="h-8 bg-[#39b54a] text-black hover:bg-[#2e9140]"
+              >
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onReject}
+                disabled={busy}
+                className="h-8 border-yellow-500/30 bg-transparent text-yellow-400 hover:bg-yellow-500/10 hover:text-yellow-300"
+              >
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onDelete}
+                disabled={busy}
+                className="h-8 border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              >
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+              </Button>
+            </>
+          )}
         </div>
 
         <div className="h-6 w-px bg-[#2a2a2a]" aria-hidden />

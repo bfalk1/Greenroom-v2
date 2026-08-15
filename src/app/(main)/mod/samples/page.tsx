@@ -29,6 +29,7 @@ import { BulkActionBar } from "@/components/admin/BulkActionBar";
 import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
 import { PresetModeration } from "@/components/admin/PresetModeration";
 import { formatSampleType } from "@/lib/utils/sampleType";
+import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 
 interface SampleCreator {
@@ -111,6 +112,11 @@ const PAGE_SIZE = 50;
 const MAX_LIMIT = 200;
 
 export default function ModSamplesPage() {
+  const { user } = useUser();
+  // Bulk approve/reject/delete is admin-only (the API enforces it too). Null
+  // while the user loads, so the buttons stay hidden until the role is known.
+  const isAdmin = user?.role === "ADMIN";
+
   const [samples, setSamples] = useState<APISample[]>([]);
   const [total, setTotal] = useState(0);
   const [lowestRatedSamples, setLowestRatedSamples] = useState<APISample[]>([]);
@@ -443,6 +449,7 @@ export default function ModSamplesPage() {
         <BulkActionBar
           count={selectedIds.size}
           busy={bulkBusy}
+          canModerate={isAdmin}
           onEdit={() => setBulkEditOpen(true)}
           onApprove={() => runBulk({ action: "approve" })}
           onReject={handleBulkReject}
