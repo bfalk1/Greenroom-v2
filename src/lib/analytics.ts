@@ -495,6 +495,28 @@ export function trackPurchaseFailed(sampleId: string, reason: "insufficient_cred
   posthog.capture("purchase_failed", { sample_id: sampleId, reason });
 }
 
+// The out-of-credits prompt appeared (a purchase needed more credits than the
+// caller had). Paired with the CTA event below to measure how many stalled
+// purchases the re-up prompt actually recovers.
+export function trackOutOfCreditsShown(props: {
+  needed: number;
+  balance: number;
+  itemType?: "sample" | "preset";
+}) {
+  posthog.capture("out_of_credits_shown", {
+    needed: props.needed,
+    balance: props.balance,
+    item_type: props.itemType ?? null,
+  });
+}
+
+export function trackOutOfCreditsCta(
+  cta: "buy_credits" | "upgrade_plan",
+  source: "modal" | "banner"
+) {
+  posthog.capture("out_of_credits_cta_clicked", { cta, source });
+}
+
 // --- Discovery ---
 
 export function trackSearch(query: string, resultCount: number) {

@@ -2,17 +2,19 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare, Sliders } from "lucide-react";
+import { Search, Music, Download, Loader2, Package, Play, Pause, GripVertical, HardDrive, Square, CheckSquare, Sliders, Heart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { SampleFilters } from "@/components/marketplace/SampleFilters";
 import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
 import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
+import { SampleRow } from "@/components/marketplace/SampleRow";
 import { useUser } from "@/lib/hooks/useUser";
+import { useOutOfCredits } from "@/lib/context/OutOfCreditsContext";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { useDesktopSampleDrag } from "@/hooks/useDesktopSampleDrag";
-import { trackLibraryViewed } from "@/lib/analytics";
+import { trackLibraryViewed, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
 import { SampleRating } from "@/components/marketplace/SampleRating";
@@ -22,6 +24,7 @@ import {
   SampleTableHeader,
 } from "@/components/marketplace/SampleTable";
 import {
+  Sample,
   getGlobalAudio,
   getGlobalPlayingId,
   globalSetters,
@@ -604,6 +607,407 @@ function LibraryPresetsTab({
   );
 }
 
+type GreenroomDesktopApi = {
+  isDesktop?: boolean;
+  ensureLocalSampleFolder?: () => Promise<{
+    ok: boolean;
+    cancelled?: boolean;
+    unreachable?: boolean;
+    error?: string;
+  }>;
+  syncLocalSample?: (
+    sampleId: string,
+    sampleName: string,
+    artistName?: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+};
+
+type MarketplaceUser = {
+  id: string;
+  email?: string;
+  credits?: number;
+  subscription_status?: string;
+  is_creator?: boolean;
+  role?: string;
+} | null;
+
+type FavoritesKind = "samples" | "presets";
+
+// Favorites tab — the read side for hearted items.
+//
+// Sample favorites previously lived on a standalone /favorites page that
+// nothing on web linked to (the only link was the Electron sidebar), and
+// preset favorites were written to the DB but rendered nowhere at all. Both
+// land here so liking something has a visible home next to what you own.
+//
+// Deliberately uses SampleRow rather than the SampleCard the old page used:
+// SampleRow carries useDesktopSampleDrag (gated on isOwned), so a favorite you
+// already bought is draggable straight into the DAW instead of forcing a trip
+// to the Samples tab.
+function LibraryFavoritesTab({
+  user,
+  refreshUser,
+}: {
+  user: MarketplaceUser;
+  refreshUser: () => void;
+}) {
+  const { openOutOfCredits } = useOutOfCredits();
+  const [kind, setKind] = useState<FavoritesKind>("samples");
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [purchasedSampleIds, setPurchasedSampleIds] = useState<Set<string>>(new Set());
+  const [purchasedPresetIds, setPurchasedPresetIds] = useState<Set<string>>(new Set());
+  const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const [userPresetRatings, setUserPresetRatings] = useState<Record<string, number>>({});
+  const hasFetchedRef = useRef(false);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const fetchFavorites = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String((currentPage - 1) * PAGE_SIZE),
+      });
+      const url =
+        kind === "presets"
+          ? `/api/favorites/presets?${params}`
+          : `/api/favorites?${params}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load favorites");
+
+      if (kind === "presets") {
+        setPresets(data.presets || []);
+      } else {
+        setSamples(data.samples || []);
+      }
+      setTotal(data.total || 0);
+    } catch (error) {
+      console.error("Error fetching favorites:", error);
+      toast.error("Failed to load favorites");
+    } finally {
+      setLoading(false);
+    }
+  }, [user, kind, currentPage]);
+
+  // Ownership drives Buy-vs-Download and the desktop drag affordance, so it has
+  // to be known before rows render.
+  const fetchPurchases = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/purchases");
+      if (res.ok) {
+        const data = await res.json();
+        setPurchasedSampleIds(new Set(data.sampleIds || []));
+        setPurchasedPresetIds(new Set(data.presetIds || []));
+      }
+    } catch {
+      // Non-fatal: rows fall back to the unowned state.
+    }
+  }, [user]);
+
+  const fetchRatings = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await fetch("/api/ratings");
+      if (res.ok) {
+        const data = await res.json();
+        // /api/ratings keys samples under `ratings` and presets under
+        // `presetRatings` — they're separate maps, not one merged lookup.
+        setUserRatings(data.ratings || {});
+        setUserPresetRatings(data.presetRatings || {});
+      }
+    } catch {
+      // Non-fatal: rows render without the caller's own rating.
+    }
+  }, [user]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [kind]);
+
+  useEffect(() => {
+    fetchFavorites();
+    hasFetchedRef.current = true;
+  }, [fetchFavorites]);
+
+  useEffect(() => {
+    fetchPurchases();
+    fetchRatings();
+  }, [fetchPurchases, fetchRatings]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handlePurchaseSample = async (sample: Sample) => {
+    if (!user) {
+      toast.error("Please log in to purchase samples");
+      return;
+    }
+
+    // Known-insufficient: skip the doomed request and prompt a re-up instead.
+    const balance = user.credits ?? 0;
+    if (balance < sample.credit_price) {
+      trackPurchaseFailed(sample.id, "insufficient_credits");
+      openOutOfCredits({
+        needed: sample.credit_price,
+        balance,
+        itemName: sample.name,
+        itemType: "sample",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sampleId: sample.id }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        // The balance can go stale between render and click (another tab, a
+        // concurrent buy), so the server's 402 raises the same prompt.
+        if (res.status === 402) {
+          trackPurchaseFailed(sample.id, "insufficient_credits");
+          openOutOfCredits({
+            needed: sample.credit_price,
+            balance,
+            itemName: sample.name,
+            itemType: "sample",
+          });
+          refreshUser();
+          return;
+        }
+        trackPurchaseFailed(
+          sample.id,
+          data.error?.includes("insufficient") ? "insufficient_credits" : "error"
+        );
+        throw new Error(data.error || "Purchase failed");
+      }
+
+      trackSamplePurchase({
+        sampleId: sample.id,
+        name: sample.name,
+        artist: sample.artist_name || "Unknown",
+        creditPrice: sample.credit_price,
+        // This tab has no preview-before-buy tracking of its own, unlike the
+        // marketplace grid.
+        playedBeforeBuy: false,
+      });
+
+      setPurchasedSampleIds((prev) => new Set([...prev, sample.id]));
+      refreshUser();
+
+      // Mirror the marketplace: pull the file down now rather than waiting for
+      // DesktopLibrarySync's next tick, so the row is draggable immediately.
+      const greenroom = (window as { greenroom?: GreenroomDesktopApi }).greenroom;
+      if (greenroom?.isDesktop && greenroom.ensureLocalSampleFolder && greenroom.syncLocalSample) {
+        try {
+          const folderResult = await greenroom.ensureLocalSampleFolder();
+          if (folderResult?.ok) {
+            await greenroom.syncLocalSample(sample.id, sample.name, sample.artist_name);
+          }
+        } catch (syncError) {
+          console.error("Desktop sync after purchase failed:", syncError);
+        }
+      }
+
+      toast.success(`Purchased "${sample.name}" 🎵`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Purchase failed");
+    }
+  };
+
+  const handlePurchasePreset = async (preset: Preset) => {
+    if (!user) {
+      toast.error("Please log in to purchase presets");
+      return;
+    }
+
+    const balance = user.credits ?? 0;
+    if (balance < preset.credit_price) {
+      openOutOfCredits({
+        needed: preset.credit_price,
+        balance,
+        itemName: preset.name,
+        itemType: "preset",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/purchases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presetId: preset.id }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 402) {
+          openOutOfCredits({
+            needed: preset.credit_price,
+            balance,
+            itemName: preset.name,
+            itemType: "preset",
+          });
+          refreshUser();
+          return;
+        }
+        throw new Error(data.error || "Purchase failed");
+      }
+
+      setPurchasedPresetIds((prev) => new Set([...prev, preset.id]));
+      refreshUser();
+      toast.success(`Purchased "${preset.name}"`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Purchase failed");
+    }
+  };
+
+  // Unhearting drops the row — this list is defined by the heart, so keeping a
+  // now-unfavorited row around would be lying about what's in it.
+  const handleSampleFavoriteChange = (sampleId: string, favorited: boolean) => {
+    if (favorited) return;
+    setSamples((prev) => prev.filter((s) => s.id !== sampleId));
+    setTotal((prev) => Math.max(0, prev - 1));
+  };
+
+  const handlePresetFavoriteChange = (presetId: string, favorited: boolean) => {
+    if (favorited) return;
+    setPresets((prev) => prev.filter((p) => p.id !== presetId));
+    setTotal((prev) => Math.max(0, prev - 1));
+  };
+
+  const isEmpty = kind === "presets" ? presets.length === 0 : samples.length === 0;
+
+  return (
+    <div>
+      {/* Secondary toggle — visually lighter than the top-level tabs so the two
+          rows don't read as competing navigation. */}
+      <div className="flex gap-4 mb-6 border-b border-[#2a2a2a]">
+        {(["samples", "presets"] as FavoritesKind[]).map((k) => (
+          <button
+            key={k}
+            onClick={() => setKind(k)}
+            className={`pb-3 text-sm font-medium transition border-b-2 -mb-px ${
+              kind === k
+                ? "text-white border-[#39b54a]"
+                : "text-[#a1a1a1] border-transparent hover:text-white"
+            }`}
+          >
+            {k === "samples" ? "Samples" : "Presets"}
+          </button>
+        ))}
+      </div>
+
+      {loading && !hasFetchedRef.current ? (
+        <div className="space-y-2">
+          {Array(8)
+            .fill(0)
+            .map((_, i) => (
+              <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
+            ))}
+        </div>
+      ) : !isEmpty ? (
+        <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
+          {kind === "samples" ? (
+            <>
+              <SampleTableHeader />
+              <div className="divide-y divide-[#2a2a2a]">
+                {samples.map((sample) => (
+                  <SampleRow
+                    key={sample.id}
+                    sample={sample}
+                    user={user}
+                    isOwned={purchasedSampleIds.has(sample.id)}
+                    isFavorited={true}
+                    userRating={userRatings[sample.id]}
+                    onPurchase={handlePurchaseSample}
+                    onFavoriteChange={handleSampleFavoriteChange}
+                    refreshUser={refreshUser}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Mirrors the marketplace / library Presets header */}
+              <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
+                <div className="w-10" />
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
+                <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1] text-center">&#9733;</span>
+                <div className="text-xs font-medium text-[#a1a1a1]"></div>
+              </div>
+              <div className="divide-y divide-[#2a2a2a]">
+                {presets.map((preset) => (
+                  <PresetRow
+                    key={preset.id}
+                    preset={preset}
+                    user={user}
+                    isOwned={purchasedPresetIds.has(preset.id)}
+                    isFavorited={true}
+                    userRating={userPresetRatings[preset.id]}
+                    onPurchase={handlePurchasePreset}
+                    onFavoriteChange={handlePresetFavoriteChange}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {totalPages > 1 && (
+            <div className="border-t border-[#2a2a2a] flex flex-col items-center gap-2 py-6">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+                disabled={loading}
+              />
+              <span className="text-xs text-[#666]">
+                Page {currentPage} of {totalPages} · {total}{" "}
+                {kind === "samples" ? "sample" : "preset"}
+                {total !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-center py-16">
+          <Heart className="w-16 h-16 text-[#2a2a2a] mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-white mb-2">
+            No favorite {kind === "samples" ? "samples" : "presets"} yet
+          </h3>
+          <p className="text-[#a1a1a1] mb-6">
+            Tap the heart on any {kind === "samples" ? "sample" : "preset"} to save it here.
+          </p>
+          <Link href="/marketplace">
+            <Button className="bg-[#39b54a] text-black hover:bg-[#2e9140]">
+              Browse Marketplace
+            </Button>
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type LibraryFilterState = {
   genre: string;
   instrumentType: string;
@@ -621,7 +1025,7 @@ const DEFAULT_LIBRARY_FILTERS: LibraryFilterState = {
 };
 
 export default function LibraryPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, refreshUser } = useUser();
   const [activeTab, setActiveTab] = useState<MarketplaceTab>("samples");
   const [samples, setSamples] = useState<LibrarySample[]>([]);
   const [total, setTotal] = useState(0);
@@ -635,6 +1039,16 @@ export default function LibraryPage() {
   const [filters, setFilters] = useState<LibraryFilterState>(DEFAULT_LIBRARY_FILTERS);
   const [filtersKey, setFiltersKey] = useState(0);
   const hasFetchedInitiallyRef = useRef(false);
+
+  // Deep-link support (/library?tab=favorites), which /favorites and the
+  // desktop sidebar both point at. Read straight off window.location instead of
+  // useSearchParams so this client page doesn't need a Suspense boundary.
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "samples" || tab === "presets" || tab === "favorites") {
+      setActiveTab(tab);
+    }
+  }, []);
 
   const isFiltered =
     searchQuery.trim() !== "" ||
@@ -954,13 +1368,21 @@ export default function LibraryPage() {
           <p className="text-[#a1a1a1]">
             {activeTab === "samples"
               ? `${total} sample${total !== 1 ? "s" : ""} purchased`
-              : "Your purchased presets"}
+              : activeTab === "presets"
+                ? "Your purchased presets"
+                : "Everything you've hearted — buy it here or drag it straight in if you already own it"}
           </p>
         </div>
 
-        <MarketplaceTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <MarketplaceTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          tabs={["samples", "presets", "favorites"]}
+        />
 
-        {activeTab === "presets" ? (
+        {activeTab === "favorites" ? (
+          <LibraryFavoritesTab user={user} refreshUser={refreshUser} />
+        ) : activeTab === "presets" ? (
           <LibraryPresetsTab user={user} />
         ) : (
         <>

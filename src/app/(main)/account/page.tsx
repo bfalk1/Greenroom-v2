@@ -493,8 +493,12 @@ export default function AccountPage() {
           </div>
         )}
 
-        {/* Buy Credits */}
-        <div className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8">
+        {/* Buy Credits — #buy-credits is the deep-link target used by the
+            out-of-credits prompt and banner. scroll-mt clears the sticky nav. */}
+        <div
+          id="buy-credits"
+          className="bg-[#1a1a1a] rounded-lg p-8 border border-[#2a2a2a] mb-8 scroll-mt-24"
+        >
           <CreditPackages />
         </div>
 

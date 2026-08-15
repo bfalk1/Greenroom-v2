@@ -6,12 +6,14 @@ import { Music, Loader2, Users, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SampleCard, Sample } from "@/components/marketplace/SampleCard";
 import { useUser } from "@/lib/hooks/useUser";
+import { useOutOfCredits } from "@/lib/context/OutOfCreditsContext";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
 
 export default function FollowingPage() {
   const { user, refreshUser } = useUser();
+  const { openOutOfCredits } = useOutOfCredits();
   const [samples, setSamples] = useState<Sample[]>([]);
   const [total, setTotal] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -86,6 +88,17 @@ export default function FollowingPage() {
       return;
     }
 
+    // Known-insufficient: skip the doomed request and prompt a re-up instead.
+    if (user.credits < sample.credit_price) {
+      openOutOfCredits({
+        needed: sample.credit_price,
+        balance: user.credits,
+        itemName: sample.name,
+        itemType: "sample",
+      });
+      return;
+    }
+
     try {
       const res = await fetch("/api/purchases", {
         method: "POST",
@@ -96,6 +109,16 @@ export default function FollowingPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 402) {
+          openOutOfCredits({
+            needed: sample.credit_price,
+            balance: user.credits,
+            itemName: sample.name,
+            itemType: "sample",
+          });
+          refreshUser();
+          return;
+        }
         throw new Error(data.error || "Purchase failed");
       }
 

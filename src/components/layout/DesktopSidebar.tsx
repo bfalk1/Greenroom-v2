@@ -72,7 +72,9 @@ export function DesktopSidebar() {
         <NavItem href="/marketplace" icon={Home} label="Home" />
         <NavItem href="/marketplace" icon={Search} label="Browse" />
         <NavItem href="/library" icon={Library} label="Library" />
-        <NavItem href="/favorites" icon={Heart} label="Favorites" />
+        {/* Favorites is a Library tab now; link straight to it rather than
+            bouncing through the /favorites redirect. */}
+        <NavItem href="/library?tab=favorites" icon={Heart} label="Favorites" />
         <NavItem href="/following" icon={Users} label="Following" />
         <NavItem
           href="/messages"

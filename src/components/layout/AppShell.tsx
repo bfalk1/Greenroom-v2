@@ -10,6 +10,7 @@ import { NowPlayingBar } from "@/components/audio/NowPlayingBar";
 import { TermsReacceptanceGate } from "@/components/legal/TermsReacceptanceGate";
 import { isDesktopApp } from "@/lib/platform";
 import { CreatorWelcomeModal } from "@/components/creator/CreatorWelcomeModal";
+import { OutOfCreditsBanner } from "@/components/credits/OutOfCreditsBanner";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -57,7 +58,10 @@ export function AppShell({ children }: AppShellProps) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
         <Navbar />
-        <main className="flex-1 pb-24">{children}</main>
+        <main className="flex-1 pb-24">
+          <OutOfCreditsBanner />
+          {children}
+        </main>
         <Footer />
         <NowPlayingBar />
         <TermsReacceptanceGate />
@@ -76,7 +80,10 @@ export function AppShell({ children }: AppShellProps) {
         <DesktopSidebar />
         <DesktopTitleBar />
         <DesktopLibrarySync />
-        <main className="ml-52 pt-10 pb-24 min-h-screen">{children}</main>
+        <main className="ml-52 pt-10 pb-24 min-h-screen">
+          <OutOfCreditsBanner />
+          {children}
+        </main>
         <NowPlayingBar />
         <TermsReacceptanceGate />
         <CreatorWelcomeModal isDesktop />
@@ -88,7 +95,10 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
       <Navbar />
-      <main className="flex-1 pb-24">{children}</main>
+      <main className="flex-1 pb-24">
+        <OutOfCreditsBanner />
+        {children}
+      </main>
       <Footer />
       <NowPlayingBar />
       <TermsReacceptanceGate />

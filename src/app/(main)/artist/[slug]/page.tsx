@@ -20,6 +20,7 @@ import { SampleRow, SampleTableHeader } from "@/components/marketplace/SampleRow
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackArtistFollow, trackArtistProfileViewed } from "@/lib/analytics";
+import { useOutOfCredits } from "@/lib/context/OutOfCreditsContext";
 import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
 import { toggleGlobalPlay, stopGlobalPlayback } from "@/components/marketplace/SampleCard";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ interface ArtistPageProps {
 export default function ArtistPage({ params }: ArtistPageProps) {
   const { slug } = use(params);
   const { user, refreshUser } = useUser();
+  const { openOutOfCredits } = useOutOfCredits();
   const [artist, setArtist] = useState<Artist | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,6 +260,17 @@ export default function ArtistPage({ params }: ArtistPageProps) {
       return;
     }
 
+    // Known-insufficient: skip the doomed request and prompt a re-up instead.
+    if (user.credits < sample.credit_price) {
+      openOutOfCredits({
+        needed: sample.credit_price,
+        balance: user.credits,
+        itemName: sample.name,
+        itemType: "sample",
+      });
+      return;
+    }
+
     try {
       const res = await fetch("/api/purchases", {
         method: "POST",
@@ -268,6 +281,16 @@ export default function ArtistPage({ params }: ArtistPageProps) {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 402) {
+          openOutOfCredits({
+            needed: sample.credit_price,
+            balance: user.credits,
+            itemName: sample.name,
+            itemType: "sample",
+          });
+          refreshUser();
+          return;
+        }
         throw new Error(data.error || "Purchase failed");
       }
 
