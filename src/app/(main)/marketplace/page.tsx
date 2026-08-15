@@ -16,6 +16,7 @@ import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
+import { useOutOfCredits } from "@/lib/context/OutOfCreditsContext";
 import { setNowPlayingQueue, setQueueNavigation } from "@/lib/audio/nowPlaying";
 import { toast } from "sonner";
 
@@ -41,6 +42,7 @@ type GreenroomDesktopApi = {
 
 export default function MarketplacePage() {
   const { user, refreshUser } = useUser();
+  const { openOutOfCredits } = useOutOfCredits();
   const [activeTab, setActiveTab] = useState<MarketplaceTab>("samples");
   const [samples, setSamples] = useState<Sample[]>([]);
   const [followedArtists, setFollowedArtists] = useState<FollowedArtist[]>([]);
@@ -580,6 +582,18 @@ export default function MarketplacePage() {
       return;
     }
 
+    // Known-insufficient: skip the doomed request and prompt a re-up instead.
+    if (user.credits < sample.credit_price) {
+      trackPurchaseFailed(sample.id, "insufficient_credits");
+      openOutOfCredits({
+        needed: sample.credit_price,
+        balance: user.credits,
+        itemName: sample.name,
+        itemType: "sample",
+      });
+      return;
+    }
+
     try {
       const res = await fetch("/api/purchases", {
         method: "POST",
@@ -590,7 +604,19 @@ export default function MarketplacePage() {
       const data = await res.json();
 
       if (!res.ok) {
-        trackPurchaseFailed(sample.id, data.error?.includes("insufficient") ? "insufficient_credits" : "error");
+        // 402 = context balance was stale; prompt the re-up and resync.
+        if (res.status === 402) {
+          trackPurchaseFailed(sample.id, "insufficient_credits");
+          openOutOfCredits({
+            needed: sample.credit_price,
+            balance: user.credits,
+            itemName: sample.name,
+            itemType: "sample",
+          });
+          refreshUser();
+          return;
+        }
+        trackPurchaseFailed(sample.id, "error");
         throw new Error(data.error || "Purchase failed");
       }
 
@@ -644,6 +670,16 @@ export default function MarketplacePage() {
       return;
     }
 
+    if (user.credits < preset.credit_price) {
+      openOutOfCredits({
+        needed: preset.credit_price,
+        balance: user.credits,
+        itemName: preset.name,
+        itemType: "preset",
+      });
+      return;
+    }
+
     try {
       const res = await fetch("/api/purchases", {
         method: "POST",
@@ -654,6 +690,16 @@ export default function MarketplacePage() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 402) {
+          openOutOfCredits({
+            needed: preset.credit_price,
+            balance: user.credits,
+            itemName: preset.name,
+            itemType: "preset",
+          });
+          refreshUser();
+          return;
+        }
         throw new Error(data.error || "Purchase failed");
       }
 
