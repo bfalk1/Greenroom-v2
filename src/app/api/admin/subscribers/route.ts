@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { VIP_LIFETIME_CENTS, VIP_LIFETIME_SOURCE } from "@/lib/mrr";
+import {
+  COHORT_LABEL,
+  VIP_FIRST_MONTH_CENTS,
+  cohortOf,
+  monthlyUnitCents,
+  type SubCohort,
+} from "@/lib/mrr";
 import type { Prisma } from "@prisma/client";
 
 /**
@@ -20,11 +26,15 @@ import type { Prisma } from "@prisma/client";
  *              row (the beta bypass). These have no tier and pay nothing.
  * - Expired  = a subscriptions row already past currentPeriodEnd.
  *
- * MRR prices each sub at its tier's list price, EXCEPT the VIP lifetime-offer
- * cohort (acquisition_source = "vip-lifetime"), which bills at the locked
- * discount — same rule as computeMrrSnapshot in @/lib/mrr, so every surface
- * reports the same number. Other one-off coupons aren't tracked and still
- * report at list.
+ * Every active sub is classified into one of four mutually-exclusive cohorts by
+ * cohortOf() in @/lib/mrr — list / lifetime / promo / annual — and priced by
+ * monthlyUnitCents(), the same rules computeMrrSnapshot uses, so this dashboard
+ * and the MRR snapshot never disagree:
+ * - lifetime = acquisition_source "vip-lifetime": the locked $11.99 discount.
+ * - annual   = a period spanning ~a year: yearly charge ÷ 12.
+ * - promo    = acquisition_source "vip-first-month": priced at LIST, because
+ *              the $5.99 coupon is duration-"once" and renews at full price.
+ * Other one-off coupons aren't tracked and also report at list.
  */
 
 const STATUSES = ["active", "canceling", "expired", "comped"] as const;
@@ -107,28 +117,27 @@ export async function GET(request: NextRequest) {
       subscriptionStatus: { in: ["active", "past_due"] },
       subscription: { is: null },
     };
-    // VIP lifetime-offer cohort: billed at the locked discount, not list price.
-    const lifetimeWhere: Prisma.SubscriptionWhereInput = {
-      ...activeWhere,
-      acquisitionSource: VIP_LIFETIME_SOURCE,
-    };
+    // Cohort membership can't be expressed as a groupBy: "annual" is a span
+    // between two columns, which needs arithmetic Prisma's where can't do. So
+    // the active set is read row-by-row (a handful of small columns, bounded by
+    // the paying-subscriber count) and bucketed in one pass below — the same
+    // shape computeMrrSnapshot already uses.
+    const cohortSelect = {
+      tierId: true,
+      provider: true,
+      cancelAtPeriodEnd: true,
+      acquisitionSource: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
+      createdAt: true,
+    } as const;
 
     const [
       tierRows,
-      activeGroups,
-      cancelingGroups,
-      providerGroups,
-      lifetimeGroups,
-      lifetimeCancelingGroups,
-      lifetimeProviderGroups,
-      acquisitionGroups,
-      activeTotal,
-      cancelingTotal,
+      activeSubs,
+      recentSubs,
       expiredTotal,
       compedTotal,
-      new24h,
-      new7d,
-      new30d,
     ] = await Promise.all([
       prisma.subscriptionTier.findMany({
         select: {
@@ -141,106 +150,107 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { priceUsdCents: "asc" },
       }),
-      prisma.subscription.groupBy({
-        by: ["tierId"],
+      prisma.subscription.findMany({
         where: activeWhere,
-        _count: { _all: true },
+        select: cohortSelect,
       }),
-      prisma.subscription.groupBy({
-        by: ["tierId"],
-        where: { ...activeWhere, cancelAtPeriodEnd: true },
-        _count: { _all: true },
-      }),
-      prisma.subscription.groupBy({
-        by: ["tierId", "provider"],
-        where: activeWhere,
-        _count: { _all: true },
-      }),
-      prisma.subscription.groupBy({
-        by: ["tierId"],
-        where: lifetimeWhere,
-        _count: { _all: true },
-      }),
-      prisma.subscription.groupBy({
-        by: ["tierId"],
-        where: { ...lifetimeWhere, cancelAtPeriodEnd: true },
-        _count: { _all: true },
-      }),
-      prisma.subscription.groupBy({
-        by: ["tierId", "provider"],
-        where: lifetimeWhere,
-        _count: { _all: true },
-      }),
-      prisma.subscription.groupBy({
-        by: ["acquisitionSource"],
-        where: activeWhere,
-        _count: { _all: true },
-      }),
-      prisma.subscription.count({ where: activeWhere }),
-      prisma.subscription.count({
-        where: { ...activeWhere, cancelAtPeriodEnd: true },
+      // New-signup windows count every sub STARTED in the window, whether or
+      // not it's still active — a promo sub that already lapsed was still a
+      // signup. 30d covers the widest window; 24h/7d are sliced from it.
+      prisma.subscription.findMany({
+        where: { ...providerBacked, createdAt: { gte: since(30) } },
+        select: cohortSelect,
       }),
       prisma.subscription.count({
         where: { currentPeriodEnd: { lt: now }, ...providerBacked },
       }),
       prisma.user.count({ where: compedWhere }),
-      prisma.subscription.count({
-        where: { ...providerBacked, createdAt: { gte: since(1) } },
-      }),
-      prisma.subscription.count({
-        where: { ...providerBacked, createdAt: { gte: since(7) } },
-      }),
-      prisma.subscription.count({
-        where: { ...providerBacked, createdAt: { gte: since(30) } },
-      }),
     ]);
 
-    const activeByTier = new Map(
-      activeGroups.map((g) => [g.tierId, g._count._all])
-    );
-    const cancelingByTier = new Map(
-      cancelingGroups.map((g) => [g.tierId, g._count._all])
-    );
-    const lifetimeByTier = new Map(
-      lifetimeGroups.map((g) => [g.tierId, g._count._all])
-    );
-    const lifetimeCancelingByTier = new Map(
-      lifetimeCancelingGroups.map((g) => [g.tierId, g._count._all])
-    );
-    const emptyProviders = () => ({ stripe: 0, paypal: 0 });
-    const groupProviders = (
-      groups: { tierId: string; provider: string; _count: { _all: number } }[]
-    ) => {
-      const map = new Map<string, { stripe: number; paypal: number }>();
-      for (const g of groups) {
-        const entry = map.get(g.tierId) ?? emptyProviders();
-        if (g.provider === "paypal") entry.paypal += g._count._all;
-        else entry.stripe += g._count._all;
-        map.set(g.tierId, entry);
-      }
-      return map;
+    const activeTotal = activeSubs.length;
+    const cancelingTotal = activeSubs.filter((s) => s.cancelAtPeriodEnd).length;
+
+    // ── Cohort bucketing ───────────────────────
+    type CohortBucket = {
+      active: number;
+      canceling: number;
+      stripe: number;
+      paypal: number;
+      mrrCents: number;
+      /** Monthly-equivalent price one sub in this bucket bills. */
+      unitCents: number;
     };
-    const providerByTier = groupProviders(providerGroups);
-    const lifetimeProviderByTier = groupProviders(lifetimeProviderGroups);
+    const emptyBucket = (unitCents: number): CohortBucket => ({
+      active: 0,
+      canceling: 0,
+      stripe: 0,
+      paypal: 0,
+      mrrCents: 0,
+      unitCents,
+    });
+
+    const tierById = new Map(tierRows.map((t) => [t.id, t]));
+    /** tierId → cohort → bucket. Tiers with no subs never get an entry. */
+    const bucketsByTier = new Map<string, Map<SubCohort, CohortBucket>>();
+    const cohortTotals = new Map<SubCohort, number>();
+    const acquisitionCounts = new Map<string, number>();
+
+    for (const sub of activeSubs) {
+      const tier = tierById.get(sub.tierId);
+      const cohort = cohortOf(sub);
+      cohortTotals.set(cohort, (cohortTotals.get(cohort) ?? 0) + 1);
+      const source = sub.acquisitionSource ?? "direct";
+      acquisitionCounts.set(source, (acquisitionCounts.get(source) ?? 0) + 1);
+      if (!tier) continue; // counted in untieredActive below
+
+      let byCohort = bucketsByTier.get(sub.tierId);
+      if (!byCohort) {
+        byCohort = new Map();
+        bucketsByTier.set(sub.tierId, byCohort);
+      }
+      const unitCents = monthlyUnitCents(cohort, tier);
+      const bucket = byCohort.get(cohort) ?? emptyBucket(unitCents);
+      bucket.active++;
+      bucket.mrrCents += unitCents;
+      if (sub.cancelAtPeriodEnd) bucket.canceling++;
+      if (sub.provider === "paypal") bucket.paypal++;
+      else bucket.stripe++;
+      byCohort.set(cohort, bucket);
+    }
+
+    // Cohorts render top-to-bottom in this order under their tier.
+    const COHORT_ORDER: SubCohort[] = ["list", "annual", "promo", "lifetime"];
 
     // Accumulate money in cents so the totals stay exact.
     let mrrCentsTotal = 0;
     let listMrrCentsTotal = 0;
-    let lifetimeActiveTotal = 0;
     let monthlyCreditsTotal = 0;
 
     const tiers = tierRows.map((t) => {
-      const active = activeByTier.get(t.id) ?? 0;
-      const providers = providerByTier.get(t.id) ?? emptyProviders();
-      const lifetimeActive = lifetimeByTier.get(t.id) ?? 0;
-      const fullPriceActive = Math.max(0, active - lifetimeActive);
-      const lifetimeMrrCents = lifetimeActive * VIP_LIFETIME_CENTS;
-      const mrrCents = fullPriceActive * t.priceUsdCents + lifetimeMrrCents;
+      const byCohort = bucketsByTier.get(t.id) ?? new Map<SubCohort, CohortBucket>();
+      const cohorts = COHORT_ORDER.filter((c) => byCohort.has(c)).map((c) => {
+        const b = byCohort.get(c)!;
+        return {
+          key: c,
+          label: COHORT_LABEL[c],
+          active: b.active,
+          canceling: b.canceling,
+          stripe: b.stripe,
+          paypal: b.paypal,
+          /** Monthly-equivalent price per sub — annual is the yearly ÷ 12. */
+          unitPriceUsd: centsToUsd(b.unitCents),
+          mrrUsd: centsToUsd(b.mrrCents),
+        };
+      });
+
+      const sum = (pick: (b: CohortBucket) => number) =>
+        [...byCohort.values()].reduce((s, b) => s + pick(b), 0);
+      const active = sum((b) => b.active);
+      const mrrCents = sum((b) => b.mrrCents);
       const listMrrCents = active * t.priceUsdCents;
 
       mrrCentsTotal += mrrCents;
       listMrrCentsTotal += listMrrCents;
-      lifetimeActiveTotal += lifetimeActive;
       monthlyCreditsTotal += active * t.creditsPerMonth;
 
       return {
@@ -251,26 +261,39 @@ export async function GET(request: NextRequest) {
         creditsPerMonth: t.creditsPerMonth,
         isActive: t.isActive,
         active,
-        canceling: cancelingByTier.get(t.id) ?? 0,
+        canceling: sum((b) => b.canceling),
         sharePct: activeTotal > 0 ? (active / activeTotal) * 100 : null,
-        /** Effective MRR: lifetime cohort at its locked price, rest at list. */
+        /** Effective MRR: each cohort at the price it actually bills. */
         mrrUsd: centsToUsd(mrrCents),
-        /** What this tier would bill if every sub paid list price. */
+        /** What this tier would bill if every sub paid monthly list price. */
         listMrrUsd: centsToUsd(listMrrCents),
-        stripe: providers.stripe,
-        paypal: providers.paypal,
-        lifetime:
-          lifetimeActive > 0
-            ? {
-                active: lifetimeActive,
-                canceling: lifetimeCancelingByTier.get(t.id) ?? 0,
-                ...(lifetimeProviderByTier.get(t.id) ?? emptyProviders()),
-                priceUsd: centsToUsd(VIP_LIFETIME_CENTS),
-                mrrUsd: centsToUsd(lifetimeMrrCents),
-              }
-            : null,
+        stripe: sum((b) => b.stripe),
+        paypal: sum((b) => b.paypal),
+        /** Per-cohort split; one entry per cohort with at least one sub. */
+        cohorts,
       };
     });
+
+    // ── New signups, by cohort ─────────────────
+    const WINDOWS = [
+      { key: "last24h" as const, days: 1 },
+      { key: "last7d" as const, days: 7 },
+      { key: "last30d" as const, days: 30 },
+    ];
+    const newTotals = { last24h: 0, last7d: 0, last30d: 0 };
+    const newByCohort = new Map<SubCohort, typeof newTotals>();
+    for (const sub of recentSubs) {
+      const cohort = cohortOf(sub);
+      const entry =
+        newByCohort.get(cohort) ?? { last24h: 0, last7d: 0, last30d: 0 };
+      for (const w of WINDOWS) {
+        if (sub.createdAt >= since(w.days)) {
+          newTotals[w.key]++;
+          entry[w.key]++;
+        }
+      }
+      newByCohort.set(cohort, entry);
+    }
 
     // Subs whose tierId no longer resolves to a tier row would silently vanish
     // from the per-tier table while still counting in the total — surface the
@@ -418,12 +441,18 @@ export async function GET(request: NextRequest) {
         /** Everyone with access right now, billed or not. */
         withAccess: activeTotal + compedTotal,
         untieredActive,
-        /** Effective MRR: VIP lifetime cohort at its locked discount price. */
+        /** Effective MRR: every cohort at the price it actually bills. */
         mrrUsd,
-        /** MRR if every sub paid list price (the old upper-bound figure). */
+        /** MRR if every sub paid monthly list price (the upper-bound figure). */
         listMrrUsd: centsToUsd(listMrrCentsTotal),
         /** Active subs on the VIP lifetime offer. */
-        lifetimeActive: lifetimeActiveTotal,
+        lifetimeActive: cohortTotals.get("lifetime") ?? 0,
+        /** Active subs acquired through the $5.99-first-month /promo offer. */
+        promoActive: cohortTotals.get("promo") ?? 0,
+        /** Active subs on yearly billing (period spans ~a year). */
+        annualActive: cohortTotals.get("annual") ?? 0,
+        /** What the promo cohort pays for its single discounted cycle. */
+        promoFirstMonthUsd: centsToUsd(VIP_FIRST_MONTH_CENTS),
         /** Effective MRR ÷ paying subscribers. */
         avgMrrUsd:
           activeTotal > 0 ? centsToUsd(mrrCentsTotal / activeTotal) : null,
@@ -435,13 +464,19 @@ export async function GET(request: NextRequest) {
         stripe: providerTotals.stripe,
         paypal: providerTotals.paypal,
       },
-      newSubscribers: { last24h: new24h, last7d: new7d, last30d: new30d },
+      newSubscribers: {
+        ...newTotals,
+        /** Same windows, split by cohort — how many of the new signups came
+         *  from the promo funnel and how many chose annual billing. */
+        cohorts: COHORT_ORDER.filter((c) => newByCohort.has(c)).map((c) => ({
+          key: c,
+          label: COHORT_LABEL[c],
+          ...newByCohort.get(c)!,
+        })),
+      },
       tiers,
-      acquisitionSources: acquisitionGroups
-        .map((g) => ({
-          source: g.acquisitionSource ?? "direct",
-          count: g._count._all,
-        }))
+      acquisitionSources: [...acquisitionCounts.entries()]
+        .map(([source, count]) => ({ source, count }))
         .sort((a, b) => b.count - a.count),
       list: {
         status,
