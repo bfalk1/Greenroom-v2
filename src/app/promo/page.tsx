@@ -171,13 +171,15 @@ function VipOfferBand() {
 }
 
 export default function PromoPage() {
-  // Top of the promo funnel + the Meta/TikTok product view — once per mount
-  // (ref-guarded against StrictMode double-fire, same as /pricing).
+  // Top of the promo funnel + the Meta/TikTok product view. The ref only
+  // guards re-entry within one mount; a client nav mounts this twice with a
+  // fresh ref, so the pixel half is de-duplicated inside trackPromoOfferViewed
+  // (module scope) — see the note there.
   const viewTracked = useRef(false);
   useEffect(() => {
     if (viewTracked.current) return;
     viewTracked.current = true;
-    trackPromoOfferViewed();
+    trackPromoOfferViewed("offer");
   }, []);
 
   // Returning from a canceled checkout (Stripe cancel_url / PayPal back-out).

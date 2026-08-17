@@ -126,31 +126,96 @@ export function trackPaywallViewed(redirectFrom?: string) {
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
-// Meta-only ViewContent for /pricing: the plan listing is this funnel's
+// A client-side navigation into a plan grid (landing CTA, navbar link, back
+// button) mounts PricingContent TWICE: React discards the first tree ~10ms in
+// and mounts a fresh instance, so a component-level useRef guard — a new ref
+// per instance — cannot see the first fire. Verified against a production
+// build, so this is not a dev/StrictMode artifact: both pixels were getting
+// two ViewContents for one visit, inflating the top of the funnel (a hard
+// landing straight onto the URL fires once; only in-app navs doubled). Module
+// scope survives the remount, so the de-duplication lives here rather than in
+// any component. Keys carry the offer/interval, so switching the billing
+// toggle still sends a fresh view — annual is a different product at a
+// different price — while a re-switch back to one already reported does not.
+// Two windows, because the two problems have different shapes. A discarded
+// mount re-fires ~10ms later, so a few seconds covers it with room to spare —
+// that is all /checkout needs, and keeping it short there preserves a real
+// signal: a buyer who bounces back and retries checkout IS a second intent.
+// The plan grid needs the longer one: its billing toggle sits directly above
+// the cards and re-runs the view effect on every click, so a short window lets
+// one visitor flip month/year/month/year and mint a valued ViewContent each
+// time — inflating exactly the number this change exists to make trustworthy.
+// At ten minutes a visit reports each product at most once, and a genuine
+// return later in a long session still counts. Under-counting is the safer
+// failure mode here: an inflated `value` trains value-based bidding on revenue
+// that was never viewed, while a missed view only costs a little signal.
+const REMOUNT_DEDUPE_MS = 5_000;
+const PRODUCT_VIEW_DEDUPE_MS = 600_000;
+const lastPixelViewAt = new Map<string, number>();
+
+function pixelViewAlreadySent(key: string, windowMs: number): boolean {
+  const now = Date.now();
+  const previous = lastPixelViewAt.get(key) ?? 0;
+  if (now - previous < windowMs) return true;
+  lastPixelViewAt.set(key, now);
+  return false;
+}
+
+// Pixel-only ViewContent for the plan grid: the listing is this funnel's
 // product view, and ad-clickers land on it anonymous — so unlike
 // paywall_viewed (signed-in only, a PostHog conversion metric) this fires for
-// EVERY visitor and only to the pixel. Fills the PageView→InitiateCheckout
-// gap in Meta's event ladder; pixel-only by design (single-channel events
+// EVERY visitor and only to the pixels. Fills the PageView→InitiateCheckout
+// gap in both event ladders; pixel-only by design (single-channel events
 // need no CAPI twin/dedup — see docs/meta-capi-runbook.md).
-export function trackPricingViewed() {
+//
+// interval mirrors the page's billing toggle: an annual viewer is looking at a
+// ~$183 product, not a $17.99 one, and reporting the monthly price for both
+// understates every annual-driven conversion.
+export function trackPricingViewed(interval: "month" | "year" = "month") {
+  if (pixelViewAlreadySent(`pricing:${interval}`, PRODUCT_VIEW_DEDUPE_MS)) {
+    return;
+  }
+  const annual = interval === "year";
+  const priceOf = (p: (typeof PUBLIC_SUBSCRIPTION_PACKAGES)[number]) =>
+    annual ? p.annualPrice : p.price;
+  // Both events managers flag a commerce event with no top-level `value`
+  // ("missing value parameter") — per-item prices (Meta contents[].item_price,
+  // TikTok contents[].price) do NOT satisfy it, and without it ROAS and
+  // value-based bidding have nothing to train on. A plan grid has no single
+  // price, and the SUM of all three tiers would be a lie: a visitor buys
+  // exactly one plan. Use the highlighted tier's price — the plan the page
+  // pushes and the one most buyers take — as the value of a conversion arising
+  // from this view. content_name carries the -annual suffix on the same
+  // convention as trackCheckoutViewed's offerSuffix, while contents[] ids stay
+  // bare tier names so a tier reads identically across the whole ladder.
+  const featured =
+    PUBLIC_SUBSCRIPTION_PACKAGES.find((p) => p.highlighted) ??
+    PUBLIC_SUBSCRIPTION_PACKAGES[0];
+  const contentName = `${featured.tierName}${annual ? "-annual" : ""}`;
   metaTrack("ViewContent", {
     content_category: "subscription",
+    content_name: contentName,
     content_type: "product",
     content_ids: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => p.tierName),
     contents: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => ({
       id: p.tierName,
       quantity: 1,
-      item_price: p.price,
+      item_price: priceOf(p),
     })),
+    value: priceOf(featured),
+    currency: "USD",
   });
   tiktokTrack("ViewContent", {
     content_type: "product",
+    content_id: featured.tierName,
+    content_name: contentName,
     contents: PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => ({
       content_id: p.tierName,
       content_name: p.tierName,
       quantity: 1,
-      price: p.price,
+      price: priceOf(p),
     })),
+    value: priceOf(featured),
     currency: "USD",
   });
 }
@@ -281,10 +346,23 @@ export function trackVipLifetimeConfirmed() {
 // like /pricing, and its visitors are anonymous, so the product view fires
 // for everyone and only to the pixels (single-channel — no CAPI twin/dedup
 // needed, same reasoning as trackPricingViewed).
-export function trackPromoOfferViewed() {
-  posthog.capture("promo_offer_viewed");
+// surface distinguishes the two pages that fire this: "offer" is /promo itself,
+// "grid" is /promo/pricing. It keys the dedupe so the click-through from one to
+// the other still reports its own product view, and it rides along on the
+// PostHog event as a new property (additive — the event's VOLUME is unchanged).
+export function trackPromoOfferViewed(surface: "offer" | "grid" = "offer") {
+  posthog.capture("promo_offer_viewed", { surface });
+  // Same missing-`value` gap and same double-mount as trackPricingViewed above
+  // — see the notes there. The PostHog capture stays OUTSIDE the dedupe on
+  // purpose: promo_offer_viewed is an existing funnel denominator, and silently
+  // changing its volume would break comparisons against every promo number
+  // reported so far. (It double-fires on client navs for the same reason the
+  // pixels did — worth fixing deliberately, not as a side effect of this one.)
+  if (pixelViewAlreadySent(`promo:${surface}`, PRODUCT_VIEW_DEDUPE_MS)) return;
+  const contentName = `${VIP_FIRST_MONTH_OFFER.tierName}-first-month`;
   metaTrack("ViewContent", {
     content_category: "subscription",
+    content_name: contentName,
     content_type: "product",
     content_ids: [VIP_FIRST_MONTH_OFFER.tierName],
     contents: [
@@ -294,9 +372,16 @@ export function trackPromoOfferViewed() {
         item_price: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
       },
     ],
+    // The intro price is what this visitor is actually being sold, and it is
+    // what InitiateCheckout/Purchase will report for the same buyer — a view
+    // valued at the full $17.99 would overstate every promo conversion.
+    value: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
+    currency: "USD",
   });
   tiktokTrack("ViewContent", {
     content_type: "product",
+    content_id: VIP_FIRST_MONTH_OFFER.tierName,
+    content_name: contentName,
     contents: [
       {
         content_id: VIP_FIRST_MONTH_OFFER.tierName,
@@ -305,6 +390,7 @@ export function trackPromoOfferViewed() {
         price: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
       },
     ],
+    value: VIP_FIRST_MONTH_OFFER.firstMonthPrice,
     currency: "USD",
   });
 }
@@ -350,6 +436,19 @@ export function trackCheckoutViewed(props: {
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
+  // CheckoutContent is the same shape as the plan grid — useSearchParams()
+  // inside a <Suspense> — so its own useRef guard has the same hole: the
+  // discarded first mount fires, then a fresh instance with a fresh ref fires
+  // again. Signed-in lifetime/promo buyers are incidentally spared (their
+  // effect waits on the eligibility verdict, which outlives the discarded
+  // tree), but plain and annual checkouts are not, and InitiateCheckout is a
+  // VALUED event — a double-fire overstates checkout intent in dollars, not
+  // just in count. Short window: only the remount needs covering, and a buyer
+  // who genuinely comes back to retry after an error should still be counted.
+  // PostHog's capture stays above this guard — checkout_viewed is an existing
+  // funnel denominator and its volume must not change silently.
+  const dedupeKey = `checkout:${props.tier}${offerSuffix}`;
+  if (pixelViewAlreadySent(dedupeKey, REMOUNT_DEDUPE_MS)) return;
   metaTrack("InitiateCheckout", {
     content_category: "subscription",
     content_name: `${props.tier}${offerSuffix}`,
