@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
 // GET /api/samples/following — Get samples from followed creators
 export async function GET(request: NextRequest) {
@@ -59,6 +60,12 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Real downloads for this page — Sample.downloadCount is a purchase counter,
+    // so total_purchases below can read it but total_downloads cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      samples.map((s) => s.id)
+    );
+
     // Map to frontend format
     const mapped = samples.map((s) => ({
       id: s.id,
@@ -79,7 +86,7 @@ export async function GET(request: NextRequest) {
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
-      total_downloads: s.downloadCount,
+      total_downloads: downloadsBySampleId.get(s.id) ?? 0,
       created_date: s.createdAt.toISOString(),
     }));
 

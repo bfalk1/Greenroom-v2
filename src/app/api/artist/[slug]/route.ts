@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
 // GET /api/artist/[slug] — Public artist profile
 export async function GET(
@@ -50,15 +51,16 @@ export async function GET(
       );
     }
 
-    // Get total downloads across all samples
-    const downloadStats = await prisma.sample.aggregate({
+    // Total downloads across the artist's published catalogue. Counted from the
+    // `downloads` table — Sample.downloadCount is a purchase counter, so summing
+    // it here reported sales under a "downloads" label.
+    const totalDownloads = await prisma.download.count({
       where: {
-        creatorId: artist.id,
-        status: "PUBLISHED",
-        isActive: true,
-      },
-      _sum: {
-        downloadCount: true,
+        sample: {
+          creatorId: artist.id,
+          status: "PUBLISHED",
+          isActive: true,
+        },
       },
     });
 
@@ -122,7 +124,7 @@ export async function GET(
     );
     
     const validPaths = previewPaths.filter((p): p is string => p !== null);
-    let signedUrlMap: Record<string, string> = {};
+    const signedUrlMap: Record<string, string> = {};
     
     if (validPaths.length > 0) {
       const { data } = await serviceClient.storage
@@ -140,6 +142,12 @@ export async function GET(
 
     const previewUrls = previewPaths.map(path => 
       path ? signedUrlMap[path] || null : null
+    );
+
+    // Real per-sample downloads for this page, same basis as the artist total
+    // above. total_purchases can read the downloadCount column; this cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      paginatedSamples.map((s) => s.id)
     );
 
     // Map samples to frontend format
@@ -164,7 +172,7 @@ export async function GET(
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
-      total_downloads: s.downloadCount,
+      total_downloads: downloadsBySampleId.get(s.id) ?? 0,
       created_date: s.createdAt.toISOString(),
     }));
 
@@ -180,7 +188,7 @@ export async function GET(
         created_at: artist.createdAt.toISOString(),
         sample_count: artist._count.samples,
         follower_count: artist._count.followers,
-        total_downloads: downloadStats._sum.downloadCount || 0,
+        total_downloads: totalDownloads,
         is_following: isFollowing,
       },
       samples: mappedSamples,

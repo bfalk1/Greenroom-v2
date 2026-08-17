@@ -23,6 +23,9 @@ export async function GET(
             bio: true,
           },
         },
+        // Real downloads. Sample.downloadCount is a purchase counter, which is
+        // why total_purchases below can read it but total_downloads cannot.
+        _count: { select: { downloads: true } },
       },
     });
 
@@ -97,7 +100,7 @@ export async function GET(
       average_rating: sample.ratingAvg,
       total_ratings: sample.ratingCount,
       total_purchases: sample.downloadCount,
-      total_downloads: sample.downloadCount,
+      total_downloads: sample._count.downloads,
       status: sample.status,
       created_date: sample.createdAt.toISOString(),
     };

@@ -89,10 +89,24 @@ export async function GET(req: NextRequest) {
             isFlagged: true,
           },
         },
+        _count: { select: { purchases: true, downloads: true } },
       },
     }),
     prisma.sample.count({ where }),
   ]);
+
+  // Sample.downloadCount is a purchase counter (incremented in /api/purchases),
+  // so it is dropped from the payload rather than shipped to the queue as
+  // "downloads" — both numbers below come from the purchases / downloads
+  // tables. fileSizeBytes is coerced because BigInt isn't JSON-serializable.
+  const mappedSamples = samples.map(
+    ({ downloadCount: _purchaseCounter, _count, fileSizeBytes, ...s }) => ({
+      ...s,
+      fileSizeBytes: fileSizeBytes != null ? Number(fileSizeBytes) : null,
+      purchaseCount: _count.purchases,
+      downloadCount: _count.downloads,
+    })
+  );
 
   // Get sample stats
   const now = new Date();
@@ -109,8 +123,8 @@ export async function GET(req: NextRequest) {
     prisma.sample.count(),
   ]);
 
-  return NextResponse.json({ 
-    samples, 
+  return NextResponse.json({
+    samples: mappedSamples,
     total,
     stats: {
       samplesThisMonth,

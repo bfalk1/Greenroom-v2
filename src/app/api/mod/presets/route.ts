@@ -71,7 +71,6 @@ export async function GET(req: NextRequest) {
         fileSizeBytes: true,
         compatibleVersions: true,
         isInitPreset: true,
-        downloadCount: true,
         ratingAvg: true,
         ratingCount: true,
         status: true,
@@ -88,6 +87,10 @@ export async function GET(req: NextRequest) {
             isFlagged: true,
           },
         },
+        // Real counts. Preset.downloadCount is deliberately NOT selected: it is
+        // incremented on purchase, so surfacing it as "downloads" reports sales
+        // a second time. Downloads are rows in the `downloads` table.
+        _count: { select: { purchases: true, downloads: true } },
       },
     }),
     prisma.preset.count({ where }),
@@ -139,7 +142,8 @@ export async function GET(req: NextRequest) {
       fileSizeBytes: p.fileSizeBytes != null ? Number(p.fileSizeBytes) : null,
       compatibleVersions: p.compatibleVersions,
       isInitPreset: p.isInitPreset,
-      downloadCount: p.downloadCount,
+      purchaseCount: p._count.purchases,
+      downloadCount: p._count.downloads,
       ratingAvg: p.ratingAvg,
       ratingCount: p.ratingCount,
       status: p.status,

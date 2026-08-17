@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredWav, verifyStoredImage, removeObject } from "@/lib/storageValidate";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -352,6 +353,14 @@ export async function GET(request: NextRequest) {
     );
 
     // Map to frontend format
+    // Real download counts for this page — one grouped query that covers both
+    // the raw-SQL (random order) and Prisma branches above. total_purchases
+    // below reads the denormalized downloadCount column, which IS the purchase
+    // count; total_downloads cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      samples.map((s) => s.id)
+    );
+
     const mapped = samples.map((s, i) => ({
       id: s.id,
       name: s.name,
@@ -373,7 +382,7 @@ export async function GET(request: NextRequest) {
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
-      total_downloads: s.downloadCount,
+      total_downloads: downloadsBySampleId.get(s.id) ?? 0,
       created_date: s.createdAt.toISOString(),
     }));
 

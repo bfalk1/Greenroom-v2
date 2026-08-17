@@ -31,7 +31,6 @@ interface CreatorSample {
   creditPrice: number;
   status: string;
   reviewNote?: string | null;
-  downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
   purchases: number;
@@ -380,7 +379,6 @@ interface CreatorPreset {
   previewUrl?: string | null;
   status: string;
   reviewNote?: string | null;
-  downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
   purchases: number;
