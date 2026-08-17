@@ -18,7 +18,7 @@ export default function PromoPricingPage() {
   useEffect(() => {
     if (viewTracked.current) return;
     viewTracked.current = true;
-    trackPromoOfferViewed();
+    trackPromoOfferViewed("grid");
   }, []);
 
   return (

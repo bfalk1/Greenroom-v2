@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -74,14 +74,23 @@ function PricingContent({
     trackPaywallViewed(redirectFrom);
   }, [searchParams, user]);
 
-  // Meta ViewContent — every visitor, signed in or not (ad-clickers land here
-  // anonymous), once per mount (ref-guarded against StrictMode double-fire).
-  const contentViewTracked = useRef(false);
+  // Pixel ViewContent — every visitor, signed in or not (ad-clickers land here
+  // anonymous), and again when the billing toggle flips, because annual is a
+  // different product at a different price. Deliberately NOT ref-guarded: a
+  // client nav mounts this component twice with a fresh ref each time, so the
+  // de-duplication that actually holds lives in trackPricingViewed (module
+  // scope, survives the remount) — read the note there before changing this.
+  //
+  // In promo mode the page owns the MONTHLY product view (trackPromoOfferViewed,
+  // at the $5.99 intro price): firing this one too would put two competing
+  // ViewContents, with two different values, on a single /promo/pricing visit.
+  // Annual is not part of the intro offer — those cards are the standard yearly
+  // plans — so a promo visitor who flips the toggle is genuinely viewing a
+  // ~$183 product and that view still belongs in both pixels.
   useEffect(() => {
-    if (contentViewTracked.current) return;
-    contentViewTracked.current = true;
-    trackPricingViewed();
-  }, []);
+    if (promo && billing === "month") return;
+    trackPricingViewed(billing);
+  }, [promo, billing]);
 
   // Handle success/canceled URL params
   useEffect(() => {
