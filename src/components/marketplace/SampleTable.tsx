@@ -10,12 +10,27 @@ const GRID_CLASS_BY_VARIANT: Record<SampleTableVariant, string> = {
     "grid grid-cols-[auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_minmax(220px,1fr)_220px_90px_45px_45px_80px_50px]",
   library:
     "grid grid-cols-[auto_auto_auto_1fr_80px_60px] md:grid-cols-[auto_auto_auto_minmax(220px,1fr)_220px_90px_45px_45px_80px_50px]",
+  // The creator variant gains three performance columns (sales / downloads /
+  // earned) at lg — a creator's own table is about how the upload is doing, not
+  // just what it is. They stay hidden below lg so the md layout is untouched.
+  // The name track carries an explicit min so the header and the rows resolve
+  // it identically — a bare `1fr` floors at min-content, which differs between
+  // the header's short label and a row's `min-w-0` cell, and the two drift
+  // apart once the table is narrower than its fixed columns.
+  // At lg the waveform gives up 70px to make room for the three performance
+  // columns — otherwise the row totals more than the 1216px content box and the
+  // Actions buttons get pushed off the right edge.
   creator:
-    "grid grid-cols-[auto_auto_1fr_70px_80px] md:grid-cols-[auto_auto_minmax(220px,1fr)_220px_80px_45px_45px_70px_80px_100px]",
+    "grid grid-cols-[auto_auto_minmax(120px,1fr)_70px_80px] md:grid-cols-[auto_auto_minmax(220px,1fr)_220px_80px_45px_45px_70px_80px_100px] lg:grid-cols-[auto_auto_minmax(160px,1fr)_150px_80px_45px_45px_70px_55px_55px_75px_80px_100px]",
 };
 
 export const SAMPLE_TABLE_WAVEFORM_CLASS =
   "hidden md:block w-[220px]";
+
+/** Waveform width for the creator table, which narrows it at lg. Must track
+ *  the wave column in GRID_CLASS_BY_VARIANT.creator. */
+export const SAMPLE_TABLE_WAVEFORM_CREATOR_CLASS =
+  "hidden md:block w-[220px] lg:w-[150px]";
 
 export function getSampleTableRowClass(
   variant: SampleTableVariant,
@@ -124,6 +139,9 @@ export function SampleTableHeader({
         <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Key</span>
         <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">BPM</span>
         <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Rating</span>
+        <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">Sales</span>
+        <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">DLs</span>
+        <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">Earned</span>
         <span className="text-xs font-medium text-[#a1a1a1]">Status</span>
         <span className="text-xs font-medium text-[#a1a1a1] text-right">Actions</span>
       </div>

@@ -12,6 +12,8 @@ import {
   Wallet,
   AlertTriangle,
   CheckCircle2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +31,9 @@ interface EarningsStats {
   pendingPayout: number;
   unpaidEarnings: number;
   thisMonthEarnings?: number;
+  /** Non-catalog earnings — they show in Total Earnings but not in the table. */
+  referralEarnings?: number;
+  adjustmentEarnings?: number;
 }
 
 // Minimum payout threshold — keep in sync with MIN_PAYOUT_CENTS in lib/payoutMath.ts
@@ -52,15 +57,24 @@ function formatFeeConfig(cfg: PayoutFeeConfig): string {
   return `${pct}% + $${fixed}`;
 }
 
-interface Purchase {
+/** One sample or preset in the creator's catalog, with what it has earned. */
+interface CatalogItem {
   id: string;
-  sampleId: string;
-  sampleName: string;
-  buyerUsername: string;
-  creditsSpent: number;
-  downloadCount: number;
+  type: "SAMPLE" | "PRESET";
+  name: string;
+  creditPrice: number;
+  status: string;
+  purchases: number;
+  credits: number;
+  downloads: number;
+  earningsUsd: number;
   createdAt: string;
 }
+
+type CatalogSortKey = "purchases" | "downloads" | "credits" | "earningsUsd" | "name";
+
+/** How many rows the performance table shows before "Show all". */
+const CATALOG_PAGE_SIZE = 25;
 
 interface Payout {
   id: string;
@@ -84,7 +98,10 @@ export default function CreatorEarningsPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
   const [stats, setStats] = useState<EarningsStats | null>(null);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [sortBy, setSortBy] = useState<CatalogSortKey>("purchases");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [showAllCatalog, setShowAllCatalog] = useState(false);
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [feeConfig, setFeeConfig] = useState<PayoutFeeConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +118,7 @@ export default function CreatorEarningsPage() {
       if (!res.ok) throw new Error("Failed to fetch earnings");
       const data = await res.json();
       setStats(data.stats);
-      setPurchases(data.purchases);
+      setCatalog(data.catalog ?? []);
       setPayouts(data.payouts);
       if (data.payoutInfo) {
         setFeeConfig({
@@ -213,6 +230,69 @@ export default function CreatorEarningsPage() {
     );
   }
 
+  // ---- Sample performance table ----
+  const sortedCatalog = [...catalog].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    if (sortBy === "name") return dir * a.name.localeCompare(b.name);
+    const diff = a[sortBy] - b[sortBy];
+    return diff !== 0 ? dir * diff : a.name.localeCompare(b.name);
+  });
+  const visibleCatalog = showAllCatalog
+    ? sortedCatalog
+    : sortedCatalog.slice(0, CATALOG_PAGE_SIZE);
+  const soldCount = catalog.filter((i) => i.purchases > 0).length;
+  const hasNonCatalogEarnings =
+    (stats?.referralEarnings ?? 0) > 0 || (stats?.adjustmentEarnings ?? 0) > 0;
+  // Totals cover the WHOLE catalog, not just the visible rows, so they
+  // reconcile with the stat cards above.
+  const catalogTotals = catalog.reduce(
+    (acc, i) => ({
+      purchases: acc.purchases + i.purchases,
+      downloads: acc.downloads + i.downloads,
+      credits: acc.credits + i.credits,
+      earningsUsd: acc.earningsUsd + i.earningsUsd,
+    }),
+    { purchases: 0, downloads: 0, credits: 0, earningsUsd: 0 }
+  );
+
+  const toggleCatalogSort = (key: CatalogSortKey) => {
+    if (key === sortBy) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setSortDir(key === "name" ? "asc" : "desc");
+    }
+  };
+
+  const catalogSortHeader = (
+    key: CatalogSortKey,
+    label: string,
+    align: "left" | "right" = "right"
+  ) => (
+    <th
+      className={`px-6 py-3 text-xs font-medium uppercase ${
+        align === "left" ? "text-left" : "text-right"
+      }`}
+    >
+      <button
+        onClick={() => toggleCatalogSort(key)}
+        className={`inline-flex items-center gap-1 transition ${
+          sortBy === key
+            ? "text-[#39b54a]"
+            : "text-[#a1a1a1] hover:text-white"
+        }`}
+      >
+        {label}
+        {sortBy === key &&
+          (sortDir === "asc" ? (
+            <ArrowUp className="w-3 h-3" />
+          ) : (
+            <ArrowDown className="w-3 h-3" />
+          ))}
+      </button>
+    </th>
+  );
+
   const hasPayoutMethod = Boolean(paypalEmail);
   const meetsThreshold = Boolean(
     stats && stats.unpaidEarnings - stats.pendingPayout >= PAYOUT_THRESHOLD
@@ -269,7 +349,7 @@ export default function CreatorEarningsPage() {
             <p className="text-3xl font-bold text-white">
               {stats?.totalPurchases ?? 0}
             </p>
-            <p className="text-[#a1a1a1] text-xs mt-2">Sample purchases</p>
+            <p className="text-[#a1a1a1] text-xs mt-2">Samples + presets</p>
           </div>
 
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
@@ -284,7 +364,7 @@ export default function CreatorEarningsPage() {
             <p className="text-3xl font-bold text-white">
               {stats?.totalDownloads ?? 0}
             </p>
-            <p className="text-[#a1a1a1] text-xs mt-2">Across all samples</p>
+            <p className="text-[#a1a1a1] text-xs mt-2">Across your catalog</p>
           </div>
 
           <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6">
@@ -555,67 +635,149 @@ export default function CreatorEarningsPage() {
           <EarningsChart />
         </div>
 
-        {/* Recent Purchases Table */}
+        {/* Per-sample performance — what each upload actually sold and earned,
+            best sellers first. Replaces the old buyer-by-buyer purchase log,
+            which said nothing about which uploads are worth making more of. */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden">
-          <div className="p-6 border-b border-[#2a2a2a]">
-            <h2 className="text-lg font-semibold text-white">
-              Recent Purchases
-            </h2>
+          <div className="p-6 border-b border-[#2a2a2a] flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                Sample Performance
+              </h2>
+              <p className="text-[#a1a1a1] text-sm mt-1">
+                Every sample and preset you&apos;ve uploaded, ranked by sales.
+              </p>
+            </div>
+            {catalog.length > 0 && (
+              <span className="text-xs text-[#666]">
+                {catalog.length} upload{catalog.length === 1 ? "" : "s"} ·{" "}
+                {soldCount} with sales
+              </span>
+            )}
           </div>
 
-          {purchases.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-[#2a2a2a]">
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Sample
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Buyer
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Credits
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Downloads
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase">
-                      Date
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchases.map((purchase) => (
-                    <tr
-                      key={purchase.id}
-                      className="border-b border-[#2a2a2a] hover:bg-[#0a0a0a]/50"
-                    >
-                      <td className="px-6 py-4 text-white text-sm font-medium">
-                        {purchase.sampleName}
+          {catalog.length > 0 ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-[#2a2a2a]">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-[#a1a1a1] uppercase w-10">
+                        #
+                      </th>
+                      {catalogSortHeader("name", "Item", "left")}
+                      <th className="px-6 py-3 text-right text-xs font-medium text-[#a1a1a1] uppercase">
+                        Price
+                      </th>
+                      {catalogSortHeader("purchases", "Purchases")}
+                      {catalogSortHeader("downloads", "Downloads")}
+                      {catalogSortHeader("credits", "Credits")}
+                      {catalogSortHeader("earningsUsd", "Earned")}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleCatalog.map((item, i) => (
+                      <tr
+                        key={item.id}
+                        className="border-b border-[#2a2a2a] hover:bg-[#0a0a0a]/50"
+                      >
+                        <td className="px-6 py-4 text-[#666] text-sm tabular-nums">
+                          {i + 1}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm font-medium">
+                              {item.name}
+                            </span>
+                            {item.type === "PRESET" && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#2a2a2a] text-[#a1a1a1] uppercase shrink-0">
+                                Preset
+                              </span>
+                            )}
+                            {item.status !== "PUBLISHED" && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-medium uppercase shrink-0 ${
+                                  item.status === "REVIEW"
+                                    ? "bg-yellow-500/20 text-yellow-400"
+                                    : item.status === "REMOVED"
+                                      ? "bg-red-500/20 text-red-400"
+                                      : "bg-[#2a2a2a] text-[#a1a1a1]"
+                                }`}
+                              >
+                                {item.status === "REMOVED" ? "Removed" : item.status}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-right text-[#a1a1a1] text-sm tabular-nums">
+                          {item.creditPrice}
+                        </td>
+                        <td className="px-6 py-4 text-right text-white text-sm tabular-nums">
+                          {item.purchases}
+                        </td>
+                        <td className="px-6 py-4 text-right text-white text-sm tabular-nums">
+                          {item.downloads}
+                        </td>
+                        <td className="px-6 py-4 text-right text-[#a1a1a1] text-sm tabular-nums">
+                          {item.credits}
+                        </td>
+                        <td className="px-6 py-4 text-right text-[#39b54a] text-sm font-medium tabular-nums">
+                          ${item.earningsUsd.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-[#141414]">
+                      <td />
+                      <td className="px-6 py-4 text-[#a1a1a1] text-xs uppercase font-medium">
+                        Total
                       </td>
-                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
-                        {purchase.buyerUsername}
+                      <td />
+                      <td className="px-6 py-4 text-right text-white text-sm font-medium tabular-nums">
+                        {catalogTotals.purchases}
                       </td>
-                      <td className="px-6 py-4 text-white text-sm">
-                        {purchase.creditsSpent}
+                      <td className="px-6 py-4 text-right text-white text-sm font-medium tabular-nums">
+                        {catalogTotals.downloads}
                       </td>
-                      <td className="px-6 py-4 text-white text-sm">
-                        {purchase.downloadCount}
+                      <td className="px-6 py-4 text-right text-[#a1a1a1] text-sm font-medium tabular-nums">
+                        {catalogTotals.credits}
                       </td>
-                      <td className="px-6 py-4 text-[#a1a1a1] text-sm">
-                        {new Date(purchase.createdAt).toLocaleDateString()}
+                      <td className="px-6 py-4 text-right text-[#39b54a] text-sm font-medium tabular-nums">
+                        ${catalogTotals.earningsUsd.toFixed(2)}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </tfoot>
+                </table>
+              </div>
+
+              {catalog.length > CATALOG_PAGE_SIZE && (
+                <div className="p-4 border-t border-[#2a2a2a] text-center">
+                  <button
+                    onClick={() => setShowAllCatalog((v) => !v)}
+                    className="text-sm text-[#39b54a] hover:text-[#2e9140] font-medium"
+                  >
+                    {showAllCatalog
+                      ? `Show top ${CATALOG_PAGE_SIZE}`
+                      : `Show all ${catalog.length} uploads`}
+                  </button>
+                </div>
+              )}
+
+              {/* Catalog sales are only one component of the balance above —
+                  say so, or the totals look like they don't add up. */}
+              {hasNonCatalogEarnings && (
+                <p className="px-6 pb-5 text-xs text-[#666]">
+                  Sales only. Referral rewards and bonuses are included in Total
+                  Earnings above, not in this table.
+                </p>
+              )}
+            </>
           ) : (
             <div className="p-12 text-center">
               <TrendingUp className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
               <p className="text-[#a1a1a1]">
-                No purchases yet. Upload samples to start earning!
+                Nothing uploaded yet. Upload samples to start earning!
               </p>
             </div>
           )}
