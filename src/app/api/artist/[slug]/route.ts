@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
 // GET /api/artist/[slug] — Public artist profile
 export async function GET(
@@ -143,6 +144,12 @@ export async function GET(
       path ? signedUrlMap[path] || null : null
     );
 
+    // Real per-sample downloads for this page, same basis as the artist total
+    // above. total_purchases can read the downloadCount column; this cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      paginatedSamples.map((s) => s.id)
+    );
+
     // Map samples to frontend format
     const mappedSamples = paginatedSamples.map((s, i) => ({
       id: s.id,
@@ -165,7 +172,7 @@ export async function GET(
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
-      total_downloads: s.downloadCount,
+      total_downloads: downloadsBySampleId.get(s.id) ?? 0,
       created_date: s.createdAt.toISOString(),
     }));
 

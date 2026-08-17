@@ -21,6 +21,8 @@ export async function GET(
             avatarUrl: true,
           },
         },
+        // Real downloads. Preset.downloadCount is a purchase counter.
+        _count: { select: { downloads: true } },
       },
     });
 
@@ -50,7 +52,7 @@ export async function GET(
         is_init_preset: preset.isInitPreset,
         average_rating: preset.ratingAvg,
         total_ratings: preset.ratingCount,
-        total_downloads: preset.downloadCount,
+        total_downloads: preset._count.downloads,
         created_date: preset.createdAt.toISOString(),
       },
     });

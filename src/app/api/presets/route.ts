@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { Prisma, PresetCategory, SynthName } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredImage, removeObject } from "@/lib/storageValidate";
+import { getPresetDownloadCounts } from "@/lib/downloadCounts";
 
 // Display names for synth enums
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -283,6 +284,13 @@ export async function GET(request: NextRequest) {
       path ? signedUrlMap[path] || null : null
     );
 
+    // Real download counts for this page — one grouped query that covers both
+    // the raw-SQL (random order) and Prisma branches above. Preset.downloadCount
+    // is a purchase counter and cannot answer this.
+    const downloadsByPresetId = await getPresetDownloadCounts(
+      presets.map((p) => p.id)
+    );
+
     // Map to frontend format
     const mapped = presets.map((p, i) => ({
       id: p.id,
@@ -305,7 +313,7 @@ export async function GET(request: NextRequest) {
       is_init_preset: p.isInitPreset,
       average_rating: p.ratingAvg,
       total_ratings: p.ratingCount,
-      total_downloads: p.downloadCount,
+      total_downloads: downloadsByPresetId.get(p.id) ?? 0,
       created_date: p.createdAt.toISOString(),
     }));
 
