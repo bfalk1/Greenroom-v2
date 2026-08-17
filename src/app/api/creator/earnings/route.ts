@@ -9,7 +9,7 @@ import {
   getCreatorAdjustmentCents,
   getPayoutFeeConfig,
 } from "@/lib/payouts";
-import { computeNetPayoutCents } from "@/lib/payoutMath";
+import { computeNetPayoutCents, computePayoutCents } from "@/lib/payoutMath";
 
 // GET /api/creator/earnings — fetch earnings data for the authenticated creator
 export async function GET(_request: NextRequest) {
@@ -35,30 +35,98 @@ export async function GET(_request: NextRequest) {
       );
     }
 
-    // Get all samples by this creator
-    const creatorSamples = await prisma.sample.findMany({
-      where: { creatorId: authUser.id },
-      select: { id: true, name: true, creditPrice: true },
-    });
+    // The creator's whole catalog — samples AND presets. Both earn credits, so
+    // both belong in the per-item performance table (and in the totals above it).
+    const [creatorSamples, creatorPresets] = await Promise.all([
+      prisma.sample.findMany({
+        where: { creatorId: authUser.id },
+        select: {
+          id: true,
+          name: true,
+          creditPrice: true,
+          status: true,
+          createdAt: true,
+        },
+      }),
+      prisma.preset.findMany({
+        where: { creatorId: authUser.id },
+        select: {
+          id: true,
+          name: true,
+          creditPrice: true,
+          status: true,
+          createdAt: true,
+        },
+      }),
+    ]);
 
     const sampleIds = creatorSamples.map((s) => s.id);
-    const sampleMap = Object.fromEntries(
-      creatorSamples.map((s) => [s.id, s])
-    );
+    const presetIds = creatorPresets.map((p) => p.id);
 
-    // Get all purchases of this creator's samples
-    const purchases = await prisma.purchase.findMany({
-      where: { sampleId: { in: sampleIds } },
-      orderBy: { createdAt: "desc" },
-      include: {
-        user: {
-          select: { username: true, email: true },
-        },
-        _count: {
-          select: { downloads: true },
-        },
-      },
-    });
+    // Per-item aggregates. Grouped in SQL rather than pulling every purchase row
+    // — a creator with thousands of sales shouldn't stream them all into memory.
+    const [
+      samplePurchaseGroups,
+      presetPurchaseGroups,
+      sampleDownloadGroups,
+      presetDownloadGroups,
+    ] = await Promise.all([
+      sampleIds.length
+        ? prisma.purchase.groupBy({
+            by: ["sampleId"],
+            where: { sampleId: { in: sampleIds } },
+            _count: { _all: true },
+            _sum: { creditsSpent: true },
+          })
+        : [],
+      presetIds.length
+        ? prisma.purchase.groupBy({
+            by: ["presetId"],
+            where: { presetId: { in: presetIds } },
+            _count: { _all: true },
+            _sum: { creditsSpent: true },
+          })
+        : [],
+      sampleIds.length
+        ? prisma.download.groupBy({
+            by: ["sampleId"],
+            where: { sampleId: { in: sampleIds } },
+            _count: { _all: true },
+          })
+        : [],
+      presetIds.length
+        ? prisma.download.groupBy({
+            by: ["presetId"],
+            where: { presetId: { in: presetIds } },
+            _count: { _all: true },
+          })
+        : [],
+    ]);
+
+    type ItemSales = { purchases: number; credits: number };
+    const salesById = new Map<string, ItemSales>();
+    for (const g of samplePurchaseGroups) {
+      if (!g.sampleId) continue;
+      salesById.set(g.sampleId, {
+        purchases: g._count._all,
+        credits: g._sum.creditsSpent ?? 0,
+      });
+    }
+    for (const g of presetPurchaseGroups) {
+      if (!g.presetId) continue;
+      salesById.set(g.presetId, {
+        purchases: g._count._all,
+        credits: g._sum.creditsSpent ?? 0,
+      });
+    }
+
+    const downloadsById = new Map<string, number>();
+    for (const g of sampleDownloadGroups) {
+      if (g.sampleId) downloadsById.set(g.sampleId, g._count._all);
+    }
+    for (const g of presetDownloadGroups) {
+      if (g.presetId) downloadsById.set(g.presetId, g._count._all);
+    }
 
     // Calculate this month's earnings
     const startOfMonth = new Date();
@@ -71,10 +139,12 @@ export async function GET(_request: NextRequest) {
       gte: startOfMonth,
     });
 
-    // Get total downloads across all creator's samples
-    const totalDownloads = await prisma.download.count({
-      where: { sampleId: { in: sampleIds } },
-    });
+    // Catalog-wide totals, derived from the same per-item aggregates the table
+    // below is built from — so the stat cards always reconcile with the rows.
+    let totalPurchases = 0;
+    for (const s of salesById.values()) totalPurchases += s.purchases;
+    let totalDownloads = 0;
+    for (const d of downloadsById.values()) totalDownloads += d;
 
     // Get payout info
     const payouts = await prisma.creatorPayout.findMany({
@@ -129,20 +199,54 @@ export async function GET(_request: NextRequest) {
       getPayoutFeeConfig(),
     ]);
 
-    const mappedPurchases = purchases.map((p) => ({
-      id: p.id,
-      sampleId: p.sampleId,
-      sampleName: (p.sampleId ? sampleMap[p.sampleId]?.name : null) || "Unknown",
-      buyerUsername: p.user.username || p.user.email,
-      creditsSpent: p.creditsSpent,
-      downloadCount: p._count.downloads,
-      createdAt: p.createdAt.toISOString(),
-    }));
+    // Per-item performance: every sample and preset the creator owns, with what
+    // it sold, how often it was downloaded and what it actually paid them.
+    // Earnings use the same credits × rate math as the payout engine, so the
+    // column sums to the balance on this page.
+    const buildRow = (
+      item: {
+        id: string;
+        name: string;
+        creditPrice: number;
+        status: string;
+        createdAt: Date;
+      },
+      type: "SAMPLE" | "PRESET"
+    ) => {
+      const sales = salesById.get(item.id);
+      const credits = sales?.credits ?? 0;
+      return {
+        id: item.id,
+        type,
+        name: item.name,
+        creditPrice: item.creditPrice,
+        status: item.status,
+        purchases: sales?.purchases ?? 0,
+        credits,
+        downloads: downloadsById.get(item.id) ?? 0,
+        earningsUsd:
+          computePayoutCents(credits, earningsInfo.centsPerCredit) / 100,
+        createdAt: item.createdAt.toISOString(),
+      };
+    };
+
+    // Best sellers first; ties broken by earnings, then downloads, then newest —
+    // so a creator's top earners are always the first thing they read.
+    const catalog = [
+      ...creatorSamples.map((s) => buildRow(s, "SAMPLE")),
+      ...creatorPresets.map((p) => buildRow(p, "PRESET")),
+    ].sort(
+      (a, b) =>
+        b.purchases - a.purchases ||
+        b.earningsUsd - a.earningsUsd ||
+        b.downloads - a.downloads ||
+        b.createdAt.localeCompare(a.createdAt)
+    );
 
     return NextResponse.json({
       stats: {
         totalEarnings: totalEarningsCents / 100,
-        totalPurchases: purchases.length,
+        totalPurchases,
         totalDownloads,
         totalPaidOut: totalPaidOutCents / 100,
         pendingPayout: pendingPayoutCents / 100,
@@ -162,7 +266,7 @@ export async function GET(_request: NextRequest) {
         // payout path requires — the page surfaces it as a blocking prompt.
         paypalEmail: dbUser.paypalEmail,
       },
-      purchases: mappedPurchases,
+      catalog,
       payouts: payouts.map((p) => ({
         id: p.id,
         periodStart: p.periodStart.toISOString(),

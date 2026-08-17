@@ -4,22 +4,23 @@ import React from "react";
 import { Music, Download, DollarSign, TrendingUp } from "lucide-react";
 
 interface CreatorStatsProps {
-  totalSamples: number;
+  /** Samples + presets — every upload that can earn. */
+  totalUploads: number;
   totalDownloads: number;
   totalEarnings: number;
   totalPurchases: number;
 }
 
 export function CreatorStats({
-  totalSamples,
+  totalUploads,
   totalDownloads,
   totalEarnings,
   totalPurchases,
 }: CreatorStatsProps) {
   const stats = [
     {
-      label: "Samples",
-      value: totalSamples,
+      label: "Uploads",
+      value: totalUploads,
       icon: Music,
       color: "#39b54a",
     },
