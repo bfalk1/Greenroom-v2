@@ -35,6 +35,26 @@ const STATUS_TABS: { id: Status; label: string }[] = [
 /** Mutually-exclusive billing cohorts, classified server-side by @/lib/mrr. */
 type CohortKey = "list" | "lifetime" | "promo" | "annual";
 
+/** Short badge/tab labels. The panel's own wording, not the API's long ones. */
+const COHORT_SHORT: Record<CohortKey, string> = {
+  list: "Monthly",
+  annual: "Annual",
+  promo: "Promo",
+  lifetime: "Lifetime",
+};
+
+/** Offer filter tabs, each with the platform-wide active count to show. */
+const COHORT_TABS: {
+  id: CohortKey;
+  label: string;
+  count: (t: SubscribersResponse["totals"]) => number;
+}[] = [
+  { id: "list", label: "Monthly", count: (t) => t.listActive },
+  { id: "annual", label: "Annual", count: (t) => t.annualActive },
+  { id: "promo", label: "Promo", count: (t) => t.promoActive },
+  { id: "lifetime", label: "Lifetime", count: (t) => t.lifetimeActive },
+];
+
 interface CohortRow {
   key: CohortKey;
   label: string;
@@ -79,6 +99,8 @@ interface SubscriberRow {
   provider: string | null;
   cancelAtPeriodEnd: boolean;
   acquisitionSource: string | null;
+  /** Which offer this sub is on — null for comped rows (no billing). */
+  cohort: CohortKey | null;
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   startedAt: string;
@@ -96,6 +118,8 @@ interface SubscribersResponse {
     mrrUsd: number;
     listMrrUsd: number;
     lifetimeActive: number;
+    /** Active subs on plain monthly list-price billing. */
+    listActive: number;
     /** Active subs from the $5.99-first-month /promo funnel. */
     promoActive: number;
     /** Active subs on yearly billing. */
@@ -124,6 +148,7 @@ interface SubscribersResponse {
   list: {
     status: Status;
     tierId: string | null;
+    cohort: CohortKey | null;
     q: string | null;
     limit: number;
     offset: number;
@@ -172,18 +197,6 @@ const COHORT_COLOR: Record<CohortKey, string> = {
   promo: "#e0b33c",
   lifetime: "#39b54a",
 };
-
-/**
- * Roster-row annual test — mirrors cohortOf() in @/lib/mrr (period spanning
- * more than ~300 days). Comped rows have no period and are never annual.
- */
-const ANNUAL_SPAN_MS = 1000 * 60 * 60 * 24 * 300;
-const isAnnualRow = (s: SubscriberRow) =>
-  s.currentPeriodStart != null &&
-  s.currentPeriodEnd != null &&
-  new Date(s.currentPeriodEnd).getTime() -
-    new Date(s.currentPeriodStart).getTime() >
-    ANNUAL_SPAN_MS;
 
 function BigStat({
   label,
@@ -252,6 +265,7 @@ function SubscribersSkeleton() {
 export function SubscribersPanel() {
   const [status, setStatus] = useState<Status>("active");
   const [tierId, setTierId] = useState<string | null>(null);
+  const [cohort, setCohort] = useState<CohortKey | null>(null);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
@@ -281,6 +295,7 @@ export function SubscribersPanel() {
       offset: String(offset),
     });
     if (tierId) params.set("tierId", tierId);
+    if (cohort) params.set("cohort", cohort);
     if (query) params.set("q", query);
 
     fetch(`/api/admin/subscribers?${params.toString()}`, { signal: ctrl.signal })
@@ -308,7 +323,7 @@ export function SubscribersPanel() {
       });
 
     return () => ctrl.abort();
-  }, [status, tierId, query, offset, limit, reloadKey]);
+  }, [status, tierId, cohort, query, offset, limit, reloadKey]);
 
   const startPending = useCallback(() => {
     setError(null);
@@ -320,8 +335,12 @@ export function SubscribersPanel() {
     if (next === status) return;
     startPending();
     setStatus(next);
-    // Tier filtering is meaningless for comped users (they have no tier).
-    if (next === "comped") setTierId(null);
+    // Tier and offer filtering are meaningless for comped users — they have
+    // no tier and no billing row to classify.
+    if (next === "comped") {
+      setTierId(null);
+      setCohort(null);
+    }
     setOffset(0);
   };
 
@@ -329,6 +348,13 @@ export function SubscribersPanel() {
     if (next === tierId) return;
     startPending();
     setTierId(next);
+    setOffset(0);
+  };
+
+  const changeCohort = (next: CohortKey | null) => {
+    if (next === cohort) return;
+    startPending();
+    setCohort(next);
     setOffset(0);
   };
 
@@ -825,6 +851,46 @@ export function SubscribersPanel() {
               </div>
             )}
 
+            {/* Offer filter — the "who is on promo / annual / lifetime" cut.
+                Counts come from the platform-wide active totals, so they're a
+                guide to what's there, not a count of the filtered page. */}
+            {status !== "comped" && (
+              <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => changeCohort(null)}
+                  className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
+                    cohort === null
+                      ? "bg-[#2a2a2a] text-white font-medium"
+                      : "text-[#a1a1a1] hover:text-white"
+                  }`}
+                >
+                  All offers
+                </button>
+                {COHORT_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => changeCohort(tab.id)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
+                      cohort === tab.id
+                        ? "bg-[#2a2a2a] text-white font-medium"
+                        : "text-[#a1a1a1] hover:text-white"
+                    }`}
+                  >
+                    <span
+                      className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle"
+                      style={{ backgroundColor: COHORT_COLOR[tab.id] }}
+                    />
+                    {tab.label}
+                    <span className="ml-1.5 text-[#666] tabular-nums">
+                      {fmtInt(tab.count(t))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="relative flex-1 min-w-[200px]">
               <Search className="w-4 h-4 text-[#666] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
@@ -853,6 +919,7 @@ export function SubscribersPanel() {
                     <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
                       <th className="py-2 pr-4 font-medium">Subscriber</th>
                       <th className="py-2 px-4 font-medium">Tier</th>
+                      <th className="py-2 px-4 font-medium">Offer</th>
                       <th className="py-2 px-4 font-medium">Provider</th>
                       <th className="py-2 px-4 font-medium">Started</th>
                       <th className="py-2 pl-4 font-medium">
@@ -891,21 +958,29 @@ export function SubscribersPanel() {
                               comped
                             </span>
                           )}
-                          {isAnnualRow(s) && (
-                            <span
-                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                              style={{
-                                color: COHORT_COLOR.annual,
-                                backgroundColor: `${COHORT_COLOR.annual}1a`,
-                              }}
-                            >
-                              annual
-                            </span>
-                          )}
-                          {s.acquisitionSource && (
-                            <span className="block text-[10px] text-[#666] mt-0.5">
-                              {s.acquisitionSource}
-                            </span>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          {s.cohort ? (
+                            <>
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium whitespace-nowrap"
+                                style={{
+                                  color: COHORT_COLOR[s.cohort],
+                                  backgroundColor: `${COHORT_COLOR[s.cohort]}1a`,
+                                }}
+                              >
+                                {COHORT_SHORT[s.cohort]}
+                              </span>
+                              {/* The raw source stays visible: it's the only
+                                  record of funnels we don't model as cohorts. */}
+                              {s.acquisitionSource && (
+                                <span className="block text-[10px] text-[#666] mt-0.5">
+                                  {s.acquisitionSource}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[#444]">—</span>
                           )}
                         </td>
                         <td className="py-2.5 px-4">

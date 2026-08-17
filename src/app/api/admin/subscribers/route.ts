@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import {
   COHORT_LABEL,
   VIP_FIRST_MONTH_CENTS,
+  VIP_FIRST_MONTH_SOURCE,
+  VIP_LIFETIME_SOURCE,
   cohortOf,
   monthlyUnitCents,
   type SubCohort,
@@ -14,7 +16,7 @@ import type { Prisma } from "@prisma/client";
  * GET /api/admin/subscribers — subscriber counts and tier mix (ADMIN only)
  *
  * Query: ?status=active|canceling|expired|comped&tierId=<uuid>&q=<search>
- *        &limit=<1-200>&offset=<n>
+ *        &cohort=list|annual|promo|lifetime&limit=<1-200>&offset=<n>
  *
  * The headline counts always describe the whole platform; status/tierId/q only
  * filter the paginated list underneath them.
@@ -40,11 +42,64 @@ import type { Prisma } from "@prisma/client";
 const STATUSES = ["active", "canceling", "expired", "comped"] as const;
 type Status = (typeof STATUSES)[number];
 
+const COHORTS: SubCohort[] = ["list", "annual", "promo", "lifetime"];
+
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 function centsToUsd(cents: number): number {
   return Math.round(cents) / 100;
+}
+
+/**
+ * Translate a cohort into a `where` fragment for the roster query.
+ *
+ * Three of the four are a plain acquisition_source match. "annual" is not: it's
+ * a comparison BETWEEN two columns (period end vs start + ~a year), which
+ * Prisma's query builder can't express, so the matching ids come from one raw
+ * statement and filter the main query by primary key. The annual cohort is a
+ * small slice of the table, so the id list stays short — if that ever stops
+ * being true, this becomes a raw paginated query instead.
+ */
+async function cohortWhere(
+  cohort: SubCohort | null
+): Promise<Prisma.SubscriptionWhereInput> {
+  if (!cohort) return {};
+  if (cohort === "lifetime") return { acquisitionSource: VIP_LIFETIME_SOURCE };
+  if (cohort === "promo") {
+    // A promo sub that later switched to annual bills as annual, so exclude
+    // anything the annual rule claims — cohorts must stay disjoint.
+    return {
+      acquisitionSource: VIP_FIRST_MONTH_SOURCE,
+      id: { notIn: await annualSubscriptionIds() },
+    };
+  }
+  const annualIds = await annualSubscriptionIds();
+  if (cohort === "annual") return { id: { in: annualIds } };
+  // "list" is the remainder: not annual, and not on either offer. Spelled as an
+  // explicit null branch because SQL's NOT IN is null-propagating — a bare
+  // notIn would silently drop every sub with no acquisition_source, which is
+  // most of them.
+  return {
+    OR: [
+      { acquisitionSource: null },
+      {
+        acquisitionSource: {
+          notIn: [VIP_LIFETIME_SOURCE, VIP_FIRST_MONTH_SOURCE],
+        },
+      },
+    ],
+    id: { notIn: annualIds },
+  };
+}
+
+/** Ids of every sub whose billing period spans about a year. */
+async function annualSubscriptionIds(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM subscriptions
+    WHERE current_period_end > current_period_start + INTERVAL '300 days'
+  `;
+  return rows.map((r) => r.id);
 }
 
 /** Best display name for a subscriber row. */
@@ -87,6 +142,12 @@ export async function GET(request: NextRequest) {
 
     const tierId = searchParams.get("tierId") || null;
     const q = (searchParams.get("q") || "").trim();
+
+    const cohortParam = searchParams.get("cohort");
+    if (cohortParam && !COHORTS.includes(cohortParam as SubCohort)) {
+      return NextResponse.json({ error: "Invalid cohort" }, { status: 400 });
+    }
+    const cohortFilter = (cohortParam as SubCohort | null) || null;
 
     const limitRaw = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
     const limit =
@@ -342,6 +403,8 @@ export async function GET(request: NextRequest) {
       provider: string | null;
       cancelAtPeriodEnd: boolean;
       acquisitionSource: string | null;
+      /** Which offer this sub is on — null for comped (no billing row). */
+      cohort: SubCohort | null;
       currentPeriodStart: string | null;
       currentPeriodEnd: string | null;
       startedAt: string;
@@ -377,6 +440,7 @@ export async function GET(request: NextRequest) {
         provider: null,
         cancelAtPeriodEnd: false,
         acquisitionSource: null,
+        cohort: null,
         currentPeriodStart: null,
         currentPeriodEnd: null,
         startedAt: u.createdAt.toISOString(),
@@ -392,6 +456,9 @@ export async function GET(request: NextRequest) {
         ...base,
         ...(tierId ? { tierId } : {}),
         ...(userSearch ? { user: userSearch } : {}),
+        // Nested under AND, never spread: the cohort fragment can carry its own
+        // OR, and `base` already spends the top-level OR on providerBacked.
+        ...(cohortFilter ? { AND: [await cohortWhere(cohortFilter)] } : {}),
       };
       const [rows, count] = await Promise.all([
         prisma.subscription.findMany({
@@ -425,6 +492,7 @@ export async function GET(request: NextRequest) {
         provider: s.provider,
         cancelAtPeriodEnd: s.cancelAtPeriodEnd,
         acquisitionSource: s.acquisitionSource,
+        cohort: cohortOf(s),
         currentPeriodStart: s.currentPeriodStart.toISOString(),
         currentPeriodEnd: s.currentPeriodEnd.toISOString(),
         startedAt: s.createdAt.toISOString(),
@@ -447,6 +515,8 @@ export async function GET(request: NextRequest) {
         listMrrUsd: centsToUsd(listMrrCentsTotal),
         /** Active subs on the VIP lifetime offer. */
         lifetimeActive: cohortTotals.get("lifetime") ?? 0,
+        /** Active subs on plain monthly list-price billing, no offer. */
+        listActive: cohortTotals.get("list") ?? 0,
         /** Active subs acquired through the $5.99-first-month /promo offer. */
         promoActive: cohortTotals.get("promo") ?? 0,
         /** Active subs on yearly billing (period spans ~a year). */
@@ -481,6 +551,7 @@ export async function GET(request: NextRequest) {
       list: {
         status,
         tierId,
+        cohort: cohortFilter,
         q: q || null,
         limit,
         offset,
