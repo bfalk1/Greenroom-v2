@@ -53,56 +53,48 @@ export function AppShell({ children }: AppShellProps) {
     window.dispatchEvent(new CustomEvent("greenroom:desktop-shell-ready"));
   }, [mounted, isDesktop]);
 
-  // Prevent hydration mismatch - render web layout on server
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-        <Navbar />
-        <main className="flex-1 pb-24">
-          <OutOfCreditsBanner />
-          {children}
-        </main>
-        <Footer />
-        <NowPlayingBar />
-        <TermsReacceptanceGate />
-        <CreatorWelcomeModal isDesktop={false} />
-      </div>
-    );
-  }
-
-  // Desktop app layout with sidebar
-  if (isDesktop) {
-    return (
-      <div
-        data-greenroom-desktop-shell="true"
-        className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]"
-      >
-        <DesktopSidebar />
-        <DesktopTitleBar />
-        <DesktopLibrarySync />
-        <main className="ml-52 pt-10 pb-24 min-h-screen">
-          <OutOfCreditsBanner />
-          {children}
-        </main>
-        <NowPlayingBar />
-        <TermsReacceptanceGate />
-        <CreatorWelcomeModal isDesktop />
-      </div>
-    );
-  }
-
-  // Web layout with navbar + footer
+  // ONE tree for both shells, differing only in which chrome renders and in
+  // className — NOT three separate `return`s. The server (and the first client
+  // render) sees the web variant, then the effect above flips isDesktop inside
+  // the desktop app; because <main> and {children} keep the same position and
+  // element type across that flip, React reconciles in place.
+  //
+  // The three-branch version remounted the ENTIRE page subtree on that flip:
+  // the desktop branch nested {children} under a different ancestor chain, so
+  // React tore the old tree down and built a new one. Every page under (main)
+  // therefore mounted TWICE in the desktop app — fresh state, fresh refs,
+  // duplicated mount effects. That silently doubled every mount-fired
+  // analytics event for desktop users (paywall_viewed, and the ad pixels'
+  // ViewContent before the module-scope guard landed) and re-ran each page's
+  // data fetches. Measured: 2 component instances per navigation in an
+  // Electron user agent, 1 in a normal browser. Keep the single tree.
+  const desktop = mounted && isDesktop;
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
-      <Navbar />
-      <main className="flex-1 pb-24">
+    <div
+      {...(desktop ? { "data-greenroom-desktop-shell": "true" } : {})}
+      className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]"
+    >
+      {desktop ? (
+        <>
+          <DesktopSidebar />
+          <DesktopTitleBar />
+          <DesktopLibrarySync />
+        </>
+      ) : (
+        <Navbar />
+      )}
+      <main
+        className={
+          desktop ? "ml-52 pt-10 pb-24 min-h-screen" : "flex-1 pb-24"
+        }
+      >
         <OutOfCreditsBanner />
         {children}
       </main>
-      <Footer />
+      {!desktop && <Footer />}
       <NowPlayingBar />
       <TermsReacceptanceGate />
-      <CreatorWelcomeModal isDesktop={false} />
+      <CreatorWelcomeModal isDesktop={desktop} />
     </div>
   );
 }

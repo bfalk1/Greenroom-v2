@@ -126,17 +126,18 @@ export function trackPaywallViewed(redirectFrom?: string) {
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
-// A client-side navigation into a plan grid (landing CTA, navbar link, back
-// button) mounts PricingContent TWICE: React discards the first tree ~10ms in
-// and mounts a fresh instance, so a component-level useRef guard — a new ref
-// per instance — cannot see the first fire. Verified against a production
-// build, so this is not a dev/StrictMode artifact: both pixels were getting
-// two ViewContents for one visit, inflating the top of the funnel (a hard
-// landing straight onto the URL fires once; only in-app navs doubled). Module
-// scope survives the remount, so the de-duplication lives here rather than in
-// any component. Keys carry the offer/interval, so switching the billing
-// toggle still sends a fresh view — annual is a different product at a
-// different price — while a re-switch back to one already reported does not.
+// Defence in depth against a remount double-firing a view event. The known
+// case was AppShell: it swapped between structurally different web and desktop
+// trees after mount, which tore down and rebuilt every page under (main), so a
+// client-side nav mounted the page component twice with fresh refs — two
+// ViewContents for one visit. Measured at 2 instances per nav in an Electron
+// user agent (the desktop app) and 1 in a normal browser, so ad traffic was
+// never affected. That is now fixed at the source in
+// src/components/layout/AppShell.tsx; this guard stays because a component-
+// level useRef cannot survive a remount and the next such regression should
+// cost nothing. Keys carry the offer/interval, so switching the billing toggle
+// still sends a fresh view — annual is a different product at a different
+// price — while a re-switch back to one already reported does not.
 // Two windows, because the two problems have different shapes. A discarded
 // mount re-fires ~10ms later, so a few seconds covers it with room to spare —
 // that is all /checkout needs, and keeping it short there preserves a real
@@ -352,12 +353,13 @@ export function trackVipLifetimeConfirmed() {
 // PostHog event as a new property (additive — the event's VOLUME is unchanged).
 export function trackPromoOfferViewed(surface: "offer" | "grid" = "offer") {
   posthog.capture("promo_offer_viewed", { surface });
-  // Same missing-`value` gap and same double-mount as trackPricingViewed above
-  // — see the notes there. The PostHog capture stays OUTSIDE the dedupe on
-  // purpose: promo_offer_viewed is an existing funnel denominator, and silently
-  // changing its volume would break comparisons against every promo number
-  // reported so far. (It double-fires on client navs for the same reason the
-  // pixels did — worth fixing deliberately, not as a side effect of this one.)
+  // Same missing-`value` gap as trackPricingViewed above — see the notes there.
+  // The PostHog capture stays OUTSIDE the dedupe on purpose: promo_offer_viewed
+  // is an existing funnel denominator, and silently changing its volume would
+  // break comparisons against every promo number reported so far. It does not
+  // need the protection anyway — /promo and /promo/pricing live outside the
+  // (main) route group, so they never had the AppShell remount, and both were
+  // measured firing exactly once per client navigation.
   if (pixelViewAlreadySent(`promo:${surface}`, PRODUCT_VIEW_DEDUPE_MS)) return;
   const contentName = `${VIP_FIRST_MONTH_OFFER.tierName}-first-month`;
   metaTrack("ViewContent", {
@@ -436,15 +438,13 @@ export function trackCheckoutViewed(props: {
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
-  // CheckoutContent is the same shape as the plan grid — useSearchParams()
-  // inside a <Suspense> — so its own useRef guard has the same hole: the
-  // discarded first mount fires, then a fresh instance with a fresh ref fires
-  // again. Signed-in lifetime/promo buyers are incidentally spared (their
-  // effect waits on the eligibility verdict, which outlives the discarded
-  // tree), but plain and annual checkouts are not, and InitiateCheckout is a
-  // VALUED event — a double-fire overstates checkout intent in dollars, not
-  // just in count. Short window: only the remount needs covering, and a buyer
-  // who genuinely comes back to retry after an error should still be counted.
+  // Insurance, not a fix for an observed bug: CheckoutContent was measured
+  // mounting exactly ONCE per navigation (the AppShell remount only hit
+  // navigations that entered the (main) group, and /pricing -> /checkout stays
+  // inside it). It gets the guard anyway because InitiateCheckout is a VALUED
+  // event, so a future remount would overstate checkout intent in dollars
+  // rather than merely in count. Short window: a buyer who comes back to retry
+  // after a payment error is a real second intent and must still be counted.
   // PostHog's capture stays above this guard — checkout_viewed is an existing
   // funnel denominator and its volume must not change silently.
   const dedupeKey = `checkout:${props.tier}${offerSuffix}`;
