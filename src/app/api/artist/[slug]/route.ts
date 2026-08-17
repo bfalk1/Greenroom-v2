@@ -124,7 +124,7 @@ export async function GET(
     );
     
     const validPaths = previewPaths.filter((p): p is string => p !== null);
-    let signedUrlMap: Record<string, string> = {};
+    const signedUrlMap: Record<string, string> = {};
     
     if (validPaths.length > 0) {
       const { data } = await serviceClient.storage
