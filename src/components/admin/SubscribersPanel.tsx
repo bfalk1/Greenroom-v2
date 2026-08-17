@@ -249,7 +249,7 @@ function SubscribersSkeleton() {
   return (
     <div className="animate-pulse space-y-4" aria-busy="true">
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {Array.from({ length: 9 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
             className="h-[92px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
@@ -537,14 +537,9 @@ export function SubscribersPanel() {
             accent="#39b54a"
           />
           <BigStat
-            label="Comped (beta)"
-            value={fmtInt(t.comped)}
-            hint="access flag, no billing"
-          />
-          <BigStat
             label="Total With Access"
             value={fmtInt(t.withAccess)}
-            hint="paying + comped"
+            hint={`paying + ${fmtInt(t.comped)} comped (beta)`}
           />
           <BigStat
             label="MRR"
