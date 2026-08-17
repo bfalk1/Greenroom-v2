@@ -67,7 +67,10 @@ function PricingContent({
 
   // Track paywall view — signed-in users only. /pricing is public now, so
   // anonymous marketing traffic would otherwise inflate paywall_viewed and
-  // skew the activations/paywall-views conversion metric.
+  // skew the activations/paywall-views conversion metric. This effect has no
+  // guard of its own: it relied on the component mounting once per visit, which
+  // AppShell's layout swap used to break for desktop-app users — see the note
+  // in src/components/layout/AppShell.tsx before reintroducing that pattern.
   useEffect(() => {
     if (!user) return;
     const redirectFrom = searchParams.get("redirect") || undefined;
@@ -76,10 +79,9 @@ function PricingContent({
 
   // Pixel ViewContent — every visitor, signed in or not (ad-clickers land here
   // anonymous), and again when the billing toggle flips, because annual is a
-  // different product at a different price. Deliberately NOT ref-guarded: a
-  // client nav mounts this component twice with a fresh ref each time, so the
-  // de-duplication that actually holds lives in trackPricingViewed (module
-  // scope, survives the remount) — read the note there before changing this.
+  // different product at a different price. Deliberately NOT ref-guarded: a ref
+  // cannot survive a remount, so the de-duplication that actually holds lives
+  // in trackPricingViewed (module scope) — read the note there first.
   //
   // In promo mode the page owns the MONTHLY product view (trackPromoOfferViewed,
   // at the $5.99 intro price): firing this one too would put two competing

@@ -6,6 +6,11 @@ import {
   VIP_FIRST_MONTH_OFFER,
 } from "./stripe/publicPriceConfig";
 import { currentPlatform } from "./platform";
+import {
+  PRODUCT_VIEW_DEDUPE_MS,
+  REMOUNT_DEDUPE_MS,
+  viewAlreadySent,
+} from "./viewDedupe";
 
 // Some funnel functions below ALSO send ad-pixel standard events — Meta
 // (src/lib/metaPixel.ts) and TikTok (src/lib/tiktokPixel.ts) — so those ad
@@ -122,44 +127,28 @@ export function trackOnboardingCompleted() {
   posthog.capture("onboarding_completed");
 }
 
+// Signed-in visitors only — the denominator of the activations/paywall-views
+// conversion rate, so a duplicate directly deflates a reported number.
+//
+// Its effect on /pricing is keyed on [searchParams, user] with no guard of its
+// own, and BOTH deps change during a single visit: returning from a canceled
+// checkout lands on /pricing?canceled=true, the page strips the param with
+// history.replaceState, and Next re-syncs useSearchParams from it — measured
+// firing the effect twice, ~20ms apart (once with `canceled=true`, once with an
+// empty query). A refreshed UserContext hands back a new `user` object and does
+// the same. Keyed on redirect_from so a genuinely different paywall hit — say
+// /library redirecting in after the first view — still reports.
 export function trackPaywallViewed(redirectFrom?: string) {
+  if (viewAlreadySent(`paywall:${redirectFrom ?? ""}`, REMOUNT_DEDUPE_MS)) {
+    return;
+  }
   posthog.capture("paywall_viewed", { redirect_from: redirectFrom });
 }
 
-// A client-side navigation into a plan grid (landing CTA, navbar link, back
-// button) mounts PricingContent TWICE: React discards the first tree ~10ms in
-// and mounts a fresh instance, so a component-level useRef guard — a new ref
-// per instance — cannot see the first fire. Verified against a production
-// build, so this is not a dev/StrictMode artifact: both pixels were getting
-// two ViewContents for one visit, inflating the top of the funnel (a hard
-// landing straight onto the URL fires once; only in-app navs doubled). Module
-// scope survives the remount, so the de-duplication lives here rather than in
-// any component. Keys carry the offer/interval, so switching the billing
-// toggle still sends a fresh view — annual is a different product at a
-// different price — while a re-switch back to one already reported does not.
-// Two windows, because the two problems have different shapes. A discarded
-// mount re-fires ~10ms later, so a few seconds covers it with room to spare —
-// that is all /checkout needs, and keeping it short there preserves a real
-// signal: a buyer who bounces back and retries checkout IS a second intent.
-// The plan grid needs the longer one: its billing toggle sits directly above
-// the cards and re-runs the view effect on every click, so a short window lets
-// one visitor flip month/year/month/year and mint a valued ViewContent each
-// time — inflating exactly the number this change exists to make trustworthy.
-// At ten minutes a visit reports each product at most once, and a genuine
-// return later in a long session still counts. Under-counting is the safer
-// failure mode here: an inflated `value` trains value-based bidding on revenue
-// that was never viewed, while a missed view only costs a little signal.
-const REMOUNT_DEDUPE_MS = 5_000;
-const PRODUCT_VIEW_DEDUPE_MS = 600_000;
-const lastPixelViewAt = new Map<string, number>();
-
-function pixelViewAlreadySent(key: string, windowMs: number): boolean {
-  const now = Date.now();
-  const previous = lastPixelViewAt.get(key) ?? 0;
-  if (now - previous < windowMs) return true;
-  lastPixelViewAt.set(key, now);
-  return false;
-}
+// Keys below carry the offer/interval, so switching the billing toggle still
+// sends a fresh view — annual is a different product at a different price —
+// while a re-switch back to one already reported does not. The mechanics and
+// the choice of window live in src/lib/viewDedupe.ts.
 
 // Pixel-only ViewContent for the plan grid: the listing is this funnel's
 // product view, and ad-clickers land on it anonymous — so unlike
@@ -172,7 +161,7 @@ function pixelViewAlreadySent(key: string, windowMs: number): boolean {
 // ~$183 product, not a $17.99 one, and reporting the monthly price for both
 // understates every annual-driven conversion.
 export function trackPricingViewed(interval: "month" | "year" = "month") {
-  if (pixelViewAlreadySent(`pricing:${interval}`, PRODUCT_VIEW_DEDUPE_MS)) {
+  if (viewAlreadySent(`pricing:${interval}`, PRODUCT_VIEW_DEDUPE_MS)) {
     return;
   }
   const annual = interval === "year";
@@ -352,13 +341,14 @@ export function trackVipLifetimeConfirmed() {
 // PostHog event as a new property (additive — the event's VOLUME is unchanged).
 export function trackPromoOfferViewed(surface: "offer" | "grid" = "offer") {
   posthog.capture("promo_offer_viewed", { surface });
-  // Same missing-`value` gap and same double-mount as trackPricingViewed above
-  // — see the notes there. The PostHog capture stays OUTSIDE the dedupe on
-  // purpose: promo_offer_viewed is an existing funnel denominator, and silently
-  // changing its volume would break comparisons against every promo number
-  // reported so far. (It double-fires on client navs for the same reason the
-  // pixels did — worth fixing deliberately, not as a side effect of this one.)
-  if (pixelViewAlreadySent(`promo:${surface}`, PRODUCT_VIEW_DEDUPE_MS)) return;
+  // Same missing-`value` gap as trackPricingViewed above — see the notes there.
+  // The PostHog capture stays OUTSIDE the dedupe on purpose: promo_offer_viewed
+  // is an existing funnel denominator, and silently changing its volume would
+  // break comparisons against every promo number reported so far. It does not
+  // need the protection anyway — /promo and /promo/pricing live outside the
+  // (main) route group, so they never had the AppShell remount, and both were
+  // measured firing exactly once per client navigation.
+  if (viewAlreadySent(`promo:${surface}`, PRODUCT_VIEW_DEDUPE_MS)) return;
   const contentName = `${VIP_FIRST_MONTH_OFFER.tierName}-first-month`;
   metaTrack("ViewContent", {
     content_category: "subscription",
@@ -436,19 +426,17 @@ export function trackCheckoutViewed(props: {
     lifetime_eligible: props.lifetimeEligible,
     signed_in: props.signedIn,
   });
-  // CheckoutContent is the same shape as the plan grid — useSearchParams()
-  // inside a <Suspense> — so its own useRef guard has the same hole: the
-  // discarded first mount fires, then a fresh instance with a fresh ref fires
-  // again. Signed-in lifetime/promo buyers are incidentally spared (their
-  // effect waits on the eligibility verdict, which outlives the discarded
-  // tree), but plain and annual checkouts are not, and InitiateCheckout is a
-  // VALUED event — a double-fire overstates checkout intent in dollars, not
-  // just in count. Short window: only the remount needs covering, and a buyer
-  // who genuinely comes back to retry after an error should still be counted.
+  // Insurance, not a fix for an observed bug: CheckoutContent was measured
+  // mounting exactly ONCE per navigation (the AppShell remount only hit
+  // navigations that entered the (main) group, and /pricing -> /checkout stays
+  // inside it). It gets the guard anyway because InitiateCheckout is a VALUED
+  // event, so a future remount would overstate checkout intent in dollars
+  // rather than merely in count. Short window: a buyer who comes back to retry
+  // after a payment error is a real second intent and must still be counted.
   // PostHog's capture stays above this guard — checkout_viewed is an existing
   // funnel denominator and its volume must not change silently.
   const dedupeKey = `checkout:${props.tier}${offerSuffix}`;
-  if (pixelViewAlreadySent(dedupeKey, REMOUNT_DEDUPE_MS)) return;
+  if (viewAlreadySent(dedupeKey, REMOUNT_DEDUPE_MS)) return;
   metaTrack("InitiateCheckout", {
     content_category: "subscription",
     content_name: `${props.tier}${offerSuffix}`,
