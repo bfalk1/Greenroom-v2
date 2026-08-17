@@ -68,6 +68,9 @@ interface ModPreset {
   fileSizeBytes: number | null;
   compatibleVersions: string[];
   isInitPreset: boolean;
+  // Counted from the purchases / downloads tables by /api/mod/presets — buyers
+  // and actual file downloads are different numbers.
+  purchaseCount: number;
   downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
@@ -356,6 +359,7 @@ export function PresetModeration() {
                 <Star className="w-3 h-3" />
                 {preset.ratingAvg.toFixed(1)} ({preset.ratingCount})
               </span>
+              <span>{preset.purchaseCount} purchases</span>
               <span>{preset.downloadCount} downloads</span>
               {preset.compatibleVersions.length > 0 && (
                 <span className="truncate">{preset.compatibleVersions.join(", ")}</span>

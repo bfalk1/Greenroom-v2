@@ -237,11 +237,15 @@ export async function GET(request: NextRequest) {
           where: Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {},
           include: {
             creator: { select: { artistName: true, username: true } },
+            // Real counts. Sample.downloadCount is incremented on purchase, so
+            // exporting it under a "Downloads" header reported sales twice.
+            _count: { select: { purchases: true, downloads: true } },
           },
           orderBy: { createdAt: "desc" },
         });
 
-        csv = "Date,Name,Creator,Genre,Type,Key,BPM,Credits,Downloads,Rating,Status\n";
+        csv =
+          "Date,Name,Creator,Genre,Type,Key,BPM,Credits,Purchases,Downloads,Rating,Status\n";
         samples.forEach((s) => {
           csv += csvRow([
             s.createdAt.toISOString(),
@@ -252,7 +256,8 @@ export async function GET(request: NextRequest) {
             s.key || "",
             s.bpm || "",
             s.creditPrice,
-            s.downloadCount,
+            s._count.purchases,
+            s._count.downloads,
             s.ratingAvg?.toFixed(2) || "",
             s.status,
           ]);

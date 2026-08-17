@@ -50,15 +50,16 @@ export async function GET(
       );
     }
 
-    // Get total downloads across all samples
-    const downloadStats = await prisma.sample.aggregate({
+    // Total downloads across the artist's published catalogue. Counted from the
+    // `downloads` table — Sample.downloadCount is a purchase counter, so summing
+    // it here reported sales under a "downloads" label.
+    const totalDownloads = await prisma.download.count({
       where: {
-        creatorId: artist.id,
-        status: "PUBLISHED",
-        isActive: true,
-      },
-      _sum: {
-        downloadCount: true,
+        sample: {
+          creatorId: artist.id,
+          status: "PUBLISHED",
+          isActive: true,
+        },
       },
     });
 
@@ -180,7 +181,7 @@ export async function GET(
         created_at: artist.createdAt.toISOString(),
         sample_count: artist._count.samples,
         follower_count: artist._count.followers,
-        total_downloads: downloadStats._sum.downloadCount || 0,
+        total_downloads: totalDownloads,
         is_following: isFollowing,
       },
       samples: mappedSamples,

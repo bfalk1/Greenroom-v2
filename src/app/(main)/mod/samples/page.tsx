@@ -58,6 +58,9 @@ interface APISample {
   tags: string[];
   ratingAvg: number;
   ratingCount: number;
+  // Counted from the purchases / downloads tables by /api/mod/samples — buyers
+  // and actual file downloads are different numbers.
+  purchaseCount: number;
   downloadCount: number;
   creator: SampleCreator;
 }
@@ -721,6 +724,7 @@ export default function ModSamplesPage() {
                             <Star className="w-3 h-3" />
                             {sample.ratingAvg.toFixed(1)} ({sample.ratingCount})
                           </span>
+                          <span>{sample.purchaseCount} purchases</span>
                           <span>{sample.downloadCount} downloads</span>
                         </div>
                       </div>
@@ -797,6 +801,9 @@ export default function ModSamplesPage() {
                           <span className="flex items-center gap-1 text-red-400">
                             <Star className="w-4 h-4 fill-current" />
                             {sample.ratingAvg.toFixed(1)} ({sample.ratingCount} ratings)
+                          </span>
+                          <span className="text-xs text-[#666]">
+                            {sample.purchaseCount} purchases
                           </span>
                           <span className="text-xs text-[#666]">
                             {sample.downloadCount} downloads

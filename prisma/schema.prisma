@@ -276,6 +276,11 @@ model Sample {
   durationMs     Int?         @map("duration_ms")
   fileSizeBytes  BigInt?      @map("file_size_bytes")
   tags           String[]     @default([])
+  // MISNOMER — this counts PURCHASES, not downloads. It is incremented only in
+  // POST /api/purchases, and Purchase is unique per (user, sample), so it is a
+  // distinct-buyer count kept denormalized for the "most popular" sort index
+  // below. Real downloads are rows in the `downloads` table (repeatable per
+  // buyer) — count those, never this, when a surface says "downloads".
   downloadCount  Int          @default(0) @map("download_count")
   ratingAvg      Float        @default(0) @map("rating_avg")
   ratingCount    Int          @default(0) @map("rating_count")
@@ -327,6 +332,7 @@ model Preset {
   modulationInfo     Json?          @map("modulation_info") @db.JsonB
   macroDescriptions  Json?          @map("macro_descriptions") @db.JsonB
   isInitPreset       Boolean        @default(false) @map("is_init_preset")
+  // MISNOMER — counts PURCHASES, not downloads. See the note on Sample.downloadCount.
   downloadCount      Int            @default(0) @map("download_count")
   ratingAvg          Float          @default(0) @map("rating_avg")
   ratingCount        Int            @default(0) @map("rating_count")

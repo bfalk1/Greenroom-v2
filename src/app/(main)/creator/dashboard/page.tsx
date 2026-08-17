@@ -30,7 +30,6 @@ interface CreatorSample {
   creditPrice: number;
   status: string;
   reviewNote?: string | null;
-  downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
   purchases: number;
@@ -362,7 +361,6 @@ interface CreatorPreset {
   previewUrl?: string | null;
   status: string;
   reviewNote?: string | null;
-  downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
   purchases: number;
@@ -743,7 +741,7 @@ export default function CreatorDashboardPage() {
     );
   }
 
-  const totalDownloads = samples.reduce((sum, s) => sum + s.downloadCount, 0);
+  const totalDownloads = samples.reduce((sum, s) => sum + s.downloads, 0);
   const totalPurchases = samples.reduce((sum, s) => sum + s.purchases, 0);
   const totalEarnings = samples.reduce(
     (sum, s) => sum + s.purchases * s.creditPrice * 0.03,

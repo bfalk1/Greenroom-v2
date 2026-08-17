@@ -120,7 +120,6 @@ export async function GET(_request: NextRequest) {
         previewUrl: signedPreviewUrl,
         status: p.status,
         reviewNote: p.reviewNote,
-        downloadCount: p.downloadCount,
         ratingAvg: p.ratingAvg,
         ratingCount: p.ratingCount,
         purchases: p._count.purchases,
