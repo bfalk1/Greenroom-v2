@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Edit2, Trash2, Eye, Music, Search, Star, Play, Pause, Loader2, CheckSquare, Square, X, Sliders } from "lucide-react";
 import { CreatorStats } from "@/components/creator/CreatorStats";
+import { EarningsChart } from "@/components/creator/EarningsChart";
 import {
   getSampleTableRowClass,
-  SAMPLE_TABLE_WAVEFORM_CLASS,
+  SAMPLE_TABLE_WAVEFORM_CREATOR_CLASS,
   SampleTableHeader,
 } from "@/components/marketplace/SampleTable";
 import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/MarketplaceTabs";
@@ -217,7 +218,7 @@ function CreatorSampleRow({
       </div>
 
       {/* Waveform */}
-      <div className={SAMPLE_TABLE_WAVEFORM_CLASS}>
+      <div className={SAMPLE_TABLE_WAVEFORM_CREATOR_CLASS}>
         <Waveform
           audioUrl={sample.previewUrl || undefined}
           data={sample.waveformData || undefined}
@@ -257,6 +258,23 @@ function CreatorSampleRow({
           </>
         )}
       </div>
+
+      {/* Performance — what this upload actually did. Lifetime sales, real
+          downloads (not the denormalized counter) and earnings at the payout
+          rate the server resolved, so it matches the Earnings page. */}
+      <span className="hidden lg:block text-sm text-white text-right tabular-nums">
+        {sample.purchases}
+      </span>
+      <span className="hidden lg:block text-sm text-[#a1a1a1] text-right tabular-nums">
+        {sample.downloads}
+      </span>
+      <span
+        className={`hidden lg:block text-sm text-right tabular-nums ${
+          sample.earningsUsd > 0 ? "text-[#39b54a] font-medium" : "text-[#666]"
+        }`}
+      >
+        ${sample.earningsUsd.toFixed(2)}
+      </span>
 
       {/* Status */}
       <div>
@@ -370,6 +388,11 @@ interface CreatorPreset {
   createdAt: string;
 }
 
+// Shared by the preset header and rows so they can never drift. Mirrors the
+// sample table: performance columns (sales / downloads / earned) appear at lg.
+const PRESET_GRID_CLASS =
+  "grid grid-cols-[auto_minmax(120px,1fr)_80px_60px] md:grid-cols-[auto_80px_minmax(120px,1fr)_80px_90px_110px_50px] lg:grid-cols-[auto_80px_minmax(120px,1fr)_80px_90px_55px_55px_75px_110px_50px]";
+
 // Preset management row — mirrors CreatorSampleRow but preset-shaped: synth +
 // category instead of waveform/key/bpm, and no "submit for review" (presets go
 // straight to REVIEW on upload). Reuses the same creatorAudio manager so preset
@@ -436,7 +459,7 @@ function CreatorPresetRow({
   const categoryDisplay = CATEGORY_DISPLAY_NAMES[preset.presetCategory] || preset.presetCategory;
 
   return (
-    <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_110px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors hover:bg-[#242424]">
+    <div className={`${PRESET_GRID_CLASS} gap-2 md:gap-3 px-3 md:px-4 py-3 items-center transition-colors hover:bg-[#242424]`}>
       {/* Cover + Play */}
       <div className="relative w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded overflow-hidden group">
         <img
@@ -492,6 +515,21 @@ function CreatorPresetRow({
         {preset.genre || "—"}
       </span>
 
+      {/* Performance — same three columns as the sample table */}
+      <span className="hidden lg:block text-sm text-white text-right tabular-nums">
+        {preset.purchases}
+      </span>
+      <span className="hidden lg:block text-sm text-[#a1a1a1] text-right tabular-nums">
+        {preset.downloads}
+      </span>
+      <span
+        className={`hidden lg:block text-sm text-right tabular-nums ${
+          preset.earningsUsd > 0 ? "text-[#39b54a] font-medium" : "text-[#666]"
+        }`}
+      >
+        ${preset.earningsUsd.toFixed(2)}
+      </span>
+
       {/* Status */}
       <div>
         <span
@@ -533,6 +571,49 @@ function CreatorPresetRow({
   );
 }
 
+type CatalogSortMode = "purchases" | "earnings" | "downloads" | "newest";
+
+const SORT_OPTIONS: { value: CatalogSortMode; label: string }[] = [
+  { value: "purchases", label: "Most purchased" },
+  { value: "earnings", label: "Top earning" },
+  { value: "downloads", label: "Most downloaded" },
+  { value: "newest", label: "Newest" },
+];
+
+/** Shape both samples and presets share for ranking purposes. */
+type PerformanceItem = {
+  purchases: number;
+  downloads: number;
+  earningsUsd: number;
+  createdAt: string;
+};
+
+// Ranking is by performance, not upload date — a creator's first question is
+// "what's selling", and newest-first buried that under everything they ever
+// uploaded. Ties fall back to newest so fresh uploads sit above dead ones.
+function sortByPerformance<T extends PerformanceItem>(
+  items: T[],
+  mode: CatalogSortMode
+): T[] {
+  const newestFirst = (a: T, b: T) => b.createdAt.localeCompare(a.createdAt);
+  return [...items].sort((a, b) => {
+    switch (mode) {
+      case "earnings":
+        return b.earningsUsd - a.earningsUsd || newestFirst(a, b);
+      case "downloads":
+        return b.downloads - a.downloads || newestFirst(a, b);
+      case "newest":
+        return newestFirst(a, b);
+      default:
+        return (
+          b.purchases - a.purchases ||
+          b.earningsUsd - a.earningsUsd ||
+          newestFirst(a, b)
+        );
+    }
+  });
+}
+
 export default function CreatorDashboardPage() {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
@@ -545,6 +626,7 @@ export default function CreatorDashboardPage() {
   const [presetsFetched, setPresetsFetched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortMode, setSortMode] = useState<CatalogSortMode>("purchases");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -582,25 +664,17 @@ export default function CreatorDashboardPage() {
     }
   }, []);
 
+  // Both are fetched up front: presets earn money too, so the stats strip is
+  // wrong until they're loaded — it used to under-report every creator who
+  // sells presets, because presets only loaded when that tab was opened.
   useEffect(() => {
     if (user && (user.role === "CREATOR" || user.role === "ADMIN")) {
       fetchSamples();
+      fetchPresets();
     } else if (!userLoading && (!user || (user.role !== "CREATOR" && user.role !== "ADMIN"))) {
       setLoading(false);
     }
-  }, [user, userLoading, fetchSamples]);
-
-  // Presets are fetched lazily the first time the Presets tab is opened.
-  useEffect(() => {
-    if (
-      activeTab === "presets" &&
-      !presetsFetched &&
-      user &&
-      (user.role === "CREATOR" || user.role === "ADMIN")
-    ) {
-      fetchPresets();
-    }
-  }, [activeTab, presetsFetched, user, fetchPresets]);
+  }, [user, userLoading, fetchSamples, fetchPresets]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -741,11 +815,36 @@ export default function CreatorDashboardPage() {
     );
   }
 
-  const totalDownloads = samples.reduce((sum, s) => sum + s.downloads, 0);
-  const totalPurchases = samples.reduce((sum, s) => sum + s.purchases, 0);
-  const totalEarnings = samples.reduce(
-    (sum, s) => sum + s.purchases * s.creditPrice * 0.03,
-    0
+  // Catalog-wide totals straight from the server's own per-item numbers.
+  // Earnings used to be recomputed here as purchases × current price × $0.03,
+  // which ignored per-creator payout rates, ignored the platform rate setting,
+  // repriced historical sales at today's price and left presets out entirely.
+  // `earningsUsd` is credits actually spent × the creator's resolved rate — the
+  // same math the payout engine runs, so this now agrees with /creator/earnings.
+  const catalogItems: PerformanceItem[] = [...samples, ...presets];
+  const totalDownloads = catalogItems.reduce((sum, i) => sum + i.downloads, 0);
+  const totalPurchases = catalogItems.reduce((sum, i) => sum + i.purchases, 0);
+  const totalEarnings = catalogItems.reduce((sum, i) => sum + i.earningsUsd, 0);
+
+  const sortedSamples = sortByPerformance(filteredSamples, sortMode);
+  const sortedPresets = sortByPerformance(filteredPresets, sortMode);
+
+  const sortControl = (
+    <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1 shrink-0">
+      {SORT_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => setSortMode(opt.value)}
+          className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
+            sortMode === opt.value
+              ? "bg-[#39b54a] text-black font-medium"
+              : "text-[#a1a1a1] hover:text-white"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 
   return (
@@ -838,11 +937,15 @@ export default function CreatorDashboardPage() {
 
         {/* Stats */}
         <CreatorStats
-          totalSamples={samples.length}
+          totalUploads={catalogItems.length}
           totalDownloads={totalDownloads}
           totalEarnings={totalEarnings}
           totalPurchases={totalPurchases}
         />
+
+        {/* Earnings over time — same catalog-wide history as the Earnings page,
+            surfaced here because this is where creators actually work. */}
+        <EarningsChart />
 
         {/* Samples / Presets tabs */}
         <div className="mt-6">
@@ -859,10 +962,10 @@ export default function CreatorDashboardPage() {
 
         {activeTab === "samples" && (
         <>
-        {/* Search */}
+        {/* Search + ranking */}
         {samples.length > 0 && (
-          <div className="mb-6">
-            <div className="relative">
+          <div className="mb-6 flex flex-col lg:flex-row gap-3 lg:items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
               <Input
                 type="text"
@@ -872,32 +975,35 @@ export default function CreatorDashboardPage() {
                 className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
               />
             </div>
+            <div className="overflow-x-auto">{sortControl}</div>
           </div>
         )}
 
         {/* Samples Grid */}
-        {filteredSamples.length > 0 ? (
+        {sortedSamples.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
-            {/* Header */}
-            <SampleTableHeader
-              variant="creator"
-              onToggleAll={toggleSelectAll}
-              allSelected={allSelected}
-            />
+            <div className="overflow-x-auto">
+              {/* Header */}
+              <SampleTableHeader
+                variant="creator"
+                onToggleAll={toggleSelectAll}
+                allSelected={allSelected}
+              />
 
-            {/* Rows */}
-            <div className="divide-y divide-[#2a2a2a]">
-              {filteredSamples.map((sample) => (
-                <CreatorSampleRow
-                  key={sample.id}
-                  sample={sample}
-                  onEdit={(id) => router.push(`/creator/edit/${id}`)}
-                  onDelete={handleDeleteSample}
-                  onSubmitForReview={handleSubmitForReview}
-                  selected={selectedIds.has(sample.id)}
-                  onToggleSelect={toggleSelect}
-                />
-              ))}
+              {/* Rows */}
+              <div className="divide-y divide-[#2a2a2a]">
+                {sortedSamples.map((sample) => (
+                  <CreatorSampleRow
+                    key={sample.id}
+                    sample={sample}
+                    onEdit={(id) => router.push(`/creator/edit/${id}`)}
+                    onDelete={handleDeleteSample}
+                    onSubmitForReview={handleSubmitForReview}
+                    selected={selectedIds.has(sample.id)}
+                    onToggleSelect={toggleSelect}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ) : (
@@ -925,8 +1031,8 @@ export default function CreatorDashboardPage() {
         <>
         {/* Search */}
         {presets.length > 0 && (
-          <div className="mb-6">
-            <div className="relative">
+          <div className="mb-6 flex flex-col lg:flex-row gap-3 lg:items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-3 w-5 h-5 text-[#a1a1a1]" />
               <Input
                 type="text"
@@ -936,6 +1042,7 @@ export default function CreatorDashboardPage() {
                 className="pl-12 py-3 bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666] rounded-lg"
               />
             </div>
+            <div className="overflow-x-auto">{sortControl}</div>
           </div>
         )}
 
@@ -948,28 +1055,35 @@ export default function CreatorDashboardPage() {
                 <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
               ))}
           </div>
-        ) : filteredPresets.length > 0 ? (
+        ) : sortedPresets.length > 0 ? (
           <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_80px_1fr_80px_90px_110px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
-              <div className="w-10" />
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
-              <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
-              <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Status</span>
-              <div className="text-xs font-medium text-[#a1a1a1]"></div>
-            </div>
+            <div className="overflow-x-auto">
+              {/* Header */}
+              <div className={`${PRESET_GRID_CLASS} gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]`}>
+                <div className="w-10" />
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Synth</span>
+                <span className="text-xs font-medium text-[#a1a1a1]">Name</span>
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Category</span>
+                <span className="hidden md:block text-xs font-medium text-[#a1a1a1]">Genre</span>
+                <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">Sales</span>
+                <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">DLs</span>
+                <span className="hidden lg:block text-xs font-medium text-[#a1a1a1] text-right">Earned</span>
+                {/* Always rendered — the row's status pill is, so hiding this
+                    on mobile shifted every header label one column left. */}
+                <span className="text-xs font-medium text-[#a1a1a1]">Status</span>
+                <div className="text-xs font-medium text-[#a1a1a1]"></div>
+              </div>
 
-            {/* Rows */}
-            <div className="divide-y divide-[#2a2a2a]">
-              {filteredPresets.map((preset) => (
-                <CreatorPresetRow
-                  key={preset.id}
-                  preset={preset}
-                  onDelete={handleDeletePreset}
-                />
-              ))}
+              {/* Rows */}
+              <div className="divide-y divide-[#2a2a2a]">
+                {sortedPresets.map((preset) => (
+                  <CreatorPresetRow
+                    key={preset.id}
+                    preset={preset}
+                    onDelete={handleDeletePreset}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ) : (
