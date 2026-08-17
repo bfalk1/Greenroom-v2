@@ -32,6 +32,21 @@ const STATUS_TABS: { id: Status; label: string }[] = [
   { id: "expired", label: "Expired" },
 ];
 
+/** Mutually-exclusive billing cohorts, classified server-side by @/lib/mrr. */
+type CohortKey = "list" | "lifetime" | "promo" | "annual";
+
+interface CohortRow {
+  key: CohortKey;
+  label: string;
+  active: number;
+  canceling: number;
+  stripe: number;
+  paypal: number;
+  /** Monthly-equivalent price per sub — annual is its yearly charge ÷ 12. */
+  unitPriceUsd: number;
+  mrrUsd: number;
+}
+
 interface TierRow {
   id: string;
   name: string;
@@ -42,21 +57,14 @@ interface TierRow {
   active: number;
   canceling: number;
   sharePct: number | null;
-  /** Effective MRR — lifetime cohort at its locked price, rest at list. */
+  /** Effective MRR — each cohort at the price it actually bills. */
   mrrUsd: number;
-  /** MRR if every sub on this tier paid list price. */
+  /** MRR if every sub on this tier paid monthly list price. */
   listMrrUsd: number;
   stripe: number;
   paypal: number;
-  /** VIP lifetime-offer cohort inside this tier (null when empty). */
-  lifetime: {
-    active: number;
-    canceling: number;
-    stripe: number;
-    paypal: number;
-    priceUsd: number;
-    mrrUsd: number;
-  } | null;
+  /** One entry per cohort with at least one sub on this tier. */
+  cohorts: CohortRow[];
 }
 
 interface SubscriberRow {
@@ -88,13 +96,29 @@ interface SubscribersResponse {
     mrrUsd: number;
     listMrrUsd: number;
     lifetimeActive: number;
+    /** Active subs from the $5.99-first-month /promo funnel. */
+    promoActive: number;
+    /** Active subs on yearly billing. */
+    annualActive: number;
+    promoFirstMonthUsd: number;
     avgMrrUsd: number | null;
     avgCreditsPerMonth: number | null;
     monthlyCreditsTotal: number;
     stripe: number;
     paypal: number;
   };
-  newSubscribers: { last24h: number; last7d: number; last30d: number };
+  newSubscribers: {
+    last24h: number;
+    last7d: number;
+    last30d: number;
+    cohorts: {
+      key: CohortKey;
+      label: string;
+      last24h: number;
+      last7d: number;
+      last30d: number;
+    }[];
+  };
   tiers: TierRow[];
   acquisitionSources: { source: string; count: number }[];
   list: {
@@ -140,6 +164,26 @@ const TIER_COLOR: Record<string, string> = {
   AA: "#7c9cf5",
 };
 const tierColor = (name: string) => TIER_COLOR[name.toUpperCase()] ?? "#a1a1a1";
+
+/** Cohort accents, reused wherever the offer split is broken out. */
+const COHORT_COLOR: Record<CohortKey, string> = {
+  list: "#a1a1a1",
+  annual: "#7c9cf5",
+  promo: "#e0b33c",
+  lifetime: "#39b54a",
+};
+
+/**
+ * Roster-row annual test — mirrors cohortOf() in @/lib/mrr (period spanning
+ * more than ~300 days). Comped rows have no period and are never annual.
+ */
+const ANNUAL_SPAN_MS = 1000 * 60 * 60 * 24 * 300;
+const isAnnualRow = (s: SubscriberRow) =>
+  s.currentPeriodStart != null &&
+  s.currentPeriodEnd != null &&
+  new Date(s.currentPeriodEnd).getTime() -
+    new Date(s.currentPeriodStart).getTime() >
+    ANNUAL_SPAN_MS;
 
 function BigStat({
   label,
@@ -192,7 +236,7 @@ function SubscribersSkeleton() {
   return (
     <div className="animate-pulse space-y-4" aria-busy="true">
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-        {Array.from({ length: 7 }).map((_, i) => (
+        {Array.from({ length: 9 }).map((_, i) => (
           <div
             key={i}
             className="h-[92px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
@@ -323,64 +367,87 @@ export function SubscribersPanel() {
   const pageStart = list.total === 0 ? 0 : list.offset + 1;
   const pageEnd = Math.min(list.offset + list.limit, list.total);
 
-  // A tier with a lifetime-offer cohort renders as two table rows — full price
-  // and locked discount — so every row's Price × Subscribers equals its MRR.
+  // A tier splits into one row per billing cohort it actually has — monthly
+  // list, annual, promo, lifetime — so every row's Price × Subscribers equals
+  // its MRR. A tier whose subs are all on one cohort still renders one row.
   const share = (n: number) => (t.active > 0 ? (n / t.active) * 100 : null);
   const tierTableRows = data.tiers.flatMap((tier) => {
     const retired = tier.isActive ? "" : " · retired";
-    const base = {
-      tierName: tier.name,
-      creditsPerMonth: tier.creditsPerMonth,
-    };
-    if (!tier.lifetime) {
+    const credits = `${fmtInt(tier.creditsPerMonth)} credits/mo`;
+    const only = tier.cohorts.length <= 1;
+
+    // A tier nobody is on has no cohorts — keep it in the table as an empty
+    // row rather than dropping it, so the configured lineup stays visible.
+    if (tier.cohorts.length === 0) {
       return [
         {
-          ...base,
-          key: tier.id,
+          tierName: tier.name,
+          creditsPerMonth: tier.creditsPerMonth,
+          key: `${tier.id}:empty`,
           label: tier.displayName,
-          detail: `${tier.name} · ${fmtInt(tier.creditsPerMonth)} credits/mo${retired}`,
-          isLifetime: false,
+          detail: `${tier.name} · ${credits}${retired}`,
+          indented: false,
           priceUsd: tier.priceUsd,
-          active: tier.active,
-          canceling: tier.canceling,
-          stripe: tier.stripe,
-          paypal: tier.paypal,
+          active: 0,
+          canceling: 0,
+          stripe: 0,
+          paypal: 0,
           sharePct: tier.sharePct,
-          mrrUsd: tier.mrrUsd,
+          mrrUsd: 0,
         },
       ];
     }
-    const lt = tier.lifetime;
-    return [
-      {
-        ...base,
-        key: tier.id,
-        label: tier.displayName,
-        detail: `${tier.name} · ${fmtInt(tier.creditsPerMonth)} credits/mo · list price${retired}`,
-        isLifetime: false,
-        priceUsd: tier.priceUsd,
-        active: tier.active - lt.active,
-        canceling: tier.canceling - lt.canceling,
-        stripe: tier.stripe - lt.stripe,
-        paypal: tier.paypal - lt.paypal,
-        sharePct: share(tier.active - lt.active),
-        mrrUsd: tier.mrrUsd - lt.mrrUsd,
-      },
-      {
-        ...base,
-        key: `${tier.id}:lifetime`,
-        label: `${tier.displayName} · Lifetime`,
-        detail: `locked ${fmtUsd(lt.priceUsd)}/mo · same ${fmtInt(tier.creditsPerMonth)} credits/mo`,
-        isLifetime: true,
-        priceUsd: lt.priceUsd,
-        active: lt.active,
-        canceling: lt.canceling,
-        stripe: lt.stripe,
-        paypal: lt.paypal,
-        sharePct: share(lt.active),
-        mrrUsd: lt.mrrUsd,
-      },
-    ];
+
+    // Label + sub-label per cohort. The plain-monthly row keeps the tier's own
+    // name so an untouched tier reads exactly as it did before cohorts existed.
+    const detailFor = (c: CohortRow): { label: string; detail: string } => {
+      switch (c.key) {
+        case "lifetime":
+          return {
+            label: `${tier.displayName} · Lifetime`,
+            detail: `locked ${fmtUsd(c.unitPriceUsd)}/mo · same ${credits}`,
+          };
+        case "promo":
+          return {
+            label: `${tier.displayName} · Promo`,
+            detail: `${fmtUsd(t.promoFirstMonthUsd)} first month, then ${fmtUsd(
+              tier.priceUsd
+            )} · same ${credits}`,
+          };
+        case "annual":
+          return {
+            label: `${tier.displayName} · Annual`,
+            detail: `${fmtUsd(c.unitPriceUsd * 12)}/yr = ${fmtUsd(
+              c.unitPriceUsd
+            )}/mo · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`,
+          };
+        default:
+          return {
+            label: tier.displayName,
+            detail: `${tier.name} · ${credits}${only ? "" : " · monthly list price"}${retired}`,
+          };
+      }
+    };
+
+    return tier.cohorts.map((c) => {
+      const { label, detail } = detailFor(c);
+      return {
+        tierName: tier.name,
+        creditsPerMonth: tier.creditsPerMonth,
+        key: `${tier.id}:${c.key}`,
+        label,
+        detail,
+        /** Sub-cohorts render indented under the tier's plain monthly row. */
+        indented: c.key !== "list" && !only,
+        priceUsd: c.unitPriceUsd,
+        active: c.active,
+        canceling: c.canceling,
+        stripe: c.stripe,
+        paypal: c.paypal,
+        sharePct: only ? tier.sharePct : share(c.active),
+        mrrUsd: c.mrrUsd,
+      };
+    });
   });
   const maxTierCount = Math.max(1, ...tierTableRows.map((x) => x.active));
 
@@ -457,12 +524,28 @@ export function SubscribersPanel() {
             label="MRR"
             value={fmtUsd(t.mrrUsd)}
             hint={
-              t.lifetimeActive > 0
+              t.listMrrUsd > t.mrrUsd
                 ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
                     t.listMrrUsd - t.mrrUsd
-                  )} VIP lifetime discount`
+                  )} lifetime + annual discounts`
                 : "all subscribers at list price"
             }
+          />
+          <BigStat
+            label="Promo (first month)"
+            value={fmtInt(t.promoActive)}
+            hint={`${fmtUsd(t.promoFirstMonthUsd)} first month, then list`}
+            accent={t.promoActive > 0 ? "#e0b33c" : undefined}
+          />
+          <BigStat
+            label="Annual"
+            value={fmtInt(t.annualActive)}
+            hint={
+              t.active > 0
+                ? `${fmtPct((t.annualActive / t.active) * 100)} of paying subscribers`
+                : "billed yearly"
+            }
+            accent={t.annualActive > 0 ? "#7c9cf5" : undefined}
           />
           <BigStat
             label="Avg MRR / Subscriber"
@@ -509,6 +592,47 @@ export function SubscribersPanel() {
               </div>
             ))}
           </div>
+
+          {/* Which offer each batch of signups came in on. Rows only appear
+              for cohorts that actually signed up in the last 30 days. */}
+          {data.newSubscribers.cohorts.length > 0 && (
+            <div className="border-t border-[#2a2a2a] mt-4 pt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[10px] text-[#666]">
+                    <th className="pb-1.5 pr-4 font-medium">Offer</th>
+                    <th className="pb-1.5 px-4 font-medium text-right">24h</th>
+                    <th className="pb-1.5 px-4 font-medium text-right">7d</th>
+                    <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.newSubscribers.cohorts.map((c) => (
+                    <tr key={c.key} className="border-t border-[#1f1f1f]">
+                      <td className="py-1.5 pr-4 text-[#a1a1a1]">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: COHORT_COLOR[c.key] }}
+                          />
+                          {c.label}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
+                        {fmtInt(c.last24h)}
+                      </td>
+                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
+                        {fmtInt(c.last7d)}
+                      </td>
+                      <td className="py-1.5 pl-4 text-right text-white tabular-nums">
+                        {fmtInt(c.last30d)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
 
         {/* Tier mix */}
@@ -547,13 +671,13 @@ export function SubscribersPanel() {
                       <td className="py-2.5 pr-4">
                         <span
                           className={`inline-flex items-center gap-2 ${
-                            row.isLifetime ? "pl-4" : ""
+                            row.indented ? "pl-4" : ""
                           }`}
                         >
                           <span
                             className="w-2 h-2 rounded-full shrink-0"
                             style={
-                              row.isLifetime
+                              row.indented
                                 ? {
                                     boxShadow: `inset 0 0 0 1.5px ${tierColor(
                                       row.tierName
@@ -568,7 +692,7 @@ export function SubscribersPanel() {
                         </span>
                         <span
                           className={`block text-xs text-[#666] ${
-                            row.isLifetime ? "pl-8" : "pl-4"
+                            row.indented ? "pl-8" : "pl-4"
                           }`}
                         >
                           {row.detail}
@@ -585,7 +709,7 @@ export function SubscribersPanel() {
                           <div className="flex-1 h-1.5 bg-[#0a0a0a] rounded-full overflow-hidden min-w-[40px]">
                             <div
                               className={`h-full rounded-full ${
-                                row.isLifetime ? "opacity-60" : ""
+                                row.indented ? "opacity-60" : ""
                               }`}
                               style={{
                                 width: `${(row.active / maxTierCount) * 100}%`,
@@ -767,6 +891,17 @@ export function SubscribersPanel() {
                               comped
                             </span>
                           )}
+                          {isAnnualRow(s) && (
+                            <span
+                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                              style={{
+                                color: COHORT_COLOR.annual,
+                                backgroundColor: `${COHORT_COLOR.annual}1a`,
+                              }}
+                            >
+                              annual
+                            </span>
+                          )}
                           {s.acquisitionSource && (
                             <span className="block text-[10px] text-[#666] mt-0.5">
                               {s.acquisitionSource}
@@ -827,9 +962,13 @@ export function SubscribersPanel() {
         <p className="text-xs text-[#666]">
           Paying = a Stripe or PayPal subscription inside its current period.
           MRR counts VIP lifetime-offer subscribers at their locked discounted
-          price and everyone else at list price; other one-off coupons
-          aren&apos;t tracked. Averages are per paying subscriber — comped
-          accounts are excluded.
+          price and annual subscribers at their yearly charge ÷ 12; everyone
+          else, including the {fmtUsd(t.promoFirstMonthUsd)} first-month promo
+          cohort, counts at list price — that discount covers one cycle, then
+          renews at full price. Annual is identified by a billing period
+          spanning about a year (the interval isn&apos;t stored on our side);
+          other one-off coupons aren&apos;t tracked. Averages are per paying
+          subscriber — comped accounts are excluded.
         </p>
       </div>
     </div>

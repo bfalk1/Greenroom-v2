@@ -1,8 +1,26 @@
 import { prisma } from "@/lib/prisma";
 import {
-  VIP_LIFETIME_OFFER,
-  PUBLIC_SUBSCRIPTION_PACKAGES,
-} from "@/lib/stripe/publicPriceConfig";
+  COHORT_TIER_SUFFIX,
+  cohortOf,
+  monthlyUnitCents,
+} from "@/lib/subscriptionCohorts";
+
+// The cohort rules (which sub is annual / promo / lifetime, and what each one
+// bills per month) live in @/lib/subscriptionCohorts so the admin dashboard
+// classifies subs exactly the way this snapshot prices them. Re-exported here
+// because callers already import these names from @/lib/mrr.
+export {
+  COHORT_LABEL,
+  COHORT_TIER_SUFFIX,
+  VIP_FIRST_MONTH_CENTS,
+  VIP_FIRST_MONTH_SOURCE,
+  VIP_LIFETIME_CENTS,
+  VIP_LIFETIME_SOURCE,
+  cohortOf,
+  isAnnualPeriod,
+  monthlyUnitCents,
+  type SubCohort,
+} from "@/lib/subscriptionCohorts";
 
 /**
  * Recurring revenue currently on the books, computed from the subscription
@@ -16,14 +34,6 @@ import {
  * Gross billing only. It does NOT net out processor fees, creator payouts, or
  * refunds, and it excludes one-off credit-pack purchases (not recurring).
  */
-
-/** VIP subs acquired through the /vip lifetime offer bill at a permanent discount. */
-export const VIP_LIFETIME_CENTS = Math.round(
-  VIP_LIFETIME_OFFER.lifetimePrice * 100
-);
-
-/** acquisitionSource value written at activation by the lifetime-offer funnel. */
-export const VIP_LIFETIME_SOURCE = "vip-lifetime";
 
 export type MrrTierBreakdown = {
   /** Tier name (GA/VIP/AA), suffixed for the lifetime/annual cohorts. */
@@ -70,18 +80,6 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
     }),
   ]);
 
-  // Annual subs (recognized by period span — billing periods are ~1 month or
-  // ~1 year, nothing in between) bill their yearly price once; their
-  // monthly-equivalent contribution is that charge ÷ 12, NOT the tier's
-  // monthly list price (which would overstate them by the annual discount).
-  const annualCentsByTier = new Map(
-    PUBLIC_SUBSCRIPTION_PACKAGES.map((p) => [
-      p.tierName as string,
-      Math.round(p.annualPrice * 100),
-    ])
-  );
-  const ANNUAL_SPAN_MS = 1000 * 60 * 60 * 24 * 300;
-
   const tierById = new Map(tiers.map((t) => [t.id, t]));
   const active = subs.filter((s) => s.currentPeriodEnd > now);
 
@@ -95,31 +93,17 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
 
   for (const sub of active) {
     const tier = tierById.get(sub.tierId);
-    const lifetime = sub.acquisitionSource === VIP_LIFETIME_SOURCE;
-    const annual =
-      sub.currentPeriodEnd.getTime() - sub.currentPeriodStart.getTime() >
-      ANNUAL_SPAN_MS;
-    // The lifetime discount is applied at the processor (Stripe coupon / PayPal
-    // plan), so the tier's list price would overstate these by $6/mo each.
-    // (The offers are monthly-only, so lifetime and annual never coincide.)
-    const unitCents = lifetime
-      ? VIP_LIFETIME_CENTS
-      : annual
-        ? Math.round(
-            (annualCentsByTier.get(tier?.name ?? "") ??
-              (tier?.priceUsdCents ?? 0) * 12) / 12
-          )
-        : (tier?.priceUsdCents ?? 0);
+    const cohort = cohortOf(sub);
+    const lifetime = cohort === "lifetime";
+    const unitCents = monthlyUnitCents(cohort, tier);
     if (!tier) unpricedSubs++;
 
     const tierName = tier?.name ?? "UNKNOWN";
-    const key = `${tierName}:${lifetime}:${annual}`;
+    const key = `${tierName}:${cohort}`;
     const bucket = tierBuckets.get(key) ?? {
-      tier: lifetime
-        ? `${tierName} (lifetime offer)`
-        : annual
-          ? `${tierName} (annual)`
-          : tierName,
+      tier: COHORT_TIER_SUFFIX[cohort]
+        ? `${tierName} ${COHORT_TIER_SUFFIX[cohort]}`
+        : tierName,
       lifetime,
       subs: 0,
       mrrCents: 0,
