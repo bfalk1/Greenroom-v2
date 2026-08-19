@@ -484,6 +484,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Queue the AI-audio detection scan of the audio preview (the preset file
+    // itself is a synth patch, not audio). The ai-scan cron does the vendor
+    // calls. Never blocks the upload.
+    try {
+      await prisma.audioScan.create({ data: { presetId: preset.id } });
+    } catch (err) {
+      console.error("Failed to enqueue AI scan:", err);
+    }
+
     return NextResponse.json({
       preset: {
         ...preset,

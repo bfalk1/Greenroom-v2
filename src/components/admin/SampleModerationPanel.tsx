@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { formatSampleType } from "@/lib/utils/sampleType";
+import { AiScanBadge, type AiScanSummary } from "@/components/admin/AiScanBadge";
 
 interface SampleModerationPanelProps {
   sample: {
@@ -21,6 +22,7 @@ interface SampleModerationPanelProps {
     file_url?: string;
     tags?: string[];
     preview_ready?: boolean;
+    audio_scan?: AiScanSummary | null;
   };
   creator?: { full_name: string };
   onModerate: (action: "approve" | "reject") => void;
@@ -68,6 +70,7 @@ export function SampleModerationPanel({
               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30 whitespace-nowrap">
                 {formatSampleType(sample.sample_type)}
               </span>
+              <AiScanBadge scan={sample.audio_scan} />
             </div>
             <p className="text-[#a1a1a1] text-sm">
               by {creator?.full_name || "Unknown"}

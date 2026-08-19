@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   const statusFilter = searchParams.get("status");
   const search = searchParams.get("search");
   const view = searchParams.get("view"); // "pending", "all", "lowest-rated"
+  const aiFilter = searchParams.get("ai"); // "flagged" narrows to AI-flagged scans
   const limitParam = parseInt(searchParams.get("limit") || "50", 10);
   const offsetParam = parseInt(searchParams.get("offset") || "0", 10);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
@@ -51,6 +52,11 @@ export async function GET(req: NextRequest) {
       where.status = "REVIEW";
     }
     // Show all pending samples - frontend will indicate if preview is pending
+  }
+
+  // Advisory AI-detection filter, composable with any view.
+  if (aiFilter === "flagged") {
+    where.audioScan = { is: { flagged: true } };
   }
 
   // Same search clause for every view: sample metadata plus creator identity,
@@ -90,6 +96,16 @@ export async function GET(req: NextRequest) {
           },
         },
         _count: { select: { purchases: true, downloads: true } },
+        // Advisory AI-detection result for the queue badge.
+        audioScan: {
+          select: {
+            status: true,
+            verdict: true,
+            aiProbability: true,
+            likelySource: true,
+            flagged: true,
+          },
+        },
       },
     }),
     prisma.sample.count({ where }),
