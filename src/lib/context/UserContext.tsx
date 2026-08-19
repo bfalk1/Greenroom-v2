@@ -29,11 +29,13 @@ export interface AppUser {
   // Samples + presets this creator has uploaded. Only computed by /api/user/me
   // while the welcome is pending; null otherwise.
   creator_content_count: number | null;
-  // Billing locality — used only to feed Meta Pixel Advanced Matching
-  // (src/lib/metaPixel.ts); sparse, since the profile address is optional.
+  // Locality — feeds Meta Pixel Advanced Matching (src/lib/metaPixel.ts) and
+  // pre-fills the onboarding form. Collected at signup since 2026-08; sparse
+  // on older accounts.
   city: string | null;
   state: string | null;
   postal_code: string | null;
+  country: string | null;
 }
 
 interface UserContextType {

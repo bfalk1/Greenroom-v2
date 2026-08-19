@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { recordReferralForNewUser } from "@/lib/referral";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { fbcClickTimeMs, fbcFromCookies } from "@/lib/metaCapiServer";
+import { profileFromAuthMetadata } from "@/lib/signupProfile";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -97,6 +98,10 @@ export async function GET() {
           id: authUser.id,
           email: authUser.email || "",
           artistName,
+          // Name + location collected by the signup form (or Google's name)
+          // ride in on auth metadata — the profile shouldn't depend on the
+          // onboarding step, which checkout-embedded signups never reach.
+          ...profileFromAuthMetadata(authUser.user_metadata),
           profileCompleted: false,
           role,
           isActive: true,
@@ -387,10 +392,12 @@ export async function GET() {
         creator_welcome_seen_at: user.creatorWelcomeSeenAt,
         creator_content_count: creatorContentCount,
         // Feeds Meta Pixel Advanced Matching client-side (UserContext →
-        // metaSetAdvancedMatching). Sparse — the profile address is optional.
+        // metaSetAdvancedMatching) and pre-fills the onboarding form. Sparse
+        // on accounts that predate location-at-signup.
         city: user.city,
         state: user.state,
         postal_code: user.postalCode,
+        country: user.country,
       },
     });
   } catch (error) {

@@ -86,6 +86,8 @@ export function trackSignupFailed(
   reason:
     | "password_mismatch"
     | "password_too_short"
+    | "name_missing"
+    | "country_missing"
     | "terms_not_accepted"
     | "already_registered"
     | "provider_error"
