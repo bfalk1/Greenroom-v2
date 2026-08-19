@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
+import { COUNTRIES } from "@/lib/countries";
 
 export interface InviteData {
   email: string;
@@ -68,6 +69,9 @@ export function SignupForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +118,19 @@ export function SignupForm({
       return;
     }
 
+    // required attrs catch the empty cases; these catch whitespace-only input.
+    if (!fullName.trim()) {
+      trackSignupFailed("name_missing");
+      setError("Please enter your name");
+      return;
+    }
+
+    if (!country) {
+      trackSignupFailed("country_missing");
+      setError("Please select your country");
+      return;
+    }
+
     if (!termsAccepted) {
       trackSignupFailed("terms_not_accepted");
       setError("You must accept the Terms of Use and Privacy Policy");
@@ -132,11 +149,19 @@ export function SignupForm({
           // /callback route can land a confirmed user back where they started
           // (e.g. /checkout with the tier intact).
           emailRedirectTo: emailRedirectTo(),
-          // Belt-and-suspenders carrier for the referral code: user_metadata
-          // survives cross-device confirmation (where the link's PKCE exchange
-          // fails and the DB row is created by /api/user/me on the next sign-in
-          // instead of by /callback — that path reads the same metadata).
-          ...(referralCode ? { data: { referral_code: referralCode } } : {}),
+          // user_metadata is the durable carrier for everything collected at
+          // signup: it survives cross-device confirmation (where the link's
+          // PKCE exchange fails and the DB row is created by /api/user/me on
+          // the next sign-in instead of by /callback — both paths read this
+          // same metadata via profileFromAuthMetadata). Name and location ride
+          // here so the profile exists the moment the account does, without
+          // depending on the onboarding step checkout signups never see.
+          data: {
+            full_name: fullName.trim(),
+            ...(city.trim() ? { city: city.trim() } : {}),
+            country,
+            ...(referralCode ? { referral_code: referralCode } : {}),
+          },
         },
       });
 
@@ -320,6 +345,62 @@ export function SignupForm({
             placeholder="••••••••"
             className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
           />
+        </div>
+
+        {/* Name + location are part of signup itself: half of signups never
+            reach the onboarding form (checkout-embedded flows skip it), which
+            left most profiles empty. Collected here, they ride signup
+            user_metadata and exist before the account row does. */}
+        <div>
+          <label className="block text-sm font-medium text-white mb-2">
+            Full Name
+          </label>
+          <Input
+            type="text"
+            required
+            autoComplete="name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            placeholder="Your name"
+            className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              Country
+            </label>
+            <select
+              required
+              autoComplete="country-name"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className={`h-9 w-full rounded-md border px-3 text-sm outline-none bg-[#1a1a1a] border-[#2a2a2a] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] ${country ? "text-white" : "text-[#666]"}`}
+            >
+              <option value="" disabled>
+                Select country
+              </option>
+              {COUNTRIES.map((c) => (
+                <option key={c} value={c} className="text-white bg-[#1a1a1a]">
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white mb-2">
+              City <span className="text-[#666] font-normal">(optional)</span>
+            </label>
+            <Input
+              type="text"
+              autoComplete="address-level2"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="City"
+              className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
+            />
+          </div>
         </div>
 
         {/* Terms Acceptance */}

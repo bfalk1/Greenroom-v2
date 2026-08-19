@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { safeRedirectPath } from "@/lib/safeRedirect";
 import { recordReferralForNewUser } from "@/lib/referral";
+import { profileFromAuthMetadata } from "@/lib/signupProfile";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { NextResponse } from "next/server";
 
@@ -82,6 +83,10 @@ export async function GET(request: Request) {
             id: data.user.id,
             email: data.user.email || "",
             artistName: hasCreatorInvite ? inviteArtistName : undefined,
+            // Name + location from signup metadata (or Google's name) — see
+            // profileFromAuthMetadata. Checkout-bound signups skip /onboarding
+            // below, so creation is the only reliable moment to persist these.
+            ...profileFromAuthMetadata(data.user.user_metadata),
             profileCompleted: false,
             role: hasCreatorInvite ? "CREATOR" : "USER",
             isActive: true,
