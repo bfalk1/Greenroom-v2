@@ -10,13 +10,14 @@ import {
   fbcFromCookies,
   hashEmail,
   metaCapiAddPaymentInfo,
+  metaCapiCompleteRegistration,
   normalizeFbc,
   sha256Lower,
   splitFullName,
   USER_FBC_MAX_AGE_MS,
   withUserFbcFallback,
 } from "./metaCapiServer";
-import { purchaseEventId } from "./metaPixel";
+import { purchaseEventId, registrationEventId } from "./metaPixel";
 
 const UA = "Mozilla/5.0 (Macintosh) TestAgent/1.0";
 
@@ -189,6 +190,7 @@ test("capiIdentityFromProfile splits the name and maps postalCode → zip", () =
       city: "London",
       state: null,
       zip: "SW1A",
+      country: null,
     }
   );
 });
@@ -393,6 +395,110 @@ test("metaCapiAddPaymentInfo reports a numeric value + ISO currency (Meta flags 
     assert.equal(event.custom_data.currency, "USD");
     assert.deepEqual(event.custom_data.contents, [{ id: "VIP", quantity: 1 }]);
     assert.equal(event.custom_data.content_name, "VIP");
+  } finally {
+    if (prev.pixel === undefined) delete process.env.NEXT_PUBLIC_META_PIXEL_ID;
+    else process.env.NEXT_PUBLIC_META_PIXEL_ID = prev.pixel;
+    if (prev.token === undefined) delete process.env.META_CAPI_ACCESS_TOKEN;
+    else process.env.META_CAPI_ACCESS_TOKEN = prev.token;
+    if (prev.base === undefined) delete process.env.META_GRAPH_API_BASE;
+    else process.env.META_GRAPH_API_BASE = prev.base;
+    server.close();
+  }
+});
+
+test("buildCapiEvent hashes country as ISO alpha-2 — display names resolve, codes pass through, junk is omitted", () => {
+  const withName = buildCapiEvent({
+    eventName: "Purchase",
+    eventId: "purchase:cs_country",
+    eventTimeSeconds: 1_784_000_000,
+    identity: { country: "United States" },
+    attribution: { clientUserAgent: UA },
+  });
+  assert.ok(withName);
+  assert.deepEqual(
+    (withName.user_data as Record<string, unknown>).country,
+    [sha256Lower("us")]
+  );
+
+  // Stripe billing addresses arrive as alpha-2 already (any case).
+  const withCode = buildCapiEvent({
+    eventName: "Purchase",
+    eventId: "purchase:cs_country2",
+    eventTimeSeconds: 1_784_000_000,
+    identity: { country: "DE" },
+    attribution: { clientUserAgent: UA },
+  });
+  assert.ok(withCode);
+  assert.deepEqual(
+    (withCode.user_data as Record<string, unknown>).country,
+    [sha256Lower("de")]
+  );
+
+  // Unresolvable free text sends nothing — a hash of garbage can never match.
+  const withJunk = buildCapiEvent({
+    eventName: "Purchase",
+    eventId: "purchase:cs_country3",
+    eventTimeSeconds: 1_784_000_000,
+    identity: { country: "Atlantis" },
+    attribution: { clientUserAgent: UA },
+  });
+  assert.ok(withJunk);
+  assert.equal("country" in (withJunk.user_data as Record<string, unknown>), false);
+});
+
+test("metaCapiCompleteRegistration sends the shared registration event id, source, and identity", async () => {
+  const bodies: { data: Record<string, unknown>[] }[] = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      bodies.push(JSON.parse(raw));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ events_received: 1 }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const prev = {
+    pixel: process.env.NEXT_PUBLIC_META_PIXEL_ID,
+    token: process.env.META_CAPI_ACCESS_TOKEN,
+    base: process.env.META_GRAPH_API_BASE,
+  };
+  process.env.NEXT_PUBLIC_META_PIXEL_ID = "1234567890";
+  process.env.META_CAPI_ACCESS_TOKEN = "test-token";
+  process.env.META_GRAPH_API_BASE = `http://127.0.0.1:${address.port}`;
+  try {
+    metaCapiCompleteRegistration({
+      userId: "user-reg-1",
+      email: "new@example.com",
+      source: "checkout",
+      identity: capiIdentityFromProfile({
+        fullName: "New Person",
+        city: "Berlin",
+        country: "Germany",
+      }),
+      attribution: { clientUserAgent: UA, fbp: "fb.1.123.456" },
+    });
+    const deadline = Date.now() + 3000;
+    while (bodies.length < 1 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(bodies.length, 1, "stub never received the CAPI send");
+    const event = bodies[0].data[0] as {
+      event_name: string;
+      event_id: string;
+      custom_data: Record<string, unknown>;
+      user_data: Record<string, unknown>;
+    };
+    assert.equal(event.event_name, "CompleteRegistration");
+    // Must byte-match the browser's registrationEventId(userId) for dedup.
+    assert.equal(event.event_id, registrationEventId("user-reg-1"));
+    assert.equal(event.custom_data.content_name, "checkout");
+    assert.equal(event.custom_data.status, true);
+    assert.deepEqual(event.user_data.em, [hashEmail("new@example.com")]);
+    assert.deepEqual(event.user_data.country, [sha256Lower("de")]);
+    assert.deepEqual(event.user_data.ct, [sha256Lower("berlin")]);
   } finally {
     if (prev.pixel === undefined) delete process.env.NEXT_PUBLIC_META_PIXEL_ID;
     else process.env.NEXT_PUBLIC_META_PIXEL_ID = prev.pixel;

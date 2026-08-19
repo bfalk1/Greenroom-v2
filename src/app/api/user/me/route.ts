@@ -2,12 +2,18 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { recordReferralForNewUser } from "@/lib/referral";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
-import { fbcClickTimeMs, fbcFromCookies } from "@/lib/metaCapiServer";
+import {
+  capiAttributionFromRequest,
+  capiIdentityFromProfile,
+  fbcClickTimeMs,
+  fbcFromCookies,
+  metaCapiCompleteRegistration,
+} from "@/lib/metaCapiServer";
 import { profileFromAuthMetadata } from "@/lib/signupProfile";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -195,6 +201,25 @@ export async function GET() {
       if (emailConfirmed) {
         await tryRecordReferral();
       }
+
+      // Server-side CompleteRegistration: this bootstrap request comes from
+      // the new user's own browser, so cookies (fbp/fbc/gr_fbc), IP, and UA
+      // are all real. Deduped against the signup form's pixel event via
+      // registrationEventId — whichever row-creation site wins the race is
+      // the one that fires, so a signup is reported at most once.
+      const signupCookies = await cookies();
+      metaCapiCompleteRegistration({
+        userId: user.id,
+        email: user.email,
+        source: typeof authUser.user_metadata?.signup_source === "string"
+          ? authUser.user_metadata.signup_source.slice(0, 40)
+          : null,
+        identity: capiIdentityFromProfile(user),
+        attribution: capiAttributionFromRequest(
+          request,
+          (name) => signupCookies.get(name)?.value
+        ),
+      });
     } else if (user.role === "USER" && authUser.email && emailConfirmed) {
       // Existing user - check if they have a pending invite to upgrade.
       // Case-insensitive so a mixed-case invite row still matches the lowercased

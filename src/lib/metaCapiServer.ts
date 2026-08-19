@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { after } from "next/server";
-import { metaPixelId, purchaseEventId } from "./metaPixel";
+import { metaPixelId, purchaseEventId, registrationEventId } from "./metaPixel";
+import { countryToIso2 } from "./countries";
 
 // Meta Conversions API (server-side counterpart to the browser pixel in
 // src/lib/metaPixel.ts). The pixel alone loses every conversion made in a
@@ -51,10 +52,12 @@ export interface CapiIdentity {
   city?: string | null;
   state?: string | null;
   zip?: string | null;
+  // Display name or ISO alpha-2 — resolved to the code at hash time.
+  country?: string | null;
 }
 
 interface CapiEventInput {
-  eventName: "Purchase" | "AddPaymentInfo";
+  eventName: "Purchase" | "AddPaymentInfo" | "CompleteRegistration";
   // Must byte-match the browser pixel's eventID for dedup: the pixel event
   // and this server event count as ONE conversion only if these agree.
   eventId: string;
@@ -113,6 +116,14 @@ export function hashZip(value: string | null | undefined): string | null {
   return v ? sha256Lower(v) : null;
 }
 
+// Country: Meta matches on the hashed lowercase ISO alpha-2 code. We store
+// display names ("United States"), so resolve first; an unresolvable value
+// hashes to nothing rather than to a code no ad account has ever seen.
+export function hashCountry(value: string | null | undefined): string | null {
+  const iso2 = countryToIso2(value);
+  return iso2 ? sha256Lower(iso2) : null;
+}
+
 // A single full_name column is all we store; split on the last space so the
 // final token is the surname and everything before it is the given name(s).
 // A one-word name becomes the first name with no last name.
@@ -138,6 +149,7 @@ export function capiIdentityFromProfile(source: {
   city?: string | null;
   state?: string | null;
   postalCode?: string | null;
+  country?: string | null;
 }): CapiIdentity {
   const { firstName, lastName } = splitFullName(source.fullName);
   return {
@@ -146,6 +158,7 @@ export function capiIdentityFromProfile(source: {
     city: source.city ?? null,
     state: source.state ?? null,
     zip: source.postalCode ?? null,
+    country: source.country ?? null,
   };
 }
 
@@ -176,11 +189,13 @@ export function buildCapiEvent(
     const ct = hashCityOrState(identity.city);
     const st = hashCityOrState(identity.state);
     const zp = hashZip(identity.zip);
+    const country = hashCountry(identity.country);
     if (fn) userData.fn = [fn];
     if (ln) userData.ln = [ln];
     if (ct) userData.ct = [ct];
     if (st) userData.st = [st];
     if (zp) userData.zp = [zp];
+    if (country) userData.country = [country];
   }
   if (input.attribution.fbp?.trim()) userData.fbp = input.attribution.fbp.trim();
   if (input.attribution.fbc?.trim()) userData.fbc = input.attribution.fbc.trim();
@@ -340,6 +355,39 @@ export function metaCapiAddPaymentInfo(props: {
     },
   });
   return eventId;
+}
+
+/**
+ * Server-side CompleteRegistration, fired from the two places a users row is
+ * first created (/api/user/me bootstrap and /callback) — both are requests
+ * the new user's own browser makes, so cookies/IP/UA are all in scope. The
+ * browser pixel fires the same event from the signup form keyed on the same
+ * registrationEventId(userId), so Meta counts one signup however many
+ * channels deliver it — and still counts it when an ad blocker ate the
+ * pixel, which is exactly the cohort that was invisible before.
+ */
+export function metaCapiCompleteRegistration(props: {
+  userId: string;
+  email?: string | null;
+  // Funnel surface from signup metadata ("checkout", "pricing", "vip") —
+  // mirrors the browser event's content_name.
+  source?: string | null;
+  identity?: CapiIdentity;
+  attribution: CapiAttribution;
+}): void {
+  sendMetaCapiEvent({
+    eventName: "CompleteRegistration",
+    eventId: registrationEventId(props.userId),
+    eventTimeSeconds: Date.now() / 1000,
+    email: props.email,
+    userId: props.userId,
+    identity: props.identity,
+    attribution: props.attribution,
+    customData: {
+      content_name: props.source?.trim() || "signup",
+      status: true,
+    },
+  });
 }
 
 /**

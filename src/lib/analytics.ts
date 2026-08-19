@@ -1,5 +1,10 @@
 import posthog from "posthog-js";
-import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
+import {
+  metaTrack,
+  metaTrackOnce,
+  purchaseEventId,
+  registrationEventId,
+} from "./metaPixel";
 import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
@@ -64,20 +69,37 @@ export function trackLandingCta(cta: string) {
 
 // --- Auth ---
 
-export function trackSignup(method: "email" | "invite", source?: string) {
+export function trackSignup(
+  method: "email" | "invite",
+  source?: string,
+  // The new account's user id, known from signUp()'s response. Keys the
+  // dedup id shared with the server-side CompleteRegistration (CAPI) so the
+  // two channels count as one signup; TikTok gets the same id, inert until
+  // its Events API twin exists.
+  userId?: string
+) {
   // source attributes the signup to a funnel — "vip" for the lifetime offer's
   // standalone /signup path, "checkout" for the signup step embedded on
   // /checkout, "pricing" for the one embedded on /pricing — so the
   // landed→subscribed question can be segmented at the signup step instead of
   // only at the endpoints.
   posthog.capture("signup", { method, ...(source ? { source } : {}) });
-  metaTrack("CompleteRegistration", {
-    content_name: source ?? method,
-    status: true,
-  });
-  tiktokTrack("CompleteRegistration", {
-    content_name: source ?? method,
-  });
+  const eventId = userId ? registrationEventId(userId) : undefined;
+  metaTrack(
+    "CompleteRegistration",
+    {
+      content_name: source ?? method,
+      status: true,
+    },
+    eventId
+  );
+  tiktokTrack(
+    "CompleteRegistration",
+    {
+      content_name: source ?? method,
+    },
+    eventId
+  );
 }
 
 // Signup-step leaks: client validation, provider rejections, and the

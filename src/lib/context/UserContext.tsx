@@ -130,6 +130,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             city: data.user.city,
             state: data.user.state,
             postalCode: data.user.postal_code,
+            country: data.user.country,
           });
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
