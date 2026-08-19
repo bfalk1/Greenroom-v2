@@ -3,6 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { safeRedirectPath } from "@/lib/safeRedirect";
 import { recordReferralForNewUser } from "@/lib/referral";
 import { profileFromAuthMetadata } from "@/lib/signupProfile";
+import {
+  capiAttributionFromRequest,
+  capiIdentityFromProfile,
+  metaCapiCompleteRegistration,
+} from "@/lib/metaCapiServer";
+import { cookies } from "next/headers";
 import { trackReferralRecordedServer } from "@/lib/analyticsServer";
 import { NextResponse } from "next/server";
 
@@ -123,6 +129,25 @@ export async function GET(request: Request) {
             data: { usedAt: new Date(), usedByUserId: user.id },
           });
         }
+
+        // Server-side CompleteRegistration for rows this route creates
+        // (email-confirmation and OAuth returns) — the request is the new
+        // user's own browser, so cookies/IP/UA are real. Same
+        // registrationEventId as the signup form's pixel event and the
+        // /api/user/me bootstrap: whichever creation site wins fires once.
+        const signupCookies = await cookies();
+        metaCapiCompleteRegistration({
+          userId: user.id,
+          email: user.email,
+          source: typeof data.user.user_metadata?.signup_source === "string"
+            ? data.user.user_metadata.signup_source.slice(0, 40)
+            : null,
+          identity: capiIdentityFromProfile(user),
+          attribution: capiAttributionFromRequest(
+            request,
+            (name) => signupCookies.get(name)?.value
+          ),
+        });
       } else if (hasCreatorInvite && user.role === "USER") {
         // Existing user with pending invite - upgrade to CREATOR
         user = await prisma.user.update({

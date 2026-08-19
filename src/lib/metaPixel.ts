@@ -4,6 +4,8 @@
 // in the funnel", the pixel exists so Meta can attribute and optimize ad
 // delivery, so only the handful of standard events Meta optimizes on are sent.
 
+import { countryToIso2 } from "./countries";
+
 interface FbqFunction {
   (...args: unknown[]): void;
   callMethod?: (...args: unknown[]) => void;
@@ -42,6 +44,13 @@ export function metaPixelId(): string | undefined {
 // or PayPal subscription id (I-...).
 export function purchaseEventId(transactionId: string): string {
   return `purchase:${transactionId}`;
+}
+
+// Same contract for CompleteRegistration: keyed on the new account's user id,
+// which both sides know independently — the browser from signUp()'s returned
+// user, the server at the moment it creates the users row.
+export function registrationEventId(userId: string): string {
+  return `registration:${userId}`;
 }
 
 // Programmatic equivalent of Meta's inline base-code snippet: install the fbq
@@ -201,6 +210,7 @@ export async function metaSetAdvancedMatching(user: {
   city?: string | null;
   state?: string | null;
   postalCode?: string | null;
+  country?: string | null;
 }): Promise<void> {
   const fbq = initMetaPixel();
   const id = metaPixelId();
@@ -214,6 +224,11 @@ export async function metaSetAdvancedMatching(user: {
   if (user.city?.trim()) matching.ct = user.city.trim();
   if (user.state?.trim()) matching.st = user.state.trim();
   if (user.postalCode?.trim()) matching.zp = user.postalCode.trim();
+  // Meta matches country on the ISO alpha-2 code, not the display name we
+  // store — resolve first, omit when unresolvable (a hashed display name can
+  // never match anything).
+  const iso2 = countryToIso2(user.country);
+  if (iso2) matching.country = iso2;
   const externalId = await sha256Hex(user.id);
   if (externalId) matching.external_id = externalId;
 
@@ -234,6 +249,7 @@ export function metaClearAdvancedMatching() {
     ct: "",
     st: "",
     zp: "",
+    country: "",
     external_id: "",
   });
 }

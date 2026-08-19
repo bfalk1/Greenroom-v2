@@ -160,6 +160,9 @@ export function SignupForm({
             full_name: fullName.trim(),
             ...(city.trim() ? { city: city.trim() } : {}),
             country,
+            // Funnel surface, mirrored into the server-side
+            // CompleteRegistration's content_name.
+            ...(source ? { signup_source: source } : {}),
             ...(referralCode ? { referral_code: referralCode } : {}),
           },
         },
@@ -191,13 +194,13 @@ export function SignupForm({
       // If session exists, email confirmation is off — hand off to the caller.
       if (data.session) {
         await fetch("/api/user/me");
-        trackSignup(method, source);
+        trackSignup(method, source, data.user?.id);
         await onSession();
         return;
       }
 
       // Email confirmation is on — show check email screen
-      trackSignup(method, source);
+      trackSignup(method, source, data.user?.id);
       setSuccess(true);
     } catch (err) {
       console.error("Signup error:", err);

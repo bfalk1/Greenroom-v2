@@ -254,6 +254,8 @@ async function handleCheckoutCompleted(
       city: session.customer_details?.address?.city,
       state: session.customer_details?.address?.state,
       postalCode: session.customer_details?.address?.postal_code,
+      // Stripe sends ISO alpha-2 already; countryToIso2 passes it through.
+      country: session.customer_details?.address?.country,
     }),
     attribution: withUserFbcFallback(
       capiAttributionFromMetadata(session.metadata ?? undefined),
