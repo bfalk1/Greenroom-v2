@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { formatSampleType } from "@/lib/utils/sampleType";
-import { AiScanBadge, type AiScanSummary } from "@/components/admin/AiScanBadge";
+import { AiScanBadge, AiScanStatusLine, type AiScanSummary } from "@/components/admin/AiScanBadge";
 
 interface SampleModerationPanelProps {
   sample: {
@@ -99,6 +99,10 @@ export function SampleModerationPanel({
             <p className="text-white font-medium">
               {sample.credit_price} credits
             </p>
+          </div>
+          <div className="col-span-2">
+            <p className="text-xs text-[#a1a1a1] mb-1">AI Detection</p>
+            <AiScanStatusLine scan={sample.audio_scan} />
           </div>
         </div>
 

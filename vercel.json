@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/ai-scan",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }
