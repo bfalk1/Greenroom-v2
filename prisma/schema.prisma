@@ -295,6 +295,7 @@ model Sample {
   downloads Download[]
   ratings   Rating[]
   favorites Favorite[]
+  audioScan AudioScan?
 
   @@index([genre])
   @@index([instrumentType])
@@ -347,6 +348,7 @@ model Preset {
   downloads Download[]
   ratings   Rating[]
   favorites Favorite[]
+  audioScan AudioScan?
 
   @@index([synthName])
   @@index([presetCategory])
@@ -877,4 +879,49 @@ model Message {
   @@index([threadId, createdAt])
   @@index([senderId]) // supports SetNull scan on user deletion
   @@map("messages")
+}
+
+// ─────────────────────────────────────────────
+// AI-AUDIO DETECTION (ACRCloud)
+// ─────────────────────────────────────────────
+
+// Scan lifecycle. UNSCANNABLE = clip under the minimum duration the detector
+// is reliable on (calibrated 2026-08-19: <3s returns no_music or junk).
+enum AudioScanStatus {
+  PENDING
+  SUBMITTED
+  COMPLETE
+  UNSCANNABLE
+  ERROR
+}
+
+// One row per sample/preset (unique), updated in place on rescans. `flagged`
+// is the advisory mod-queue signal, derived from the calibrated policy in
+// src/lib/aiScan.ts — never a publish gate, and an un-flagged row is NOT a
+// human guarantee.
+model AudioScan {
+  id            String          @id @default(uuid()) @db.Uuid
+  sampleId      String?         @unique @map("sample_id") @db.Uuid
+  presetId      String?         @unique @map("preset_id") @db.Uuid
+  status        AudioScanStatus @default(PENDING)
+  provider      String          @default("acrcloud")
+  acrFileId     String?         @map("acr_file_id")
+  verdict       String? // ai_generated | human | no_music | …
+  aiProbability Float?          @map("ai_probability")
+  likelySource  String?         @map("likely_source") // suno | udio | … | Human
+  flagged       Boolean         @default(false)
+  durationSec   Float?          @map("duration_sec")
+  rawResult     Json?           @map("raw_result") @db.JsonB
+  error         String?
+  attempts      Int             @default(0)
+  scannedAt     DateTime?       @map("scanned_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  sample Sample? @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  preset Preset? @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([flagged])
+  @@map("audio_scans")
 }

@@ -570,6 +570,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Queue the AI-audio detection scan; the ai-scan cron does the vendor
+    // calls. Runs for whitelisted (insta-published) creators too — their flags
+    // surface in the mod queue after the fact. Never blocks the upload.
+    try {
+      await prisma.audioScan.create({ data: { sampleId: sample.id } });
+    } catch (err) {
+      console.error("Failed to enqueue AI scan:", err);
+    }
+
     return NextResponse.json({ sample }, { status: 201 });
   } catch (error) {
     console.error("POST /api/samples error:", error);

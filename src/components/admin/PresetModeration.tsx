@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
 import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
+import { AiScanBadge, AiScanStatusLine, type AiScanSummary } from "@/components/admin/AiScanBadge";
 import { toast } from "sonner";
 
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -78,6 +79,7 @@ interface ModPreset {
   isActive: boolean;
   createdAt: string;
   creator: PresetCreator;
+  audioScan?: AiScanSummary | null;
 }
 
 const PAGE_SIZE = 50;
@@ -346,6 +348,7 @@ export function PresetModeration() {
                   Whitelisted
                 </span>
               )}
+              <AiScanBadge scan={preset.audioScan} />
             </div>
             <p className="text-sm text-[#a1a1a1] mt-1 truncate">
               by {preset.creator.artistName || preset.creator.fullName || preset.creator.email}
@@ -354,6 +357,11 @@ export function PresetModeration() {
               {" · "}
               {preset.creditPrice} cr
             </p>
+            {preset.status === "REVIEW" && (
+              <div className="mt-1">
+                <AiScanStatusLine scan={preset.audioScan} />
+              </div>
+            )}
             <div className="flex items-center gap-4 mt-2 text-xs text-[#666]">
               <span className="flex items-center gap-1">
                 <Star className="w-3 h-3" />

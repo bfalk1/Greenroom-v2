@@ -91,6 +91,16 @@ export async function GET(req: NextRequest) {
         // incremented on purchase, so surfacing it as "downloads" reports sales
         // a second time. Downloads are rows in the `downloads` table.
         _count: { select: { purchases: true, downloads: true } },
+        // Advisory AI-detection result for the queue badge.
+        audioScan: {
+          select: {
+            status: true,
+            verdict: true,
+            aiProbability: true,
+            likelySource: true,
+            flagged: true,
+          },
+        },
       },
     }),
     prisma.preset.count({ where }),
@@ -150,6 +160,7 @@ export async function GET(req: NextRequest) {
       isActive: p.isActive,
       createdAt: p.createdAt.toISOString(),
       creator: p.creator,
+      audioScan: p.audioScan,
     };
   });
 

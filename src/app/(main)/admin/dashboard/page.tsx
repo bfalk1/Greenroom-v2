@@ -34,6 +34,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { AdminSidebar, AdminSidebarItem } from "@/components/admin/AdminSidebar";
 import { SampleModerationPanel } from "@/components/admin/SampleModerationPanel";
+import { type AiScanSummary } from "@/components/admin/AiScanBadge";
 import { UserSearchPanel } from "@/components/admin/UserSearchPanel";
 import { ExportPanel } from "@/components/admin/ExportPanel";
 import { AuditLogPanel } from "@/components/admin/AuditLogPanel";
@@ -174,6 +175,7 @@ interface DraftSample {
   previewUrl: string | null;
   tags: string[];
   creator: SampleCreator;
+  audioScan?: AiScanSummary | null;
 }
 
 interface PlatformSettings {
@@ -216,6 +218,7 @@ function mapSampleForPanel(s: DraftSample) {
     status: s.status,
     file_url: s.previewUrl || s.fileUrl || undefined,
     tags: s.tags,
+    audio_scan: s.audioScan ?? null,
   };
 }
 
