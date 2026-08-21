@@ -342,6 +342,21 @@ export default function LandingPageContent({
     [samples]
   );
 
+  // Honor /#samples deep links (footer "Browse Samples", or a nav click that
+  // raced the feed): the section isn't in the DOM until samples load, so the
+  // browser's native anchor scroll can't find it — scroll once it mounts.
+  const samplesMounted = previewSamples.length > 0;
+  useEffect(() => {
+    if (samplesMounted && window.location.hash === "#samples") {
+      // Hidden documents (e.g. the link was opened into a background tab)
+      // never run smooth scrolls — jump instantly there instead.
+      document.getElementById("samples")?.scrollIntoView({
+        behavior: document.visibilityState === "hidden" ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  }, [samplesMounted]);
+
   const creators = useMemo(() => {
     // Preferred source: the dedicated resolver, which returns a real avatar +
     // genre for every name in the curated lineup (not just those that happen to
