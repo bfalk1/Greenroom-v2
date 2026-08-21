@@ -143,18 +143,17 @@ export async function updateSession(request: NextRequest) {
   // /checkout (exact — NOT /checkout/complete) is public so an anonymous buyer
   // keeps the tier they picked and signs up inline on the page; the checkout
   // APIs it calls all still require a session.
-  // NOTE: "/explore" is a REMOVED route kept in this allowlist on purpose — it
-  // lets the deleted path fall through to Next's 404 for everyone instead of the
-  // auth gate bouncing anonymous visitors to /login (a hard 404, not a redirect).
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
+  // NOTE: "/explore" and "/waitlist" are REMOVED routes kept in this allowlist
+  // on purpose — they let the deleted paths fall through to Next's 404 for
+  // everyone instead of the auth gate bouncing anonymous visitors to /login
+  // (a hard 404, not a redirect).
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore", "/waitlist"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
     /^\/api\/samples\/[^/]+\/preview$/.test(pathname);
   const isPublicPath =
     publicPaths.includes(pathname) ||
-    pathname.startsWith("/waitlist") ||
-    pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
     // Vercel cron invokes these with a Bearer CRON_SECRET header and no
     // session cookie. Each cron route verifies the secret itself and fails
@@ -178,7 +177,6 @@ export async function updateSession(request: NextRequest) {
     // PUT (seed defaults) that must stay behind auth.
     (request.method === "GET" && pathname.startsWith("/api/instruments")) ||
     pathname.startsWith("/api/search") ||
-    pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify" ||
     pathname === "/api/beta-invites/verify" ||
     // Referral banner on the (public) signup page — rate-limited, returns
