@@ -5,6 +5,7 @@
 // delivery, so only the handful of standard events Meta optimizes on are sent.
 
 import { countryToIso2 } from "./countries";
+import { sha256Hex } from "./hashClient";
 
 interface FbqFunction {
   (...args: unknown[]): void;
@@ -173,25 +174,6 @@ function splitName(
   if (parts.length === 0) return [null, null];
   if (parts.length === 1) return [parts[0], null];
   return [parts.slice(0, -1).join(" "), parts[parts.length - 1]];
-}
-
-// SHA-256 hex via Web Crypto, byte-matching the server's sha256Lower(userId)
-// so the pixel's external_id equals the CAPI external_id and Meta treats the
-// two channels as the same person. crypto.subtle needs a secure context
-// (https / localhost); returns null if unavailable so external_id is simply
-// omitted rather than sent malformed.
-async function sha256Hex(value: string): Promise<string | null> {
-  try {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(value)
-    );
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  } catch {
-    return null;
-  }
 }
 
 // Advanced Matching — the browser-side counterpart to the CAPI user_data in

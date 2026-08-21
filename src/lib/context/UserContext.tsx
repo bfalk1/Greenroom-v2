@@ -8,6 +8,7 @@ import {
   metaSetAdvancedMatching,
   metaClearAdvancedMatching,
 } from "@/lib/metaPixel";
+import { tiktokSetIdentity, tiktokClearIdentity } from "@/lib/tiktokPixel";
 
 export interface AppUser {
   id: string;
@@ -132,6 +133,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             postalCode: data.user.postal_code,
             country: data.user.country,
           });
+          // Same for TikTok, which otherwise receives no identifiers at all
+          // and flags a Critical "Email and phone are missing" diagnostic.
+          // TikTok's identity set is narrower than Meta's — email, phone, and
+          // external_id only — so name/address are not sent here.
+          void tiktokSetIdentity({
+            id: data.user.id,
+            email: data.user.email,
+          });
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
           setUser(null);
@@ -178,6 +187,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Only clear user state on explicit sign-out, not transient states
         resetAnalytics();
         metaClearAdvancedMatching();
+        tiktokClearIdentity();
         setUser(null);
         setSupabaseUser(null);
         setError(false);
