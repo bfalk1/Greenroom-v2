@@ -342,6 +342,21 @@ export default function LandingPageContent({
     [samples]
   );
 
+  // Honor /#samples deep links (footer "Browse Samples", or a nav click that
+  // raced the feed): the section isn't in the DOM until samples load, so the
+  // browser's native anchor scroll can't find it — scroll once it mounts.
+  const samplesMounted = previewSamples.length > 0;
+  useEffect(() => {
+    if (samplesMounted && window.location.hash === "#samples") {
+      // Hidden documents (e.g. the link was opened into a background tab)
+      // never run smooth scrolls — jump instantly there instead.
+      document.getElementById("samples")?.scrollIntoView({
+        behavior: document.visibilityState === "hidden" ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+  }, [samplesMounted]);
+
   const creators = useMemo(() => {
     // Preferred source: the dedicated resolver, which returns a real avatar +
     // genre for every name in the curated lineup (not just those that happen to
@@ -410,6 +425,23 @@ export default function LandingPageContent({
             <img src="/greenroom-2-logo.png" alt="GREENROOM" className="h-6 md:h-7" />
           </Link>
           <nav className="hidden items-center gap-8 md:flex">
+            <a
+              href="#samples"
+              onClick={(e) => {
+                trackCta("nav_browse");
+                // Smooth-scroll when the preview section is mounted; it appears
+                // only after the sample feed loads, so fall back to the plain
+                // anchor jump until then.
+                const el = document.getElementById("samples");
+                if (el) {
+                  e.preventDefault();
+                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+              className="text-sm font-medium text-[#a1a1a1] transition hover:text-white"
+            >
+              Browse samples
+            </a>
             <Link
               href={ctaHref}
               onClick={() => trackCta("nav_pricing")}
@@ -618,7 +650,7 @@ export default function LandingPageContent({
 
       {/* ---------- MARKETPLACE PREVIEW ---------- */}
       {previewSamples.length > 0 && (
-        <section className="relative px-5 py-12 sm:px-8 sm:py-16">
+        <section id="samples" className="relative scroll-mt-24 px-5 py-12 sm:px-8 sm:py-16">
           <div
             aria-hidden
             className="pointer-events-none absolute right-[-10%] top-1/4 h-[420px] w-[520px] rounded-full opacity-20 blur-[130px]"
