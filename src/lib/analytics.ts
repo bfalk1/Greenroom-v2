@@ -5,7 +5,11 @@ import {
   purchaseEventId,
   registrationEventId,
 } from "./metaPixel";
-import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
+import {
+  tiktokTrack,
+  tiktokTrackOnce,
+  tiktokIdentifyEmail,
+} from "./tiktokPixel";
 import { googleAdsPurchase } from "./googleAds";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
@@ -77,7 +81,11 @@ export function trackSignup(
   // dedup id shared with the server-side CompleteRegistration (CAPI) so the
   // two channels count as one signup; TikTok gets the same id, inert until
   // its Events API twin exists.
-  userId?: string
+  userId?: string,
+  // The address just entered. Optional so existing callers keep working; when
+  // present it identifies the TikTok pixel before CompleteRegistration, which
+  // otherwise fires before UserContext resolves and lands unidentified.
+  email?: string
 ) {
   // source attributes the signup to a funnel — "vip" for the lifetime offer's
   // standalone /signup path, "checkout" for the signup step embedded on
@@ -94,6 +102,7 @@ export function trackSignup(
     },
     eventId
   );
+  tiktokIdentifyEmail(email);
   tiktokTrack(
     "CompleteRegistration",
     {

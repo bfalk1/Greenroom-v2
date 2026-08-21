@@ -8,6 +8,7 @@ import {
   metaSetAdvancedMatching,
   metaClearAdvancedMatching,
 } from "@/lib/metaPixel";
+import { tiktokSetIdentity, tiktokClearIdentity } from "@/lib/tiktokPixel";
 import {
   googleAdsSetUserData,
   googleAdsClearUserData,
@@ -136,6 +137,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             postalCode: data.user.postal_code,
             country: data.user.country,
           });
+          // Same for TikTok, which otherwise receives no identifiers at all
+          // and flags a Critical "Email and phone are missing" diagnostic.
+          // TikTok's identity set is narrower than Meta's — email, phone, and
+          // external_id only — so name/address are not sent here.
+          void tiktokSetIdentity({
+            id: data.user.id,
+            email: data.user.email,
+          });
           // Same identifiers staged for Google's Enhanced Conversions, so a
           // later Purchase conversion carries them (gtag hashes on send).
           googleAdsSetUserData({
@@ -192,6 +201,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Only clear user state on explicit sign-out, not transient states
         resetAnalytics();
         metaClearAdvancedMatching();
+        tiktokClearIdentity();
         googleAdsClearUserData();
         setUser(null);
         setSupabaseUser(null);
