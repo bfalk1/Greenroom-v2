@@ -30,7 +30,7 @@ const NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 // Generate all key combinations
 const KEYS = NOTES.flatMap(note => [`${note} Major`, `${note} Minor`]);
 
-interface FilterState {
+export interface FilterState {
   genre: string;
   instrumentType: string;
   sampleType: string;
@@ -38,7 +38,11 @@ interface FilterState {
   sortBy: string;
 }
 
+// Controlled: the page owns the filter state. This component unmounts on
+// tab switches, so any state held here would silently desync from the
+// selections that keep driving the page's fetches.
 interface SampleFiltersProps {
+  filters: FilterState;
   onFilterChange: (filters: FilterState) => void;
 }
 
@@ -151,13 +155,8 @@ function SearchableSelect({
   );
 }
 
-export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
+export function SampleFilters({ filters, onFilterChange }: SampleFiltersProps) {
   const [mounted, setMounted] = useState(false);
-  const [genre, setGenre] = useState("all");
-  const [instrumentType, setInstrumentType] = useState("all");
-  const [sampleType, setSampleType] = useState("all");
-  const [key, setKey] = useState("all");
-  const [sortBy, setSortBy] = useState("random");
   const [genres, setGenres] = useState<string[]>([]);
 
   useEffect(() => {
@@ -176,32 +175,8 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       .catch(console.error);
   }, []);
 
-  const handleChange = (field: string, value: string) => {
-    let newGenre = genre;
-    let newInstrument = instrumentType;
-    let newType = sampleType;
-    let newKey = key;
-    let newSort = sortBy;
-
-    if (field === "genre") newGenre = value;
-    if (field === "instrument") newInstrument = value;
-    if (field === "type") newType = value;
-    if (field === "key") newKey = value;
-    if (field === "sort") newSort = value;
-
-    setGenre(newGenre);
-    setInstrumentType(newInstrument);
-    setSampleType(newType);
-    setKey(newKey);
-    setSortBy(newSort);
-
-    onFilterChange({
-      genre: newGenre,
-      instrumentType: newInstrument,
-      sampleType: newType,
-      key: newKey,
-      sortBy: newSort,
-    });
+  const handleChange = (field: keyof FilterState, value: string) => {
+    onFilterChange({ ...filters, [field]: value });
   };
 
   if (!mounted) {
@@ -223,7 +198,7 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       </div>
 
       <SearchableSelect
-        value={genre}
+        value={filters.genre}
         onChange={(v) => handleChange("genre", v)}
         options={genres}
         placeholder="Genre"
@@ -232,8 +207,8 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       />
 
       <SearchableSelect
-        value={instrumentType}
-        onChange={(v) => handleChange("instrument", v)}
+        value={filters.instrumentType}
+        onChange={(v) => handleChange("instrumentType", v)}
         options={INSTRUMENTS}
         placeholder="Instrument"
         allLabel="All Instruments"
@@ -241,8 +216,8 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       />
 
       <Select
-        value={sampleType}
-        onValueChange={(v) => handleChange("type", v)}
+        value={filters.sampleType}
+        onValueChange={(v) => handleChange("sampleType", v)}
       >
         <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
           <SelectValue placeholder="Type" />
@@ -255,15 +230,15 @@ export function SampleFilters({ onFilterChange }: SampleFiltersProps) {
       </Select>
 
       <KeySelector
-        value={key === "all" ? "" : key}
+        value={filters.key === "all" ? "" : filters.key}
         onChange={(v) => handleChange("key", v || "all")}
         placeholder="All Keys"
         className="w-32"
       />
 
       <Select
-        value={sortBy}
-        onValueChange={(v) => handleChange("sort", v)}
+        value={filters.sortBy}
+        onValueChange={(v) => handleChange("sortBy", v)}
       >
         <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
           <SelectValue placeholder="Sort" />
