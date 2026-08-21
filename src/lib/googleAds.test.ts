@@ -2,8 +2,10 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   GOOGLE_ADS_PURCHASE_LABEL,
+  googleAdsClearUserData,
   googleAdsPurchase,
   googleAdsPurchaseSendTo,
+  googleAdsSetUserData,
 } from "./googleAds";
 import { trackCheckoutCompleteOutcome } from "./analytics";
 
@@ -148,6 +150,67 @@ test("trackCheckoutCompleteOutcome fires the Google conversion only when confirm
     currency: "USD",
     transaction_id: "cs_test_seam",
   });
+});
+
+// Enhanced Conversions user_data. gtag.js hashes email/first/last itself on
+// transmission, so what we stage here is RAW values in Google's documented
+// field names — the assertions below are the wire contract with gtag.js.
+test("googleAdsSetUserData stages email + split name + uppercase ISO2 country", () => {
+  const win = installWindow();
+  googleAdsSetUserData({
+    email: "  Buyer@Example.com ",
+    fullName: "Mary Jane Watson",
+    city: "Austin",
+    state: null,
+    postalCode: "78701",
+    country: "United States", // stored display name, not a code
+  });
+  assert.equal(win.dataLayer!.length, 1);
+  const entry = win.dataLayer![0] as ArrayLike<unknown>;
+  assert.equal(entry[0], "set");
+  assert.equal(entry[1], "user_data");
+  assert.deepEqual(entry[2], {
+    email: "Buyer@Example.com",
+    address: {
+      first_name: "Mary Jane", // same split rule as Meta: last token = surname
+      last_name: "Watson",
+      city: "Austin",
+      postal_code: "78701",
+      country: "US", // Google wants uppercase alpha-2; Meta's is lowercase
+    },
+  });
+});
+
+test("googleAdsSetUserData with a sparse profile stages only what exists", () => {
+  const win = installWindow();
+  // The pre-signup-fix cohort: email is the only identifier on file.
+  googleAdsSetUserData({ email: "old@user.com", fullName: null, country: "" });
+  const entry = win.dataLayer![0] as ArrayLike<unknown>;
+  assert.deepEqual(entry[2], { email: "old@user.com" });
+
+  // Nothing usable → nothing staged (and an unresolvable country is omitted
+  // rather than sent as a value that can never match).
+  googleAdsSetUserData({ email: "  ", fullName: null, country: "Atlantis" });
+  assert.equal(win.dataLayer!.length, 1);
+});
+
+test("googleAdsClearUserData replaces staged identifiers with an empty object", () => {
+  const win = installWindow();
+  googleAdsSetUserData({ email: "buyer@example.com" });
+  googleAdsClearUserData();
+  assert.equal(win.dataLayer!.length, 2);
+  const entry = win.dataLayer![1] as ArrayLike<unknown>;
+  assert.equal(entry[0], "set");
+  assert.equal(entry[1], "user_data");
+  assert.deepEqual(entry[2], {});
+});
+
+test("user_data staging is inert without the env id", () => {
+  process.env.NEXT_PUBLIC_GOOGLE_ADS_ID = "";
+  const win = installWindow();
+  googleAdsSetUserData({ email: "buyer@example.com" });
+  googleAdsClearUserData();
+  assert.equal(win.dataLayer, undefined);
 });
 
 test("reuses an existing window.gtag instead of installing a second stub", () => {

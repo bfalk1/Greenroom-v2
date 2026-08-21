@@ -165,8 +165,10 @@ export function metaSuppressOnce(dedupeKey: string) {
 
 // Local copy of metaCapiServer.splitFullName — that module can't be imported
 // into this browser file (it pulls in Node's crypto and next/server). Same
-// rule: the last whitespace-separated token is the surname.
-function splitName(
+// rule: the last whitespace-separated token is the surname. Exported for the
+// other browser-side ad libs (googleAds.ts) so the split stays identical
+// across channels.
+export function splitName(
   fullName: string | null | undefined
 ): [string | null, string | null] {
   const parts = fullName?.trim().split(/\s+/).filter(Boolean) ?? [];

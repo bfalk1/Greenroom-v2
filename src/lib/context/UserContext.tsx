@@ -8,6 +8,10 @@ import {
   metaSetAdvancedMatching,
   metaClearAdvancedMatching,
 } from "@/lib/metaPixel";
+import {
+  googleAdsSetUserData,
+  googleAdsClearUserData,
+} from "@/lib/googleAds";
 
 export interface AppUser {
   id: string;
@@ -132,6 +136,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             postalCode: data.user.postal_code,
             country: data.user.country,
           });
+          // Same identifiers staged for Google's Enhanced Conversions, so a
+          // later Purchase conversion carries them (gtag hashes on send).
+          googleAdsSetUserData({
+            email: data.user.email,
+            fullName: data.user.full_name,
+            city: data.user.city,
+            state: data.user.state,
+            postalCode: data.user.postal_code,
+            country: data.user.country,
+          });
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
           setUser(null);
@@ -178,6 +192,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Only clear user state on explicit sign-out, not transient states
         resetAnalytics();
         metaClearAdvancedMatching();
+        googleAdsClearUserData();
         setUser(null);
         setSupabaseUser(null);
         setError(false);

@@ -4,6 +4,9 @@
 // stay clean. Like the Meta pixel, this exists so Google can attribute and
 // optimize ad delivery — funnel analytics live in PostHog, not here.
 
+import { countryToIso2 } from "./countries";
+import { splitName } from "./metaPixel";
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
@@ -83,4 +86,59 @@ export function googleAdsPurchase(props: {
     currency: "USD",
     transaction_id: props.transactionId,
   });
+}
+
+// Enhanced Conversions — Google's counterpart to Meta's Advanced Matching,
+// and the same call-site contract: staged from the UserContext identify point
+// once the signed-in user is known, so it is in place before any conversion
+// fires. gtag.js itself normalizes and SHA-256 hashes email/first/last before
+// transmission (like fbevents), so raw values never leave the browser
+// un-hashed; city/region/postal/country ride in clear per Google's spec.
+// Two switches gate the pipeline: GoogleTag.tsx's allow_enhanced_conversions
+// makes gtag transmit this at all, and the per-conversion-action Enhanced
+// Conversions toggle in the Ads account makes Google use it — until novembr
+// flips the latter, the payload is carried but ignored, which is the
+// intended rollout order (tag first, toggle second).
+export function googleAdsSetUserData(user: {
+  email?: string | null;
+  fullName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}) {
+  const gtag = gtagFn();
+  if (!gtag) return;
+
+  const userData: Record<string, unknown> = {};
+  if (user.email?.trim()) userData.email = user.email.trim();
+
+  const address: Record<string, string> = {};
+  const [firstName, lastName] = splitName(user.fullName);
+  if (firstName) address.first_name = firstName;
+  if (lastName) address.last_name = lastName;
+  if (user.city?.trim()) address.city = user.city.trim();
+  if (user.state?.trim()) address.region = user.state.trim();
+  if (user.postalCode?.trim()) address.postal_code = user.postalCode.trim();
+  // Google matches country on uppercase ISO 3166-1 alpha-2 ("US"), the
+  // opposite casing of what countryToIso2 emits for Meta; unresolvable
+  // values are omitted — sending nothing beats sending a value that can
+  // never match.
+  const iso2 = countryToIso2(user.country);
+  if (iso2) address.country = iso2.toUpperCase();
+  if (Object.keys(address).length > 0) userData.address = address;
+
+  // Nothing usable → stage nothing (don't overwrite data a previous page
+  // load staged with an empty object for no reason).
+  if (Object.keys(userData).length === 0) return;
+  gtag("set", "user_data", userData);
+}
+
+// Logout hygiene, mirroring metaClearAdvancedMatching: gtag's `set` replaces
+// the stored value wholesale, so an empty object leaves later events on a
+// shared browser with no signed-out person's identifiers attached.
+export function googleAdsClearUserData() {
+  const gtag = gtagFn();
+  if (!gtag) return;
+  gtag("set", "user_data", {});
 }
