@@ -81,7 +81,12 @@ export async function sendEmail(options: SendEmailOptions) {
   }
 
   const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
-  
+  // RFC 8058 one-click target. Must be the API route, not the page: mail
+  // clients POST "List-Unsubscribe=One-Click" to this URL, and a POST to a
+  // Next.js page route is a 405. Visible links in the email body keep
+  // pointing at the page (unsubscribeUrl), where a human confirms via button.
+  const oneClickUrl = `${EMAIL_SITE_URL}/api/unsubscribe?email=${encodeURIComponent(options.to)}`;
+
   // Add unsubscribe link to HTML emails if not already present
   let html = options.html;
   if (html) {
@@ -112,7 +117,7 @@ export async function sendEmail(options: SendEmailOptions) {
     text,
     html,
     headers: {
-      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe": `<${oneClickUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   });
@@ -128,6 +133,9 @@ export async function sendEmail(options: SendEmailOptions) {
 // Send email using a Resend template
 export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
   const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  // See sendEmail: the one-click header must target the API route, the
+  // template's visible unsubscribe_url stays on the page.
+  const oneClickUrl = `${EMAIL_SITE_URL}/api/unsubscribe?email=${encodeURIComponent(options.to)}`;
 
   const { data, error } = await getResend().emails.send({
     from: FROM_EMAIL,
@@ -142,7 +150,7 @@ export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
       },
     },
     headers: {
-      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe": `<${oneClickUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
   });

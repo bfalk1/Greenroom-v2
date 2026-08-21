@@ -146,7 +146,12 @@ export async function updateSession(request: NextRequest) {
   // NOTE: "/explore" is a REMOVED route kept in this allowlist on purpose — it
   // lets the deleted path fall through to Next's 404 for everyone instead of the
   // auth gate bouncing anonymous visitors to /login (a hard 404, not a redirect).
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
+  // /unsubscribe (page) and /api/unsubscribe (the page's POST target and the
+  // email List-Unsubscribe endpoint) MUST be public: marketing-email links land
+  // recipients here logged out, and waitlist-only recipients have no account to
+  // log into at all — an auth wall here is a CAN-SPAM/GDPR opt-out violation.
+  // The API rate-limits per IP and no-ops on unknown emails.
+  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore", "/unsubscribe", "/api/unsubscribe"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
