@@ -1037,7 +1037,6 @@ export default function LibraryPage() {
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
   const [localStatusRefreshKey, setLocalStatusRefreshKey] = useState(0);
   const [filters, setFilters] = useState<LibraryFilterState>(DEFAULT_LIBRARY_FILTERS);
-  const [filtersKey, setFiltersKey] = useState(0);
   const hasFetchedInitiallyRef = useRef(false);
 
   // Deep-link support (/library?tab=favorites), which /favorites and the
@@ -1234,7 +1233,6 @@ export default function LibraryPage() {
   const clearFilters = () => {
     setSearchQuery("");
     setFilters(DEFAULT_LIBRARY_FILTERS);
-    setFiltersKey((k) => k + 1);
     setCurrentPage(1);
     setSelectedIndex(0);
   };
@@ -1416,7 +1414,7 @@ export default function LibraryPage() {
               )}
             </div>
 
-            <SampleFilters key={filtersKey} onFilterChange={handleFilterChange} />
+            <SampleFilters filters={filters} onFilterChange={handleFilterChange} />
           </div>
         )}
 

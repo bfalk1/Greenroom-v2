@@ -888,9 +888,9 @@ export default function MarketplacePage() {
 
         {/* Filters */}
         {activeTab === "samples" ? (
-          <SampleFilters onFilterChange={handleFilterChange} />
+          <SampleFilters filters={filters} onFilterChange={handleFilterChange} />
         ) : (
-          <PresetFilters onFilterChange={handlePresetFilterChange} />
+          <PresetFilters filters={presetFilters} onFilterChange={handlePresetFilterChange} />
         )}
 
         {/* Keyboard Navigation Hint */}
