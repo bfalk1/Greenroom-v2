@@ -10,6 +10,7 @@ import {
   tiktokTrackOnce,
   tiktokIdentifyEmail,
 } from "./tiktokPixel";
+import { googleAdsPurchase } from "./googleAds";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
   VIP_FIRST_MONTH_OFFER,
@@ -578,6 +579,13 @@ export function trackCheckoutCompleteOutcome(props: {
       ],
       value: (props.valueUsdCents ?? 0) / 100,
       currency: "USD",
+    });
+    // Google Ads runs its own dedup on transaction_id (and its own
+    // once-guard storage — see googleAds.ts for why it must not share
+    // metapixel's suppress markers).
+    googleAdsPurchase({
+      transactionId: props.transactionId,
+      valueUsdCents: props.valueUsdCents ?? 0,
     });
   }
 }

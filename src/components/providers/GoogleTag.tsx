@@ -10,6 +10,11 @@ import Script from "next/script";
 // installs the dataLayer/gtag stub and runs config. gtag.js records the first
 // page automatically and, being a history-aware tag, follows SPA navigations on
 // its own — so unlike MetaPixel there is no manual per-route PageView here.
+//
+// allow_enhanced_conversions is what lets gtag.js TRANSMIT the user_data that
+// googleAdsSetUserData (src/lib/googleAds.ts) stages — without it the data is
+// staged and silently never sent. Whether Google USES it is the separate
+// per-conversion-action Enhanced Conversions toggle in the Ads account.
 export function GoogleTag() {
   const id = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID?.trim();
   if (!id) return null;
@@ -25,7 +30,7 @@ export function GoogleTag() {
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', '${id}');
+          gtag('config', '${id}', { allow_enhanced_conversions: true });
         `}
       </Script>
     </>
