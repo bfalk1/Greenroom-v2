@@ -9,6 +9,7 @@
 
 # Next.js
 /.next/
+/.next-alt/
 /out/
 
 # Production

@@ -5,7 +5,8 @@ import { Calendar } from "lucide-react";
 import type { SeriesPoint } from "./types";
 
 interface TrendChartProps {
-  data: SeriesPoint[];
+  /** Optional per-point `detail` renders as a third tooltip line (e.g. a conversion's "214 visitors → 7 signups"). */
+  data: (SeriesPoint & { detail?: string })[];
   /** Series name shown in the tooltip (e.g. "purchases"). */
   label: string;
   formatValue: (v: number) => string;
@@ -101,6 +102,9 @@ export function TrendChart({
             <span className="text-[#a1a1a1] text-xs font-normal">{label}</span>
           </div>
           <div className="text-[#666] text-xs">{formatDate(hovered.date)}</div>
+          {hovered.detail && (
+            <div className="text-[#a1a1a1] text-xs mt-0.5">{hovered.detail}</div>
+          )}
         </div>
       )}
 
