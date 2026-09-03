@@ -21,7 +21,7 @@ import type { MetricKey, OverviewResponse } from "./types";
 
 /**
  * Admin analytics Overview — clickable KPI tiles (active users/DAU/WAU/MAU,
- * today's purchases/credits/new subs, 30-day landing & VIP conversion),
+ * today's purchases/credits/new subs, 30-day pricing & VIP conversion),
  * each opening a trend drill-down, driven by GET /api/admin/analytics.
  * Everything but the conversion tiles comes from our own database and always
  * renders; the conversion pair needs Vercel Web Analytics and is omitted
@@ -145,11 +145,11 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     tooltipLabel: "conversion",
     denominatorLabel: "signups",
   },
-  landing_conversion: {
-    key: "landing_conversion",
-    title: "Landing Page Conversion",
+  pricing_conversion: {
+    key: "pricing_conversion",
+    title: "Pricing Page Conversion",
     description:
-      "Accounts created that day ÷ unique visitors to the landing page (/) that day. Visitors from Vercel Web Analytics, signups from the database.",
+      "Accounts created that day ÷ unique visitors to /pricing that day. Signup is embedded in the pricing page, so this is a one-step funnel — chain it with Signup → Paid for the end-to-end rate. Visitors from Vercel Web Analytics, signups from the database.",
     ranges: [
       { id: "30d", label: "30D" },
       { id: "90d", label: "90D" },
@@ -452,7 +452,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
 
   const { engagement, commerce, conversion } = data;
   const activeNow = activePoll ?? engagement.activeNow.current;
-  const hasConversion = !!(conversion.landing || conversion.vip);
+  const hasConversion = !!(conversion.pricing || conversion.vip);
 
   const updatedAt = new Date(data.generatedAt).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -584,7 +584,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
         </section>
 
         {/* Conversion — the signup tile is database-only and always shows;
-            the landing/VIP pair joins it when Vercel Analytics answered. */}
+            the pricing/VIP pair joins it when Vercel Analytics answered. */}
         <section>
           <SectionLabel>Conversion · Last 30 Days</SectionLabel>
           <div
@@ -605,22 +605,22 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
               )} subscribed`}
               onClick={() => setOpenMetric("signup_conversion")}
             />
-            {conversion.landing && (
+            {conversion.pricing && (
               <StatCard
-                label="Landing Page → Signup"
-                value={fmtPct(conversion.landing.window.ratePct)}
+                label="Pricing Page → Signup"
+                value={fmtPct(conversion.pricing.window.ratePct)}
                 delta={pctDelta(
-                  conversion.landing.window.ratePct,
-                  conversion.landing.window.prevRatePct
+                  conversion.pricing.window.ratePct,
+                  conversion.pricing.window.prevRatePct
                 )}
                 deltaTitle="vs previous 30 days (relative)"
-                series={conversion.landing.series}
+                series={conversion.pricing.series}
                 note={`${fmtInt(
-                  conversion.landing.window.visitors
+                  conversion.pricing.window.visitors
                 )} visitors → ${fmtInt(
-                  conversion.landing.window.conversions
+                  conversion.pricing.window.conversions
                 )} signups`}
-                onClick={() => setOpenMetric("landing_conversion")}
+                onClick={() => setOpenMetric("pricing_conversion")}
               />
             )}
             {conversion.vip && (

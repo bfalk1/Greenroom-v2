@@ -400,9 +400,13 @@ export interface ConversionWindow {
 }
 
 export const FUNNELS = {
-  landing: {
-    path: "/",
-    /** Landing visitors who became accounts. */
+  pricing: {
+    path: "/pricing",
+    /**
+     * Plan-grid visitors who became accounts. Signup is embedded in the
+     * pricing page itself, so this is a tight one-step funnel; chain it with
+     * the signup → paid rate for the end-to-end number.
+     */
     numerator: "signups" as const,
   },
   vip: {
@@ -519,7 +523,7 @@ export async function fetchConversion(
 // ── Signup → paid conversion (database only) ──────────────────────────────
 // A signup cohort's conversion rate: of the accounts created in a period,
 // how many started a subscription. Both sides are rows we own, so unlike the
-// landing/VIP rates this needs no visitor data and always works.
+// pricing/VIP rates this needs no visitor data and always works.
 //
 // What it actually measures: signup is embedded in the checkout flow (the
 // standalone /signup page draws almost no traffic), so an account is
