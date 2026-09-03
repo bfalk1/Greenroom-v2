@@ -130,6 +130,21 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     format: "int",
     tooltipLabel: "new subscribers",
   },
+  signup_conversion: {
+    key: "signup_conversion",
+    title: "Signup → Paid Conversion",
+    description:
+      "Of the accounts created in each week, the share that ever started a subscription. Recent weeks read low and settle upward — someone who signed up yesterday may still subscribe. Source: database.",
+    ranges: [
+      { id: "12w", label: "12W" },
+      { id: "26w", label: "26W" },
+      { id: "52w", label: "52W" },
+      { id: "all", label: "All" },
+    ],
+    format: "percent",
+    tooltipLabel: "conversion",
+    denominatorLabel: "signups",
+  },
   landing_conversion: {
     key: "landing_conversion",
     title: "Landing Page Conversion",
@@ -568,42 +583,66 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
           </div>
         </section>
 
-        {/* Conversion — only when Vercel Analytics answered */}
-        {hasConversion && (
-          <section>
-            <SectionLabel>Conversion · Last 30 Days</SectionLabel>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {conversion.landing && (
-                <StatCard
-                  label="Landing Page → Signup"
-                  value={fmtPct(conversion.landing.window.ratePct)}
-                  delta={pctDelta(
-                    conversion.landing.window.ratePct,
-                    conversion.landing.window.prevRatePct
-                  )}
-                  deltaTitle="vs previous 30 days (relative)"
-                  series={conversion.landing.series}
-                  note={`${fmtInt(conversion.landing.window.visitors)} visitors → ${fmtInt(conversion.landing.window.conversions)} signups`}
-                  onClick={() => setOpenMetric("landing_conversion")}
-                />
+        {/* Conversion — the signup tile is database-only and always shows;
+            the landing/promo pair joins it when Vercel Analytics answered. */}
+        <section>
+          <SectionLabel>Conversion · Last 30 Days</SectionLabel>
+          <div
+            className={`grid grid-cols-1 gap-3 ${
+              hasConversion ? "sm:grid-cols-2 xl:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
+            <StatCard
+              label="Signup → Paid"
+              value={fmtPct(conversion.signup.ratePct)}
+              delta={pctDelta(
+                conversion.signup.ratePct,
+                conversion.signup.prevRatePct
               )}
-              {conversion.promo && (
-                <StatCard
-                  label="VIP Promo → Paid Sub"
-                  value={fmtPct(conversion.promo.window.ratePct)}
-                  delta={pctDelta(
-                    conversion.promo.window.ratePct,
-                    conversion.promo.window.prevRatePct
-                  )}
-                  deltaTitle="vs previous 30 days (relative)"
-                  series={conversion.promo.series}
-                  note={`${fmtInt(conversion.promo.window.visitors)} visitors → ${fmtInt(conversion.promo.window.conversions)} activations`}
-                  onClick={() => setOpenMetric("promo_conversion")}
-                />
-              )}
-            </div>
-          </section>
-        )}
+              deltaTitle="vs previous 30 days (relative)"
+              note={`${fmtInt(conversion.signup.visitors)} signups → ${fmtInt(
+                conversion.signup.conversions
+              )} subscribed`}
+              onClick={() => setOpenMetric("signup_conversion")}
+            />
+            {conversion.landing && (
+              <StatCard
+                label="Landing Page → Signup"
+                value={fmtPct(conversion.landing.window.ratePct)}
+                delta={pctDelta(
+                  conversion.landing.window.ratePct,
+                  conversion.landing.window.prevRatePct
+                )}
+                deltaTitle="vs previous 30 days (relative)"
+                series={conversion.landing.series}
+                note={`${fmtInt(
+                  conversion.landing.window.visitors
+                )} visitors → ${fmtInt(
+                  conversion.landing.window.conversions
+                )} signups`}
+                onClick={() => setOpenMetric("landing_conversion")}
+              />
+            )}
+            {conversion.promo && (
+              <StatCard
+                label="VIP Promo → Paid Sub"
+                value={fmtPct(conversion.promo.window.ratePct)}
+                delta={pctDelta(
+                  conversion.promo.window.ratePct,
+                  conversion.promo.window.prevRatePct
+                )}
+                deltaTitle="vs previous 30 days (relative)"
+                series={conversion.promo.series}
+                note={`${fmtInt(
+                  conversion.promo.window.visitors
+                )} visitors → ${fmtInt(
+                  conversion.promo.window.conversions
+                )} activations`}
+                onClick={() => setOpenMetric("promo_conversion")}
+              />
+            )}
+          </div>
+        </section>
 
         {/* Action items */}
         <section>

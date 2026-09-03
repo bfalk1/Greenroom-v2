@@ -27,6 +27,11 @@ export interface MetricConfig {
   format: "int" | "percent";
   /** Series noun for the chart tooltip ("users", "purchases"…). */
   tooltipLabel: string;
+  /**
+   * What the conversion denominator is called. Defaults to "visitors";
+   * signup → paid counts signups, not page visitors.
+   */
+  denominatorLabel?: string;
 }
 
 const fmtInt = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -153,11 +158,12 @@ export function TrendModal({
   const formatValue = config.format === "percent" ? fmtPct : fmtInt;
   const series = data?.series ?? [];
   const conversion = data && isConversionSeries(series) ? series : null;
+  const denominator = config.denominatorLabel ?? "visitors";
   const chartData = conversion
     ? conversion.map((p) => ({
         date: p.date,
         value: p.value,
-        detail: `${fmtInt(p.visitors)} visitors → ${fmtInt(p.conversions)} converted`,
+        detail: `${fmtInt(p.visitors)} ${denominator} → ${fmtInt(p.conversions)} converted`,
       }))
     : series;
 
@@ -183,7 +189,10 @@ export function TrendModal({
       const visitors = conversion.reduce((s, p) => s + p.visitors, 0);
       const conversions = conversion.reduce((s, p) => s + p.conversions, 0);
       summary = [
-        { label: "Unique visitors in range", value: fmtInt(visitors) },
+        {
+          label: `${denominator[0].toUpperCase()}${denominator.slice(1)} in range`,
+          value: fmtInt(visitors),
+        },
         { label: "Conversions", value: fmtInt(conversions) },
         {
           label: "Overall rate",

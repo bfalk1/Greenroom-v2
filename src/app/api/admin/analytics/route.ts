@@ -6,6 +6,7 @@ import {
   fetchActiveUserStats,
   fetchCommerceStats,
   fetchConversion,
+  fetchSignupConversion,
   type ConversionPoint,
   type ConversionWindow,
 } from "@/lib/adminAnalytics";
@@ -20,11 +21,11 @@ import { vercelAnalyticsConfigured } from "@/lib/vercelAnalytics";
  * commerce = today, conversion = rolling 30 days) and the drill-down trend
  * endpoint (/api/admin/analytics/trend) owns longer horizons.
  *
- * Everything except the conversion tiles comes from our own database and
- * always works. Conversion needs visitor counts from the Vercel Web
- * Analytics API (VERCEL_ANALYTICS_TOKEN); without it — or if that API errors
- * — `conversion` is null and the client simply omits those two tiles rather
- * than showing empty ones.
+ * Everything here comes from our own database except the landing/promo
+ * conversion pair, which needs visitor counts from the Vercel Web Analytics
+ * API (VERCEL_ANALYTICS_TOKEN). Without that token — or if the API errors —
+ * those two are null and the client omits them rather than showing empty
+ * tiles; signup → paid conversion is database-only and always renders.
  */
 
 export const maxDuration = 30;
@@ -63,6 +64,7 @@ export async function GET() {
       pendingApplications,
       samplesInReview,
       presetsInReview,
+      signupConversion,
       conversions,
     ] = await Promise.all([
       fetchActiveUserStats(),
@@ -78,6 +80,7 @@ export async function GET() {
       prisma.creatorApplication.count({ where: { status: "PENDING" } }),
       prisma.sample.count({ where: { status: "REVIEW" } }),
       prisma.preset.count({ where: { status: "REVIEW" } }),
+      fetchSignupConversion(30),
       // Isolated: a Vercel Analytics outage must not blank the whole page.
       conversionConfigured
         ? Promise.allSettled([
@@ -132,6 +135,7 @@ export async function GET() {
       conversion: {
         configured: conversionConfigured,
         error: conversionError,
+        signup: signupConversion,
         landing,
         promo,
       },

@@ -515,3 +515,95 @@ export async function fetchConversion(
     series: current,
   };
 }
+
+// ── Signup → paid conversion (database only) ──────────────────────────────
+// A signup cohort's conversion rate: of the accounts created in a period,
+// how many ever started a subscription. Both sides are rows we own, so
+// unlike the landing/promo rates this needs no visitor data and always
+// works.
+//
+// Cohorts are censored at the recent edge — someone who signed up this
+// morning may still subscribe tomorrow — so the newest bucket reads low and
+// settles upward over the following days. Bucketed weekly for that reason:
+// daily cohorts are mostly noise. Surfaced in the drill-down's description.
+
+/** Signup-cohort conversion for the last `days`, vs the `days` before. */
+export async function fetchSignupConversion(
+  days: number
+): Promise<ConversionWindow> {
+  const n = intOrThrow(days);
+  const now = Date.now();
+  const curStart = new Date(now - n * 86_400_000);
+  const prevStart = new Date(now - 2 * n * 86_400_000);
+  const [visitors, conversions, prevVisitors, prevConversions] =
+    await Promise.all([
+      prisma.user.count({ where: { createdAt: { gte: curStart } } }),
+      prisma.user.count({
+        where: { createdAt: { gte: curStart }, subscription: { isNot: null } },
+      }),
+      prisma.user.count({
+        where: { createdAt: { gte: prevStart, lt: curStart } },
+      }),
+      prisma.user.count({
+        where: {
+          createdAt: { gte: prevStart, lt: curStart },
+          subscription: { isNot: null },
+        },
+      }),
+    ]);
+  return {
+    visitors,
+    conversions,
+    ratePct: ratePct(conversions, visitors),
+    prevVisitors,
+    prevConversions,
+    prevRatePct: ratePct(prevConversions, prevVisitors),
+  };
+}
+
+/** Weekly signup cohorts. `weeks = null` means every week on record. */
+export async function fetchSignupConversionSeries(
+  weeks: number | null
+): Promise<ConversionPoint[]> {
+  const start =
+    weeks == null
+      ? new Date(0)
+      : stepBack(currentBucketStart("week"), "week", intOrThrow(weeks) - 1);
+
+  // Hundreds of rows — bucket in JS so the cohort rule stays in one place.
+  const users = await prisma.user.findMany({
+    where: { createdAt: { gte: start } },
+    select: { createdAt: true, subscription: { select: { id: true } } },
+  });
+
+  const totals = new Map<string, { visitors: number; conversions: number }>();
+  for (const u of users) {
+    const k = keyOf(u.createdAt, "week");
+    const bucket = totals.get(k) ?? { visitors: 0, conversions: 0 };
+    bucket.visitors += 1;
+    if (u.subscription) bucket.conversions += 1;
+    totals.set(k, bucket);
+  }
+
+  const end = currentBucketStart("week");
+  let cursor =
+    weeks == null
+      ? totals.size
+        ? parseKey(Array.from(totals.keys()).sort()[0], "week")
+        : end
+      : stepBack(end, "week", weeks - 1);
+
+  const series: ConversionPoint[] = [];
+  while (cursor <= end && series.length < 600) {
+    const key = keyOf(cursor, "week");
+    const t = totals.get(key) ?? { visitors: 0, conversions: 0 };
+    series.push({
+      date: key,
+      value: ratePct(t.conversions, t.visitors),
+      visitors: t.visitors,
+      conversions: t.conversions,
+    });
+    cursor = step(cursor, "week");
+  }
+  return series;
+}

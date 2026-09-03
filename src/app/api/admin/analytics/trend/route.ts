@@ -6,6 +6,7 @@ import {
   fetchActiveUserStats,
   fetchConversion,
   fetchDbTrendSeries,
+  fetchSignupConversionSeries,
   type ConversionPoint,
   type Granularity,
   type SeriesPoint,
@@ -35,7 +36,8 @@ type MetricKey =
   | "credits"
   | "subs"
   | "landing_conversion"
-  | "promo_conversion";
+  | "promo_conversion"
+  | "signup_conversion";
 
 // range key → interval count in the metric's own unit (null = all time).
 const RANGES: Record<MetricKey, Record<string, number | null>> = {
@@ -48,6 +50,8 @@ const RANGES: Record<MetricKey, Record<string, number | null>> = {
   subs: { "30d": 30, "90d": 90, "180d": 180, all: null },
   landing_conversion: { "30d": 30, "90d": 90 },
   promo_conversion: { "30d": 30, "90d": 90 },
+  // Weekly cohorts: daily signup cohorts are mostly noise at this volume.
+  signup_conversion: { "12w": 12, "26w": 26, "52w": 52, all: null },
 };
 
 const GRANULARITY: Partial<Record<MetricKey, Granularity>> = {
@@ -107,6 +111,11 @@ export async function GET(request: NextRequest) {
             windowMinutes: stats.activeWindowMinutes,
           };
         }
+        break;
+      }
+      case "signup_conversion": {
+        granularity = "week";
+        series = await fetchSignupConversionSeries(n);
         break;
       }
       case "landing_conversion":

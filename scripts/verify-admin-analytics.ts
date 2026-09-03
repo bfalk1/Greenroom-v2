@@ -19,6 +19,8 @@ import {
   fetchCommerceStats,
   fetchConversion,
   fetchDbTrendSeries,
+  fetchSignupConversion,
+  fetchSignupConversionSeries,
   type SeriesPoint,
 } from "../src/lib/adminAnalytics";
 import { vercelAnalyticsConfigured } from "../src/lib/vercelAnalytics";
@@ -75,6 +77,18 @@ async function main() {
     console.log(
       `trend ${metric} all (${all.granularity}): ${edges(all.series)}\n` +
         `  all-time sum ${sum} vs table total ${expected} → ${sum === expected ? "OK" : "MISMATCH"}`
+    );
+  }
+
+  console.log("\n── Signup → paid conversion (database) ──");
+  const signup = await fetchSignupConversion(30);
+  console.log(
+    `last 30d: ${signup.conversions}/${signup.visitors} = ${signup.ratePct?.toFixed(1) ?? "—"}% ` +
+      `(prev ${signup.prevConversions}/${signup.prevVisitors} = ${signup.prevRatePct?.toFixed(1) ?? "—"}%)`
+  );
+  for (const p of (await fetchSignupConversionSeries(10)).slice(-10)) {
+    console.log(
+      `  ${p.date}: ${p.conversions}/${p.visitors} = ${p.value?.toFixed(1) ?? "—"}%`
     );
   }
 

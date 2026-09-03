@@ -52,6 +52,8 @@ export interface OverviewResponse {
   conversion: {
     configured: boolean;
     error: string | null;
+    /** Database-only, always present. */
+    signup: ConversionWindow;
     landing: ConversionPayload | null;
     promo: ConversionPayload | null;
   };
@@ -71,7 +73,8 @@ export type MetricKey =
   | "credits"
   | "subs"
   | "landing_conversion"
-  | "promo_conversion";
+  | "promo_conversion"
+  | "signup_conversion";
 
 export interface TrendResponse {
   metric: MetricKey;
