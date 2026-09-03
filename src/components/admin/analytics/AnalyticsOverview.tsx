@@ -17,20 +17,16 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatCard, pctDelta } from "./StatCard";
 import { TrendModal, type MetricConfig } from "./TrendModal";
-import type {
-  LiveNow,
-  MetricKey,
-  OverviewResponse,
-  SeriesPoint,
-} from "./types";
+import type { MetricKey, OverviewResponse } from "./types";
 
 /**
- * Admin analytics Overview — clickable KPI tiles (live/DAU/WAU/MAU, today's
- * purchases/credits/new subs, 7-day landing & promo conversion), each opening
- * a trend drill-down, driven by GET /api/admin/analytics. Engagement and
- * conversion tiles come from PostHog and render a setup state until the
- * query-API envs exist. Mounted inside the admin dashboard's Overview
- * section; `onNavigate` lets the action-item cards switch dashboard sections.
+ * Admin analytics Overview — clickable KPI tiles (active users/DAU/WAU/MAU,
+ * today's purchases/credits/new subs, 30-day landing & promo conversion),
+ * each opening a trend drill-down, driven by GET /api/admin/analytics.
+ * Everything but the conversion tiles comes from our own database and always
+ * renders; the conversion pair needs Vercel Web Analytics and is omitted
+ * entirely when unavailable rather than shown empty. Mounted inside the admin
+ * dashboard's Overview section; `onNavigate` switches dashboard sections.
  */
 
 const fmtInt = (n: number | null | undefined) =>
@@ -40,24 +36,24 @@ const fmtPct = (n: number | null | undefined) =>
   n == null ? "—" : `${n.toFixed(n < 1 && n > 0 ? 2 : 1)}%`;
 
 const METRICS: Record<MetricKey, MetricConfig> = {
-  live: {
-    key: "live",
-    title: "Live Active Users",
+  active: {
+    key: "active",
+    title: "Active Users",
     description:
-      "Unique people (signed in or anonymous) with any activity in the last 5 minutes. Chart: unique visitors per hour. Source: PostHog.",
+      "Signed-in users with an active session in the last hour. Chart: distinct users per hour. Source: Supabase session activity.",
     ranges: [
       { id: "24h", label: "24H" },
       { id: "48h", label: "48H" },
       { id: "7d", label: "7D" },
     ],
     format: "int",
-    tooltipLabel: "visitors",
+    tooltipLabel: "users",
   },
   dau: {
     key: "dau",
     title: "Daily Active Users",
     description:
-      "Unique signed-in users with any activity that day. Source: PostHog.",
+      "Distinct users with an active signed-in session that day. Source: Supabase session activity.",
     ranges: [
       { id: "30d", label: "30D" },
       { id: "90d", label: "90D" },
@@ -70,7 +66,7 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     key: "wau",
     title: "Weekly Active Users",
     description:
-      "Unique signed-in users active in each week (Monday-start). The tile shows the rolling last 7 days. Source: PostHog.",
+      "Distinct users active in each week (Monday-start). The tile shows the rolling last 7 days.",
     ranges: [
       { id: "12w", label: "12W" },
       { id: "26w", label: "26W" },
@@ -83,7 +79,7 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     key: "mau",
     title: "Monthly Active Users",
     description:
-      "Unique signed-in users active in each calendar month. The tile shows the rolling last 30 days. Source: PostHog.",
+      "Distinct users active in each calendar month. The tile shows the rolling last 30 days.",
     ranges: [
       { id: "6m", label: "6M" },
       { id: "12m", label: "12M" },
@@ -138,11 +134,10 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     key: "landing_conversion",
     title: "Landing Page Conversion",
     description:
-      "Of unique landing-page (/) visitors each day, the share who signed up the same day. Source: PostHog.",
+      "Accounts created that day ÷ unique visitors to the landing page (/) that day. Visitors from Vercel Web Analytics, signups from the database.",
     ranges: [
       { id: "30d", label: "30D" },
       { id: "90d", label: "90D" },
-      { id: "180d", label: "180D" },
     ],
     format: "percent",
     tooltipLabel: "conversion",
@@ -151,11 +146,10 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     key: "promo_conversion",
     title: "VIP Promo Conversion",
     description:
-      "Of unique /promo offer viewers each day, the share who activated a paid subscription the same day. Source: PostHog.",
+      "First-month VIP subscriptions started that day ÷ unique visitors to /promo that day. Low traffic makes this figure noisy.",
     ranges: [
       { id: "30d", label: "30D" },
       { id: "90d", label: "90D" },
-      { id: "180d", label: "180D" },
     ],
     format: "percent",
     tooltipLabel: "conversion",
@@ -352,10 +346,8 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [openMetric, setOpenMetric] = useState<MetricKey | null>(null);
-  // Fresher live numbers from the 60s poll, layered over the last full load.
-  const [livePoll, setLivePoll] = useState<
-    (LiveNow & { series: SeriesPoint[] }) | null
-  >(null);
+  // Fresher active-user count from the 60s poll, layered over the last load.
+  const [activePoll, setActivePoll] = useState<number | null>(null);
   const hasDataRef = useRef(false);
 
   useEffect(() => {
@@ -371,7 +363,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
       })
       .then((json) => {
         setData(json);
-        setLivePoll(null);
+        setActivePoll(null);
         hasDataRef.current = true;
       })
       .catch((e: unknown) => {
@@ -388,27 +380,28 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
     return () => ctrl.abort();
   }, [reloadKey]);
 
-  // Keep the live tile current: one cheap trend query per minute, skipped in
-  // background tabs and while the live drill-down (which polls itself) is up.
-  const liveAvailable = !!data?.engagement.live;
+  // Keep the active-users tile current: one cheap query per minute, skipped
+  // in background tabs and while its drill-down (which polls itself) is open.
+  const hasData = !!data;
   useEffect(() => {
-    if (!liveAvailable) return;
+    if (!hasData) return;
     const timer = setInterval(async () => {
-      if (document.hidden || openMetric === "live") return;
+      if (document.hidden || openMetric === "active") return;
       try {
-        const res = await fetch("/api/admin/analytics/trend?metric=live&range=24h");
+        const res = await fetch(
+          "/api/admin/analytics/trend?metric=active&range=24h"
+        );
         if (!res.ok) return;
         const json = (await res.json()) as {
-          live?: LiveNow;
-          series: SeriesPoint[];
+          activeNow?: { current: number };
         };
-        if (json.live) setLivePoll({ ...json.live, series: json.series });
+        if (json.activeNow) setActivePoll(json.activeNow.current);
       } catch {
         // transient poll failure — the next tick retries
       }
     }, 60_000);
     return () => clearInterval(timer);
-  }, [liveAvailable, openMetric]);
+  }, [hasData, openMetric]);
 
   const retry = () => {
     setError(null);
@@ -442,10 +435,9 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
 
   if (!data) return null;
 
-  const { engagement, commerce, conversion, posthog } = data;
-  const live = livePoll ?? engagement.live;
-  const needsPosthog = !posthog.configured;
-  const posthogNote = needsPosthog ? "Requires PostHog setup" : "Unavailable";
+  const { engagement, commerce, conversion } = data;
+  const activeNow = activePoll ?? engagement.activeNow.current;
+  const hasConversion = !!(conversion.landing || conversion.promo);
 
   const updatedAt = new Date(data.generatedAt).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -480,35 +472,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
         </div>
       </div>
 
-      {/* PostHog setup / partial-failure notices */}
-      {needsPosthog && (
-        <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3 mb-4">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-sm text-amber-200/90">
-            Active-user and conversion metrics need the PostHog query API. Set{" "}
-            <code className="text-amber-100">POSTHOG_PERSONAL_API_KEY</code> (a
-            personal API key with Query read access) and{" "}
-            <code className="text-amber-100">POSTHOG_PROJECT_ID</code> in
-            Vercel, then redeploy. Purchases, credits and subscribers below
-            come from the database and work now.
-          </p>
-        </div>
-      )}
-      {!needsPosthog && posthog.errors.length > 0 && (
-        <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2.5 mb-4">
-          <p className="text-sm text-red-400">
-            Some PostHog metrics failed: {posthog.errors[0]}
-          </p>
-          <button
-            type="button"
-            onClick={retry}
-            className="inline-flex items-center gap-1.5 text-sm text-white hover:text-[#39b54a] shrink-0"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Retry
-          </button>
-        </div>
-      )}
+      {/* A refresh failed but stale numbers are still on screen */}
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2.5 mb-4">
           <p className="text-sm text-red-400">{error}</p>
@@ -533,59 +497,39 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
           <SectionLabel>Active Users</SectionLabel>
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
             <StatCard
-              label="Live Now"
-              live={!!live}
-              value={live ? fmtInt(live.total) : "—"}
-              series={live?.series}
-              note={
-                live
-                  ? `${fmtInt(live.identified)} signed in · last ${live.windowMinutes} min`
-                  : posthogNote
-              }
-              onClick={live ? () => setOpenMetric("live") : undefined}
+              label="Active Now"
+              live
+              value={fmtInt(activeNow)}
+              series={engagement.activeNow.series}
+              note={`signed-in sessions · last ${engagement.activeNow.windowMinutes} min`}
+              onClick={() => setOpenMetric("active")}
             />
             <StatCard
               label="Daily Active Users"
-              value={engagement.dau ? fmtInt(engagement.dau.today) : "—"}
-              delta={
-                engagement.dau
-                  ? pctDelta(engagement.dau.today, engagement.dau.yesterday)
-                  : undefined
-              }
+              value={fmtInt(engagement.dau.today)}
+              delta={pctDelta(engagement.dau.today, engagement.dau.yesterday)}
               deltaTitle="vs yesterday (full day)"
-              series={engagement.dau?.series}
-              note={
-                engagement.dau
-                  ? `today so far · yesterday ${fmtInt(engagement.dau.yesterday)}`
-                  : posthogNote
-              }
-              onClick={engagement.dau ? () => setOpenMetric("dau") : undefined}
+              series={engagement.dau.series}
+              note={`today so far · yesterday ${fmtInt(engagement.dau.yesterday)}`}
+              onClick={() => setOpenMetric("dau")}
             />
             <StatCard
               label="Weekly Active Users"
-              value={engagement.wau ? fmtInt(engagement.wau.current) : "—"}
-              delta={
-                engagement.wau
-                  ? pctDelta(engagement.wau.current, engagement.wau.previous)
-                  : undefined
-              }
+              value={fmtInt(engagement.wau.current)}
+              delta={pctDelta(engagement.wau.current, engagement.wau.previous)}
               deltaTitle="vs previous 7 days"
-              series={engagement.wau?.series}
-              note={engagement.wau ? "rolling 7 days" : posthogNote}
-              onClick={engagement.wau ? () => setOpenMetric("wau") : undefined}
+              series={engagement.wau.series}
+              note="rolling 7 days"
+              onClick={() => setOpenMetric("wau")}
             />
             <StatCard
               label="Monthly Active Users"
-              value={engagement.mau ? fmtInt(engagement.mau.current) : "—"}
-              delta={
-                engagement.mau
-                  ? pctDelta(engagement.mau.current, engagement.mau.previous)
-                  : undefined
-              }
+              value={fmtInt(engagement.mau.current)}
+              delta={pctDelta(engagement.mau.current, engagement.mau.previous)}
               deltaTitle="vs previous 30 days"
-              series={engagement.mau?.series}
-              note={engagement.mau ? "rolling 30 days" : posthogNote}
-              onClick={engagement.mau ? () => setOpenMetric("mau") : undefined}
+              series={engagement.mau.series}
+              note="rolling 30 days"
+              onClick={() => setOpenMetric("mau")}
             />
           </div>
         </section>
@@ -624,60 +568,42 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
           </div>
         </section>
 
-        {/* Conversion */}
-        <section>
-          <SectionLabel>Conversion · Last 7 Days</SectionLabel>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <StatCard
-              label="Landing Page → Signup"
-              value={conversion.landing ? fmtPct(conversion.landing.window.ratePct) : "—"}
-              delta={
-                conversion.landing
-                  ? pctDelta(
-                      conversion.landing.window.ratePct,
-                      conversion.landing.window.prevRatePct
-                    )
-                  : undefined
-              }
-              deltaTitle="vs previous 7 days (relative)"
-              series={conversion.landing?.series}
-              note={
-                conversion.landing
-                  ? `${fmtInt(conversion.landing.window.visitors)} visitors → ${fmtInt(conversion.landing.window.conversions)} signups`
-                  : posthogNote
-              }
-              onClick={
-                conversion.landing
-                  ? () => setOpenMetric("landing_conversion")
-                  : undefined
-              }
-            />
-            <StatCard
-              label="VIP Promo → Paid Sub"
-              value={conversion.promo ? fmtPct(conversion.promo.window.ratePct) : "—"}
-              delta={
-                conversion.promo
-                  ? pctDelta(
-                      conversion.promo.window.ratePct,
-                      conversion.promo.window.prevRatePct
-                    )
-                  : undefined
-              }
-              deltaTitle="vs previous 7 days (relative)"
-              series={conversion.promo?.series}
-              note={
-                conversion.promo
-                  ? `${fmtInt(conversion.promo.window.visitors)} viewers → ${fmtInt(conversion.promo.window.conversions)} activations`
-                  : posthogNote
-              }
-              onClick={
-                conversion.promo
-                  ? () => setOpenMetric("promo_conversion")
-                  : undefined
-              }
-            />
-          </div>
-        </section>
+        {/* Conversion — only when Vercel Analytics answered */}
+        {hasConversion && (
+          <section>
+            <SectionLabel>Conversion · Last 30 Days</SectionLabel>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {conversion.landing && (
+                <StatCard
+                  label="Landing Page → Signup"
+                  value={fmtPct(conversion.landing.window.ratePct)}
+                  delta={pctDelta(
+                    conversion.landing.window.ratePct,
+                    conversion.landing.window.prevRatePct
+                  )}
+                  deltaTitle="vs previous 30 days (relative)"
+                  series={conversion.landing.series}
+                  note={`${fmtInt(conversion.landing.window.visitors)} visitors → ${fmtInt(conversion.landing.window.conversions)} signups`}
+                  onClick={() => setOpenMetric("landing_conversion")}
+                />
+              )}
+              {conversion.promo && (
+                <StatCard
+                  label="VIP Promo → Paid Sub"
+                  value={fmtPct(conversion.promo.window.ratePct)}
+                  delta={pctDelta(
+                    conversion.promo.window.ratePct,
+                    conversion.promo.window.prevRatePct
+                  )}
+                  deltaTitle="vs previous 30 days (relative)"
+                  series={conversion.promo.series}
+                  note={`${fmtInt(conversion.promo.window.visitors)} visitors → ${fmtInt(conversion.promo.window.conversions)} activations`}
+                  onClick={() => setOpenMetric("promo_conversion")}
+                />
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Action items */}
         <section>
@@ -704,10 +630,20 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
           </div>
         </section>
 
-        <p className="text-xs text-[#666]">
-          Purchases, credits and subscribers come from the app database
-          (UTC days); active users and conversion come from PostHog.
-        </p>
+        <div className="text-xs text-[#666] space-y-1">
+          <p>
+            Active users come from signed-in session activity; purchases,
+            credits and subscribers from the app database (UTC days).
+          </p>
+          {/* Quiet, not alarming: the page is complete without this. */}
+          {!hasConversion && (
+            <p>
+              {conversion.error
+                ? `Conversion rates unavailable: ${conversion.error}`
+                : "Conversion rates need visitor counts — set VERCEL_ANALYTICS_TOKEN to add them."}
+            </p>
+          )}
+        </div>
       </div>
 
       {openMetric && (

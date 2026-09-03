@@ -2,44 +2,36 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import {
-  fetchActiveUserWindows,
+  fetchActiveUserSeries,
+  fetchActiveUserStats,
   fetchCommerceStats,
-  fetchConversionDaily,
-  fetchConversionWindows,
-  fetchDauSeries,
-  fetchLiveNow,
-  fetchLiveSeries,
-  fetchMauSeries,
-  fetchWauSeries,
+  fetchConversion,
+  type ConversionPoint,
+  type ConversionWindow,
 } from "@/lib/adminAnalytics";
-import { posthogQueryConfigured } from "@/lib/posthogQuery";
+import { vercelAnalyticsConfigured } from "@/lib/vercelAnalytics";
 
 /**
  * GET /api/admin/analytics — overview payload for the admin analytics
  * dashboard (ADMIN only).
  *
- * One fixed shape, no range param: every tile owns its natural window (live =
- * last 5 min, DAU = today, WAU/MAU = rolling 7/30 days, commerce = today,
- * conversion = rolling 7 days) and the drill-down trend endpoint
- * (/api/admin/analytics/trend) owns longer horizons.
+ * One fixed shape, no range param: every tile owns its natural window
+ * (active-now = last hour, DAU = today, WAU/MAU = rolling 7/30 days,
+ * commerce = today, conversion = rolling 30 days) and the drill-down trend
+ * endpoint (/api/admin/analytics/trend) owns longer horizons.
  *
- * PostHog-backed sections (engagement, conversion) come from the HogQL query
- * API and need POSTHOG_PERSONAL_API_KEY + POSTHOG_PROJECT_ID. Without them —
- * or when individual queries fail — those sections are null and the client
- * renders a setup/error state; DB-backed sections always load. Failures are
- * isolated per metric via allSettled so one slow query can't blank the page.
+ * Everything except the conversion tiles comes from our own database and
+ * always works. Conversion needs visitor counts from the Vercel Web
+ * Analytics API (VERCEL_ANALYTICS_TOKEN); without it — or if that API errors
+ * — `conversion` is null and the client simply omits those two tiles rather
+ * than showing empty ones.
  */
 
-// Nine PostHog queries fan out in parallel; leave headroom over the default
-// serverless timeout for a cold ClickHouse cache.
 export const maxDuration = 30;
 
-function settle<T>(r: PromiseSettledResult<T>, errors: string[]): T | null {
-  if (r.status === "fulfilled") return r.value;
-  const msg =
-    r.reason instanceof Error ? r.reason.message : "PostHog query failed";
-  if (!errors.includes(msg)) errors.push(msg);
-  return null;
+interface ConversionPayload {
+  window: ConversionWindow;
+  series: ConversionPoint[];
 }
 
 export async function GET() {
@@ -62,101 +54,87 @@ export async function GET() {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    const configured = posthogQueryConfigured();
-    const errors: string[] = [];
+    const conversionConfigured = vercelAnalyticsConfigured();
 
-    const dbWork = Promise.all([
+    const [
+      activeStats,
+      activeSeries,
+      commerce,
+      pendingApplications,
+      samplesInReview,
+      presetsInReview,
+      conversions,
+    ] = await Promise.all([
+      fetchActiveUserStats(),
+      // Sparkline for the DAU tile; the other active tiles reuse it at their
+      // own granularity from the trend endpoint when opened.
+      Promise.all([
+        fetchActiveUserSeries("hour", 24),
+        fetchActiveUserSeries("day", 30),
+        fetchActiveUserSeries("week", 12),
+        fetchActiveUserSeries("month", 12),
+      ]),
       fetchCommerceStats(30),
       prisma.creatorApplication.count({ where: { status: "PENDING" } }),
       prisma.sample.count({ where: { status: "REVIEW" } }),
       prisma.preset.count({ where: { status: "REVIEW" } }),
+      // Isolated: a Vercel Analytics outage must not blank the whole page.
+      conversionConfigured
+        ? Promise.allSettled([
+            fetchConversion("landing", 30),
+            fetchConversion("promo", 30),
+          ])
+        : Promise.resolve(null),
     ]);
 
-    const posthogWork = configured
-      ? Promise.allSettled([
-          fetchLiveNow(),
-          fetchLiveSeries(24),
-          fetchActiveUserWindows(),
-          fetchDauSeries(30),
-          fetchWauSeries(12),
-          fetchMauSeries(12),
-          fetchConversionWindows(),
-          fetchConversionDaily("landing", 30),
-          fetchConversionDaily("promo", 30),
-        ])
-      : null;
+    const [nowSeries, daySeries, weekSeries, monthSeries] = activeSeries;
 
-    const [[commerce, pendingApplications, samplesInReview, presetsInReview], ph] =
-      await Promise.all([dbWork, posthogWork]);
+    let conversionError: string | null = null;
+    const settled = (
+      r: PromiseSettledResult<ConversionPayload> | undefined
+    ): ConversionPayload | null => {
+      if (!r) return null;
+      if (r.status === "fulfilled") return r.value;
+      const msg =
+        r.reason instanceof Error ? r.reason.message : "Conversion query failed";
+      conversionError ??= msg;
+      return null;
+    };
 
-    let engagement: {
-      live:
-        | { total: number; identified: number; windowMinutes: number; series: unknown }
-        | null;
-      dau: { today: number; yesterday: number; series: unknown } | null;
-      wau: { current: number; previous: number; series: unknown } | null;
-      mau: { current: number; previous: number; series: unknown } | null;
-    } = { live: null, dau: null, wau: null, mau: null };
-    let conversion: {
-      landing: { window: unknown; series: unknown } | null;
-      promo: { window: unknown; series: unknown } | null;
-    } = { landing: null, promo: null };
-
-    if (ph) {
-      const [
-        liveNow,
-        liveSeries,
-        windows,
-        dauSeries,
-        wauSeries,
-        mauSeries,
-        convWindows,
-        landingDaily,
-        promoDaily,
-      ] = ph;
-      const live = settle(liveNow, errors);
-      const win = settle(windows, errors);
-      const conv = settle(convWindows, errors);
-      engagement = {
-        live: live ? { ...live, series: settle(liveSeries, errors) ?? [] } : null,
-        dau: win
-          ? {
-              today: win.dauToday,
-              yesterday: win.dauYesterday,
-              series: settle(dauSeries, errors) ?? [],
-            }
-          : null,
-        wau: win
-          ? {
-              current: win.wauCurrent,
-              previous: win.wauPrevious,
-              series: settle(wauSeries, errors) ?? [],
-            }
-          : null,
-        mau: win
-          ? {
-              current: win.mauCurrent,
-              previous: win.mauPrevious,
-              series: settle(mauSeries, errors) ?? [],
-            }
-          : null,
-      };
-      conversion = {
-        landing: conv
-          ? { window: conv.landing, series: settle(landingDaily, errors) ?? [] }
-          : null,
-        promo: conv
-          ? { window: conv.promo, series: settle(promoDaily, errors) ?? [] }
-          : null,
-      };
-    }
+    const landing = settled(conversions?.[0]);
+    const promo = settled(conversions?.[1]);
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      posthog: { configured, errors },
-      engagement,
+      engagement: {
+        activeNow: {
+          current: activeStats.activeNow,
+          windowMinutes: activeStats.activeWindowMinutes,
+          series: nowSeries,
+        },
+        dau: {
+          today: activeStats.dauToday,
+          yesterday: activeStats.dauYesterday,
+          series: daySeries,
+        },
+        wau: {
+          current: activeStats.wauCurrent,
+          previous: activeStats.wauPrevious,
+          series: weekSeries,
+        },
+        mau: {
+          current: activeStats.mauCurrent,
+          previous: activeStats.mauPrevious,
+          series: monthSeries,
+        },
+      },
       commerce,
-      conversion,
+      conversion: {
+        configured: conversionConfigured,
+        error: conversionError,
+        landing,
+        promo,
+      },
       actionItems: { pendingApplications, samplesInReview, presetsInReview },
     });
   } catch (error) {

@@ -15,12 +15,6 @@ export interface ConversionPoint extends SeriesPoint {
   conversions: number;
 }
 
-export interface LiveNow {
-  total: number;
-  identified: number;
-  windowMinutes: number;
-}
-
 export interface ConversionWindow {
   visitors: number;
   conversions: number;
@@ -28,6 +22,11 @@ export interface ConversionWindow {
   prevVisitors: number;
   prevConversions: number;
   prevRatePct: number | null;
+}
+
+export interface ConversionPayload {
+  window: ConversionWindow;
+  series: ConversionPoint[];
 }
 
 export interface DailyMetric {
@@ -39,12 +38,11 @@ export interface DailyMetric {
 
 export interface OverviewResponse {
   generatedAt: string;
-  posthog: { configured: boolean; errors: string[] };
   engagement: {
-    live: (LiveNow & { series: SeriesPoint[] }) | null;
-    dau: { today: number; yesterday: number; series: SeriesPoint[] } | null;
-    wau: { current: number; previous: number; series: SeriesPoint[] } | null;
-    mau: { current: number; previous: number; series: SeriesPoint[] } | null;
+    activeNow: { current: number; windowMinutes: number; series: SeriesPoint[] };
+    dau: { today: number; yesterday: number; series: SeriesPoint[] };
+    wau: { current: number; previous: number; series: SeriesPoint[] };
+    mau: { current: number; previous: number; series: SeriesPoint[] };
   };
   commerce: {
     purchases: DailyMetric;
@@ -52,8 +50,10 @@ export interface OverviewResponse {
     subs: DailyMetric & { activeTotal: number };
   };
   conversion: {
-    landing: { window: ConversionWindow; series: ConversionPoint[] } | null;
-    promo: { window: ConversionWindow; series: ConversionPoint[] } | null;
+    configured: boolean;
+    error: string | null;
+    landing: ConversionPayload | null;
+    promo: ConversionPayload | null;
   };
   actionItems: {
     pendingApplications: number;
@@ -63,7 +63,7 @@ export interface OverviewResponse {
 }
 
 export type MetricKey =
-  | "live"
+  | "active"
   | "dau"
   | "wau"
   | "mau"
@@ -78,6 +78,6 @@ export interface TrendResponse {
   range: string;
   granularity: Granularity;
   series: SeriesPoint[] | ConversionPoint[];
-  /** Present on metric=live — current 5-minute headcount. */
-  live?: LiveNow;
+  /** Present on metric=active — current headcount for the tile. */
+  activeNow?: { current: number; windowMinutes: number };
 }
