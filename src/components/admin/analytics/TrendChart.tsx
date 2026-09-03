@@ -19,7 +19,8 @@ interface TrendChartProps {
  * Line+area chart with hover tooltip, modeled on creator/EarningsChart.
  * Hover targets are full-height invisible columns so dense series (90 daily
  * points) stay easy to inspect; visible dots only appear on sparse series.
- * null values are "no data" and render as line gaps rather than dips to 0.
+ * null values are "no data": they carry no marker and never dip the line to
+ * zero, but the line is drawn continuously through them (see below).
  */
 export function TrendChart({
   data,
@@ -52,32 +53,25 @@ export function TrendChart({
     data.length === 1 ? W / 2 : i * STEP + STEP / 2;
   const y = (v: number) => PLOT - (v / max) * (PLOT - 10);
 
-  // Contiguous runs of non-null indices — each run is its own subpath so
-  // null buckets show as gaps.
-  const segments: number[][] = [];
-  let run: number[] = [];
-  data.forEach((d, i) => {
-    if (d.value == null) {
-      if (run.length) segments.push(run);
-      run = [];
-    } else {
-      run.push(i);
-    }
-  });
-  if (run.length) segments.push(run);
+  // A bucket with no denominator (a day nobody visited the page) has no
+  // meaningful rate, so its value is null. Breaking the line at every one of
+  // them turns a sparse series into unreadable confetti, so the line is drawn
+  // as ONE continuous path through the buckets that do have values. Nothing
+  // is invented: no marker is placed on a null bucket, and hovering one still
+  // reports it honestly ("0 visitors").
+  const filled = data
+    .map((d, i) => ({ i, v: d.value }))
+    .filter((p): p is { i: number; v: number } => p.v != null);
 
-  const pt = (i: number) => `${x(i)} ${y(data[i].value as number)}`;
-  const line = segments
-    .map((seg) => seg.map((i, j) => `${j === 0 ? "M" : "L"} ${pt(i)}`).join(" "))
+  const pt = (p: { i: number; v: number }) => `${x(p.i)} ${y(p.v)}`;
+  const line = filled
+    .map((p, j) => `${j === 0 ? "M" : "L"} ${pt(p)}`)
     .join(" ");
-  const area = segments
-    .map(
-      (seg) =>
-        `M ${x(seg[0])} ${PLOT} ${seg
-          .map((i) => `L ${pt(i)}`)
-          .join(" ")} L ${x(seg[seg.length - 1])} ${PLOT} Z`
-    )
-    .join(" ");
+  const area = filled.length
+    ? `M ${x(filled[0].i)} ${PLOT} ${filled
+        .map((p) => `L ${pt(p)}`)
+        .join(" ")} L ${x(filled[filled.length - 1].i)} ${PLOT} Z`
+    : "";
 
   // Keep the tooltip inside the container near the edges.
   const tooltipLeftPct =
