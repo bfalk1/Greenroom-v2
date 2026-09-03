@@ -37,7 +37,12 @@ export interface ConversionPoint {
 // person_profiles is "identified_only", so anonymous visitors have no person
 // row and no email — this cleanly restricts active-user counts to signed-in
 // users while conversion denominators (below) still count anonymous traffic.
-const IDENTIFIED = "person.properties.email IS NOT NULL";
+// Parenthesised: this is interpolated both into WHERE chains and into
+// uniqIf() predicates. A missing property can come back as an empty
+// string rather than NULL, which would silently count anonymous
+// visitors as signed-in users, so both are excluded.
+const IDENTIFIED =
+  "(person.properties.email IS NOT NULL AND person.properties.email != '')";
 
 // The two funnels. Denominator/numerator conditions are same-day per person:
 // "of the people who saw the page that day, how many converted that day".
