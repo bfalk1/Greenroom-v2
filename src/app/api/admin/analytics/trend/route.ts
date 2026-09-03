@@ -2,36 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import {
-  fetchConversionDaily,
-  fetchDauSeries,
+  fetchActiveUserSeries,
+  fetchActiveUserStats,
+  fetchConversion,
   fetchDbTrendSeries,
-  fetchLiveNow,
-  fetchLiveSeries,
-  fetchMauSeries,
-  fetchWauSeries,
+  fetchSignupConversionSeries,
   type ConversionPoint,
   type Granularity,
-  type LiveNow,
   type SeriesPoint,
 } from "@/lib/adminAnalytics";
 import {
-  PosthogNotConfiguredError,
-  PosthogQueryError,
-} from "@/lib/posthogQuery";
+  VercelAnalyticsError,
+  VercelAnalyticsNotConfiguredError,
+} from "@/lib/vercelAnalytics";
 
 /**
  * GET /api/admin/analytics/trend?metric=<key>&range=<key> — a single metric's
  * time series for the dashboard's drill-down view (ADMIN only).
  *
- * Each metric whitelists its own ranges (first entry = default). `live` also
- * returns the current 5-minute headcount — the overview polls this endpoint
- * for the live tile, so tile and drill-down share one query path.
+ * Each metric whitelists its own ranges (first entry = default). `active`
+ * also returns the current headcount, so the overview tile and its
+ * drill-down share one query path.
  */
 
 export const maxDuration = 30;
 
 type MetricKey =
-  | "live"
+  | "active"
   | "dau"
   | "wau"
   | "mau"
@@ -39,19 +36,29 @@ type MetricKey =
   | "credits"
   | "subs"
   | "landing_conversion"
-  | "promo_conversion";
+  | "promo_conversion"
+  | "signup_conversion";
 
 // range key → interval count in the metric's own unit (null = all time).
 const RANGES: Record<MetricKey, Record<string, number | null>> = {
-  live: { "24h": 24, "48h": 48, "7d": 168 },
+  active: { "24h": 24, "48h": 48, "7d": 168 },
   dau: { "30d": 30, "90d": 90, "180d": 180 },
   wau: { "12w": 12, "26w": 26, "52w": 52 },
   mau: { "6m": 6, "12m": 12, "24m": 24 },
   purchases: { "30d": 30, "90d": 90, "180d": 180, all: null },
   credits: { "30d": 30, "90d": 90, "180d": 180, all: null },
   subs: { "30d": 30, "90d": 90, "180d": 180, all: null },
-  landing_conversion: { "30d": 30, "90d": 90, "180d": 180 },
-  promo_conversion: { "30d": 30, "90d": 90, "180d": 180 },
+  landing_conversion: { "30d": 30, "90d": 90 },
+  promo_conversion: { "30d": 30, "90d": 90 },
+  // Weekly cohorts: daily signup cohorts are mostly noise at this volume.
+  signup_conversion: { "12w": 12, "26w": 26, "52w": 52, all: null },
+};
+
+const GRANULARITY: Partial<Record<MetricKey, Granularity>> = {
+  active: "hour",
+  dau: "day",
+  wau: "week",
+  mau: "month",
 };
 
 export async function GET(request: NextRequest) {
@@ -88,37 +95,39 @@ export async function GET(request: NextRequest) {
 
     let granularity: Granularity;
     let series: SeriesPoint[] | ConversionPoint[];
-    let live: LiveNow | undefined;
+    let activeNow: { current: number; windowMinutes: number } | undefined;
 
     switch (metric) {
-      case "live": {
-        granularity = "hour";
-        [series, live] = await Promise.all([
-          fetchLiveSeries(n as number),
-          fetchLiveNow(),
-        ]);
+      case "active":
+      case "dau":
+      case "wau":
+      case "mau": {
+        granularity = GRANULARITY[metric] as Granularity;
+        series = await fetchActiveUserSeries(granularity, n as number);
+        if (metric === "active") {
+          const stats = await fetchActiveUserStats();
+          activeNow = {
+            current: stats.activeNow,
+            windowMinutes: stats.activeWindowMinutes,
+          };
+        }
         break;
       }
-      case "dau":
-        granularity = "day";
-        series = await fetchDauSeries(n as number);
-        break;
-      case "wau":
+      case "signup_conversion": {
         granularity = "week";
-        series = await fetchWauSeries(n as number);
+        series = await fetchSignupConversionSeries(n);
         break;
-      case "mau":
-        granularity = "month";
-        series = await fetchMauSeries(n as number);
-        break;
+      }
       case "landing_conversion":
-      case "promo_conversion":
+      case "promo_conversion": {
         granularity = "day";
-        series = await fetchConversionDaily(
+        const result = await fetchConversion(
           metric === "landing_conversion" ? "landing" : "promo",
           n as number
         );
+        series = result.series;
         break;
+      }
       default: {
         const db = await fetchDbTrendSeries(metric, n);
         granularity = db.granularity;
@@ -131,16 +140,16 @@ export async function GET(request: NextRequest) {
       range,
       granularity,
       series,
-      ...(live ? { live } : {}),
+      ...(activeNow ? { activeNow } : {}),
     });
   } catch (error) {
-    if (error instanceof PosthogNotConfiguredError) {
+    if (error instanceof VercelAnalyticsNotConfiguredError) {
       return NextResponse.json(
-        { error: "posthog_not_configured" },
+        { error: "vercel_analytics_not_configured" },
         { status: 503 }
       );
     }
-    if (error instanceof PosthogQueryError) {
+    if (error instanceof VercelAnalyticsError) {
       return NextResponse.json({ error: error.message }, { status: 502 });
     }
     console.error("GET /api/admin/analytics/trend error:", error);

@@ -1,52 +1,68 @@
 /**
- * Read-only smoke test for the admin analytics dashboard's data layer
- * (src/lib/adminAnalytics.ts). DB-backed metrics always run; PostHog-backed
- * metrics run only when POSTHOG_PERSONAL_API_KEY + POSTHOG_PROJECT_ID are set
- * (run it again after creating the key to validate the HogQL side).
+ * Read-only smoke test for the admin analytics data layer
+ * (src/lib/adminAnalytics.ts). Database metrics — active users, purchases,
+ * credits, subscribers — always run. The conversion metrics additionally
+ * need VERCEL_ANALYTICS_TOKEN and are skipped without it.
  *
  * Usage (repo root — .env holds the production DATABASE_URL):
  *   /opt/homebrew/opt/node@20/bin/node --env-file=.env \
  *     node_modules/tsx/dist/cli.mjs --tsconfig ./tsconfig.json \
  *     scripts/verify-admin-analytics.ts
+ *
+ * Add a second --env-file, or prefix VERCEL_ANALYTICS_TOKEN=..., to exercise
+ * the conversion queries too.
  */
 
 import {
-  fetchActiveUserWindows,
+  fetchActiveUserSeries,
+  fetchActiveUserStats,
   fetchCommerceStats,
-  fetchConversionDaily,
-  fetchConversionWindows,
-  fetchDauSeries,
+  fetchConversion,
   fetchDbTrendSeries,
-  fetchLiveNow,
-  fetchLiveSeries,
-  fetchMauSeries,
-  fetchWauSeries,
+  fetchSignupConversion,
+  fetchSignupConversionSeries,
   type SeriesPoint,
 } from "../src/lib/adminAnalytics";
-import { posthogQueryConfigured } from "../src/lib/posthogQuery";
+import { vercelAnalyticsConfigured } from "../src/lib/vercelAnalytics";
 import { prisma } from "../src/lib/prisma";
 
 function edges(series: SeriesPoint[]): string {
   if (!series.length) return "(empty)";
-  const first = series[0];
   const last = series[series.length - 1];
   const nonZero = series.filter((p) => (p.value ?? 0) > 0).length;
-  return `${series.length} pts [${first.date} … ${last.date}], ${nonZero} non-zero, last=${last.value}`;
+  return `${series.length} pts [${series[0].date} … ${last.date}], ${nonZero} non-zero, last=${last.value}`;
 }
 
 async function main() {
-  console.log("── DB metrics (Prisma) ──");
+  console.log("── Active users (Supabase auth session history) ──");
+  const active = await fetchActiveUserStats();
+  console.log(
+    `active last ${active.activeWindowMinutes}m=${active.activeNow} | ` +
+      `DAU ${active.dauToday} (yest ${active.dauYesterday}) | ` +
+      `WAU ${active.wauCurrent} (prev ${active.wauPrevious}) | ` +
+      `MAU ${active.mauCurrent} (prev ${active.mauPrevious})`
+  );
+  for (const [g, n] of [
+    ["hour", 24],
+    ["day", 30],
+    ["week", 12],
+    ["month", 12],
+  ] as const) {
+    console.log(`${g} x${n}: ${edges(await fetchActiveUserSeries(g, n))}`);
+  }
+
+  console.log("\n── Commerce (app database) ──");
   const commerce = await fetchCommerceStats(30);
   for (const key of ["purchases", "credits", "subs"] as const) {
     const m = commerce[key];
     console.log(
-      `${key}: today=${m.today} yesterday=${m.yesterday} last7=${m.last7} series ${edges(m.series)}`
+      `${key}: today=${m.today} yesterday=${m.yesterday} last7=${m.last7} | ${edges(m.series)}`
     );
   }
   console.log(`subs activeTotal=${commerce.subs.activeTotal}`);
 
   // Cross-check: the all-time weekly series must sum to the table's own
-  // totals — catches bucket-alignment bugs that drop rows.
+  // totals — catches bucket-alignment bugs that silently drop rows.
   const expectedTotals = {
     purchases: await prisma.purchase.count(),
     credits:
@@ -55,46 +71,43 @@ async function main() {
     subs: await prisma.subscription.count(),
   };
   for (const metric of ["purchases", "credits", "subs"] as const) {
-    const t90 = await fetchDbTrendSeries(metric, 90);
-    const tall = await fetchDbTrendSeries(metric, null);
-    console.log(`trend ${metric} 90d (${t90.granularity}): ${edges(t90.series)}`);
-    console.log(`trend ${metric} all (${tall.granularity}): ${edges(tall.series)}`);
-    const sum = tall.series.reduce((s, p) => s + (p.value ?? 0), 0);
+    const all = await fetchDbTrendSeries(metric, null);
+    const sum = all.series.reduce((s, p) => s + (p.value ?? 0), 0);
     const expected = expectedTotals[metric];
     console.log(
-      `  all-time sum ${sum} vs table total ${expected} → ${sum === expected ? "OK" : "MISMATCH"}`
+      `trend ${metric} all (${all.granularity}): ${edges(all.series)}\n` +
+        `  all-time sum ${sum} vs table total ${expected} → ${sum === expected ? "OK" : "MISMATCH"}`
     );
   }
 
-  if (!posthogQueryConfigured()) {
+  console.log("\n── Signup → paid conversion (database) ──");
+  const signup = await fetchSignupConversion(30);
+  console.log(
+    `last 30d: ${signup.conversions}/${signup.visitors} = ${signup.ratePct?.toFixed(1) ?? "—"}% ` +
+      `(prev ${signup.prevConversions}/${signup.prevVisitors} = ${signup.prevRatePct?.toFixed(1) ?? "—"}%)`
+  );
+  for (const p of (await fetchSignupConversionSeries(10)).slice(-10)) {
     console.log(
-      "\n── PostHog metrics skipped (set POSTHOG_PERSONAL_API_KEY + POSTHOG_PROJECT_ID to test) ──"
+      `  ${p.date}: ${p.conversions}/${p.visitors} = ${p.value?.toFixed(1) ?? "—"}%`
+    );
+  }
+
+  if (!vercelAnalyticsConfigured()) {
+    console.log(
+      "\n── Conversion skipped (set VERCEL_ANALYTICS_TOKEN to test) ──"
     );
     return;
   }
 
-  console.log("\n── PostHog metrics (HogQL) ──");
-  const liveNow = await fetchLiveNow();
-  console.log(`live now: total=${liveNow.total} identified=${liveNow.identified}`);
-  console.log(`live 24h: ${edges(await fetchLiveSeries(24))}`);
-  const win = await fetchActiveUserWindows();
-  console.log(
-    `windows: dau ${win.dauToday}/${win.dauYesterday} wau ${win.wauCurrent}/${win.wauPrevious} mau ${win.mauCurrent}/${win.mauPrevious}`
-  );
-  console.log(`dau 30d: ${edges(await fetchDauSeries(30))}`);
-  console.log(`wau 12w: ${edges(await fetchWauSeries(12))}`);
-  console.log(`mau 12m: ${edges(await fetchMauSeries(12))}`);
-  const convWin = await fetchConversionWindows();
-  console.log(
-    `landing 7d: ${convWin.landing.conversions}/${convWin.landing.visitors} (${convWin.landing.ratePct?.toFixed(2)}%) prev ${convWin.landing.prevConversions}/${convWin.landing.prevVisitors}`
-  );
-  console.log(
-    `promo 7d: ${convWin.promo.conversions}/${convWin.promo.visitors} (${convWin.promo.ratePct?.toFixed(2)}%) prev ${convWin.promo.prevConversions}/${convWin.promo.prevVisitors}`
-  );
-  const landing = await fetchConversionDaily("landing", 30);
-  const promo = await fetchConversionDaily("promo", 30);
-  console.log(`landing daily 30d: ${edges(landing)}`);
-  console.log(`promo daily 30d: ${edges(promo)}`);
+  console.log("\n── Conversion (Vercel visitors + DB conversions) ──");
+  for (const kind of ["landing", "promo"] as const) {
+    const { window: w, series } = await fetchConversion(kind, 30);
+    console.log(
+      `${kind}: ${w.conversions}/${w.visitors} = ${w.ratePct?.toFixed(2) ?? "—"}% ` +
+        `(prev ${w.prevConversions}/${w.prevVisitors} = ${w.prevRatePct?.toFixed(2) ?? "—"}%)`
+    );
+    console.log(`  series: ${edges(series)}`);
+  }
 }
 
 main()

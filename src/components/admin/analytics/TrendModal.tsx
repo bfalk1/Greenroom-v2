@@ -27,6 +27,11 @@ export interface MetricConfig {
   format: "int" | "percent";
   /** Series noun for the chart tooltip ("users", "purchases"…). */
   tooltipLabel: string;
+  /**
+   * What the conversion denominator is called. Defaults to "visitors";
+   * signup → paid counts signups, not page visitors.
+   */
+  denominatorLabel?: string;
 }
 
 const fmtInt = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -102,8 +107,8 @@ export function TrendModal({
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(
-            body?.error === "posthog_not_configured"
-              ? "PostHog query API is not configured"
+            body?.error === "vercel_analytics_not_configured"
+              ? "Vercel Analytics token is not configured"
               : body?.error || `Request failed (${res.status})`
           );
         }
@@ -129,7 +134,7 @@ export function TrendModal({
 
   // The live view keeps itself fresh while open (skipped in background tabs).
   useEffect(() => {
-    if (config.key !== "live") return;
+    if (config.key !== "active") return;
     const timer = setInterval(() => {
       if (!document.hidden) void load(undefined, true);
     }, 60_000);
@@ -153,11 +158,12 @@ export function TrendModal({
   const formatValue = config.format === "percent" ? fmtPct : fmtInt;
   const series = data?.series ?? [];
   const conversion = data && isConversionSeries(series) ? series : null;
+  const denominator = config.denominatorLabel ?? "visitors";
   const chartData = conversion
     ? conversion.map((p) => ({
         date: p.date,
         value: p.value,
-        detail: `${fmtInt(p.visitors)} viewed → ${fmtInt(p.conversions)} converted`,
+        detail: `${fmtInt(p.visitors)} ${denominator} → ${fmtInt(p.conversions)} converted`,
       }))
     : series;
 
@@ -165,20 +171,28 @@ export function TrendModal({
   // the current headcount for live.
   let summary: { label: string; value: string }[] = [];
   if (data) {
-    if (config.key === "live" && data.live) {
+    if (config.key === "active" && data.activeNow) {
       summary = [
-        { label: "Active right now", value: fmtInt(data.live.total) },
-        { label: "Signed in", value: fmtInt(data.live.identified) },
+        { label: "Active now", value: fmtInt(data.activeNow.current) },
         {
-          label: "Window",
-          value: `last ${data.live.windowMinutes} min`,
+          label: "Counting window",
+          value: `last ${data.activeNow.windowMinutes} min`,
+        },
+        {
+          label: "Peak hour in range",
+          value: fmtInt(
+            Math.max(0, ...series.map((p) => p.value ?? 0))
+          ),
         },
       ];
     } else if (conversion) {
       const visitors = conversion.reduce((s, p) => s + p.visitors, 0);
       const conversions = conversion.reduce((s, p) => s + p.conversions, 0);
       summary = [
-        { label: "Unique viewers in range", value: fmtInt(visitors) },
+        {
+          label: `${denominator[0].toUpperCase()}${denominator.slice(1)} in range`,
+          value: fmtInt(visitors),
+        },
         { label: "Conversions", value: fmtInt(conversions) },
         {
           label: "Overall rate",
@@ -193,7 +207,7 @@ export function TrendModal({
       const peak = values.length ? Math.max(...values) : 0;
       // Averaging a distinct-user count across buckets is meaningful; summing
       // it is not (the same user appears in many buckets).
-      const isUniqueUsers = ["dau", "wau", "mau"].includes(config.key);
+      const isUniqueUsers = ["active", "dau", "wau", "mau"].includes(config.key);
       summary = [
         ...(isUniqueUsers
           ? []

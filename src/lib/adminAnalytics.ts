@@ -1,22 +1,20 @@
 import { prisma } from "@/lib/prisma";
-import { hogql, hogqlRow } from "@/lib/posthogQuery";
+import { fetchDailyVisitors } from "@/lib/vercelAnalytics";
 
 // Metric builders for the admin analytics dashboard (overview + trend
-// drill-downs). Two data sources, split by what each actually records:
+// drill-downs). Three sources, split by what each can actually answer:
 //
-// - PostHog (HogQL): everything about *people using the product* — live
-//   users, DAU/WAU/MAU, and the landing/promo conversion funnels. The app DB
-//   has no pageviews and no per-user activity history, so these cannot come
-//   from Prisma.
-// - Prisma: everything that is *a business record* — purchases, credits
-//   spent, new subscriptions. These live in the DB with full history and
-//   should not depend on an external analytics vendor.
+// - Prisma (app DB): business records — purchases, credits spent, new
+//   subscriptions, signups.
+// - Prisma (Supabase `auth` schema): session activity, which gives
+//   DAU/WAU/MAU without any analytics vendor. See the note above
+//   fetchActiveUserStats for what that does and doesn't measure.
+// - Vercel Web Analytics: anonymous visitor counts per route. The app
+//   database never sees a visitor who doesn't sign up, so this is the only
+//   possible source for a conversion-rate denominator.
 //
-// Timezone note: PostHog buckets days in the project's timezone, DB series
-// use server-local midnight (UTC on Vercel). Each metric is internally
-// consistent; the two families can disagree about where "today" starts by a
-// few hours. Chart axes for PostHog metrics are therefore derived from the
-// buckets PostHog returns (see axisFromReturned) instead of the server clock.
+// Days are bucketed in the server's timezone (UTC on Vercel) for DB series,
+// and in UTC for conversion series, since Vercel returns UTC day buckets.
 
 export type Granularity = "hour" | "day" | "week" | "month";
 
@@ -25,36 +23,7 @@ export interface SeriesPoint {
   value: number | null;
 }
 
-export interface ConversionPoint {
-  date: string;
-  /** Daily conversion rate in percent; null when the day had no visitors. */
-  value: number | null;
-  visitors: number;
-  conversions: number;
-}
-
-// ── Identified-user predicate ─────────────────────────────────────────────
-// person_profiles is "identified_only", so anonymous visitors have no person
-// row and no email — this cleanly restricts active-user counts to signed-in
-// users while conversion denominators (below) still count anonymous traffic.
-const IDENTIFIED = "person.properties.email IS NOT NULL";
-
-// The two funnels. Denominator/numerator conditions are same-day per person:
-// "of the people who saw the page that day, how many converted that day".
-// promo_offer_viewed double-fires on client navs (documented in analytics.ts)
-// but uniq(person_id) makes that harmless here.
-const FUNNELS = {
-  landing: {
-    view: "(event = '$pageview' AND properties.$pathname = '/')",
-    convert: "(event = 'signup')",
-  },
-  promo: {
-    view: "(event = 'promo_offer_viewed')",
-    convert: "(event = 'subscription_activated')",
-  },
-} as const;
-
-export type FunnelKind = keyof typeof FUNNELS;
+// ── Shared bucket helpers ────────────────────────────────────────────────
 
 function intOrThrow(n: number): number {
   if (!Number.isInteger(n) || n <= 0 || n > 4000) {
@@ -152,257 +121,6 @@ function fillSeries(
     cursor = step(cursor, g);
   }
   return out;
-}
-
-/** Rows of [bucketKey, ...numbers] → Map(bucketKey → first number). */
-function rowsToMap(rows: unknown[][]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    const key = String(row[0] ?? "");
-    if (!key) continue;
-    map.set(key, Number(row[1]) || 0);
-  }
-  return map;
-}
-
-// HogQL bucket expressions producing the key formats above. Weeks use
-// toMonday() to match the dashboard's Monday-start convention.
-const BUCKET_EXPR: Record<Granularity, string> = {
-  hour: "formatDateTime(toStartOfHour(timestamp), '%Y-%m-%dT%H')",
-  day: "formatDateTime(toStartOfDay(timestamp), '%Y-%m-%d')",
-  week: "formatDateTime(toMonday(timestamp), '%Y-%m-%d')",
-  month: "formatDateTime(toStartOfMonth(timestamp), '%Y-%m')",
-};
-
-// ── PostHog: active users ─────────────────────────────────────────────────
-
-export interface LiveNow {
-  /** Unique people (signed-in or anonymous) with any event in the window. */
-  total: number;
-  identified: number;
-  windowMinutes: number;
-}
-
-const LIVE_WINDOW_MINUTES = 5;
-
-export async function fetchLiveNow(): Promise<LiveNow> {
-  const [total, identified] = await hogqlRow(
-    `
-    SELECT uniq(person_id) AS total,
-           uniqIf(person_id, ${IDENTIFIED}) AS identified
-    FROM events
-    WHERE timestamp >= now() - INTERVAL ${LIVE_WINDOW_MINUTES} MINUTE
-  `,
-    // PostHog caches API queries; a cached "live" number defeats the tile.
-    { forceFresh: true }
-  );
-  return { total, identified, windowMinutes: LIVE_WINDOW_MINUTES };
-}
-
-/** Hourly unique visitors (anonymous included — matches the live tile). */
-export async function fetchLiveSeries(hours: number): Promise<SeriesPoint[]> {
-  const n = intOrThrow(hours);
-  const rows = await hogql(`
-    SELECT ${BUCKET_EXPR.hour} AS bucket, uniq(person_id) AS value
-    FROM events
-    WHERE timestamp >= now() - INTERVAL ${n} HOUR
-    GROUP BY bucket ORDER BY bucket
-  `);
-  return fillSeries(rowsToMap(rows), "hour", n);
-}
-
-/** Daily unique signed-in users. */
-export async function fetchDauSeries(days: number): Promise<SeriesPoint[]> {
-  const n = intOrThrow(days);
-  const rows = await hogql(`
-    SELECT ${BUCKET_EXPR.day} AS bucket, uniq(person_id) AS value
-    FROM events
-    WHERE timestamp >= toStartOfDay(now()) - INTERVAL ${n - 1} DAY
-      AND ${IDENTIFIED}
-    GROUP BY bucket ORDER BY bucket
-  `);
-  return fillSeries(rowsToMap(rows), "day", n);
-}
-
-/** Weekly (Monday-start) unique signed-in users. */
-export async function fetchWauSeries(weeks: number): Promise<SeriesPoint[]> {
-  const n = intOrThrow(weeks);
-  const rows = await hogql(`
-    SELECT ${BUCKET_EXPR.week} AS bucket, uniq(person_id) AS value
-    FROM events
-    WHERE timestamp >= toMonday(now()) - INTERVAL ${n - 1} WEEK
-      AND ${IDENTIFIED}
-    GROUP BY bucket ORDER BY bucket
-  `);
-  return fillSeries(rowsToMap(rows), "week", n);
-}
-
-/** Monthly unique signed-in users. */
-export async function fetchMauSeries(months: number): Promise<SeriesPoint[]> {
-  const n = intOrThrow(months);
-  const rows = await hogql(`
-    SELECT ${BUCKET_EXPR.month} AS bucket, uniq(person_id) AS value
-    FROM events
-    WHERE timestamp >= toStartOfMonth(now()) - INTERVAL ${n - 1} MONTH
-      AND ${IDENTIFIED}
-    GROUP BY bucket ORDER BY bucket
-  `);
-  return fillSeries(rowsToMap(rows), "month", n);
-}
-
-export interface ActiveUserWindows {
-  dauToday: number;
-  dauYesterday: number;
-  /** Rolling 7 days ending now vs the 7 before. */
-  wauCurrent: number;
-  wauPrevious: number;
-  /** Rolling 30 days ending now vs the 30 before. */
-  mauCurrent: number;
-  mauPrevious: number;
-}
-
-export async function fetchActiveUserWindows(): Promise<ActiveUserWindows> {
-  const [
-    dauToday,
-    dauYesterday,
-    wauCurrent,
-    wauPrevious,
-    mauCurrent,
-    mauPrevious,
-  ] = await hogqlRow(`
-    SELECT
-      uniqIf(person_id, timestamp >= toStartOfDay(now())) AS dau_today,
-      uniqIf(person_id, timestamp >= toStartOfDay(now()) - INTERVAL 1 DAY
-                    AND timestamp <  toStartOfDay(now())) AS dau_yesterday,
-      uniqIf(person_id, timestamp >= now() - INTERVAL 7 DAY) AS wau_current,
-      uniqIf(person_id, timestamp >= now() - INTERVAL 14 DAY
-                    AND timestamp <  now() - INTERVAL 7 DAY) AS wau_previous,
-      uniqIf(person_id, timestamp >= now() - INTERVAL 30 DAY) AS mau_current,
-      uniqIf(person_id, timestamp >= now() - INTERVAL 60 DAY
-                    AND timestamp <  now() - INTERVAL 30 DAY) AS mau_previous
-    FROM events
-    WHERE timestamp >= now() - INTERVAL 60 DAY
-      AND ${IDENTIFIED}
-  `);
-  return { dauToday, dauYesterday, wauCurrent, wauPrevious, mauCurrent, mauPrevious };
-}
-
-// ── PostHog: conversion funnels ───────────────────────────────────────────
-
-/**
- * Daily same-day funnel: unique people who saw the page that day, and how
- * many of them converted the same day.
- */
-export async function fetchConversionDaily(
-  kind: FunnelKind,
-  days: number
-): Promise<ConversionPoint[]> {
-  const n = intOrThrow(days);
-  const f = FUNNELS[kind];
-  const rows = await hogql(`
-    SELECT day,
-           countIf(viewed) AS visitors,
-           countIf(viewed AND converted) AS conversions
-    FROM (
-      SELECT ${BUCKET_EXPR.day} AS day,
-             person_id,
-             countIf(${f.view}) > 0 AS viewed,
-             countIf(${f.convert}) > 0 AS converted
-      FROM events
-      WHERE timestamp >= toStartOfDay(now()) - INTERVAL ${n - 1} DAY
-        AND (${f.view} OR ${f.convert})
-      GROUP BY day, person_id
-    )
-    GROUP BY day ORDER BY day
-  `);
-  const byKey = new Map<string, { visitors: number; conversions: number }>();
-  for (const row of rows) {
-    byKey.set(String(row[0] ?? ""), {
-      visitors: Number(row[1]) || 0,
-      conversions: Number(row[2]) || 0,
-    });
-  }
-  // Reuse the numeric gap-filler for the axis, then rehydrate the pair data.
-  const axis = fillSeries(
-    new Map(Array.from(byKey.entries()).map(([k, v]) => [k, v.visitors])),
-    "day",
-    n
-  );
-  return axis.map((p) => {
-    const d = byKey.get(p.date) ?? { visitors: 0, conversions: 0 };
-    return {
-      date: p.date,
-      value: d.visitors > 0 ? (d.conversions / d.visitors) * 100 : null,
-      visitors: d.visitors,
-      conversions: d.conversions,
-    };
-  });
-}
-
-export interface ConversionWindow {
-  visitors: number;
-  conversions: number;
-  ratePct: number | null;
-  prevVisitors: number;
-  prevConversions: number;
-  prevRatePct: number | null;
-}
-
-/**
- * Rolling 7-day funnel windows for both funnels in one scan: unique people
- * who saw the page in the window and converted in the same window, vs the
- * previous 7 days.
- */
-export async function fetchConversionWindows(): Promise<{
-  landing: ConversionWindow;
-  promo: ConversionWindow;
-}> {
-  const l = FUNNELS.landing;
-  const p = FUNNELS.promo;
-  const cur = "timestamp >= now() - INTERVAL 7 DAY";
-  const prev =
-    "timestamp >= now() - INTERVAL 14 DAY AND timestamp < now() - INTERVAL 7 DAY";
-  const row = await hogqlRow(`
-    SELECT
-      countIf(l_view_cur) AS l_visitors_cur,
-      countIf(l_view_cur AND l_conv_cur) AS l_conversions_cur,
-      countIf(l_view_prev) AS l_visitors_prev,
-      countIf(l_view_prev AND l_conv_prev) AS l_conversions_prev,
-      countIf(p_view_cur) AS p_visitors_cur,
-      countIf(p_view_cur AND p_conv_cur) AS p_conversions_cur,
-      countIf(p_view_prev) AS p_visitors_prev,
-      countIf(p_view_prev AND p_conv_prev) AS p_conversions_prev
-    FROM (
-      SELECT person_id,
-             countIf(${l.view} AND ${cur}) > 0 AS l_view_cur,
-             countIf(${l.convert} AND ${cur}) > 0 AS l_conv_cur,
-             countIf(${l.view} AND ${prev}) > 0 AS l_view_prev,
-             countIf(${l.convert} AND ${prev}) > 0 AS l_conv_prev,
-             countIf(${p.view} AND ${cur}) > 0 AS p_view_cur,
-             countIf(${p.convert} AND ${cur}) > 0 AS p_conv_cur,
-             countIf(${p.view} AND ${prev}) > 0 AS p_view_prev,
-             countIf(${p.convert} AND ${prev}) > 0 AS p_conv_prev
-      FROM events
-      WHERE timestamp >= now() - INTERVAL 14 DAY
-        AND (${l.view} OR ${l.convert} OR ${p.view} OR ${p.convert})
-      GROUP BY person_id
-    )
-  `);
-  const windowOf = (offset: number): ConversionWindow => {
-    const [visitors, conversions, prevVisitors, prevConversions] = row.slice(
-      offset,
-      offset + 4
-    );
-    return {
-      visitors,
-      conversions,
-      ratePct: visitors > 0 ? (conversions / visitors) * 100 : null,
-      prevVisitors,
-      prevConversions,
-      prevRatePct: prevVisitors > 0 ? (prevConversions / prevVisitors) * 100 : null,
-    };
-  };
-  return { landing: windowOf(0), promo: windowOf(4) };
 }
 
 // ── Prisma: purchases, credits, new subscribers ───────────────────────────
@@ -560,4 +278,338 @@ export async function fetchDbTrendSeries(
     cursor = step(cursor, "week");
   }
   return { granularity, series };
+}
+
+// ── DB: active users (Supabase auth session history) ──────────────────────
+// Supabase/GoTrue rotates a refresh token roughly hourly while a session is
+// in use, so `auth.refresh_tokens.created_at` is a dense record of "this user
+// was signed in and using the app at this moment" — around 8 rows/day per
+// active user, with unpruned history back to the project's first sign-ins.
+// That makes DAU/WAU/MAU computable from our own database.
+//
+// Honest limits: this counts authenticated sessions, so it misses signed-out
+// browsing (little of the product is usable signed out), and a long-lived
+// background tab that quietly refreshes counts as active. It is a
+// session-activity metric, not a behavioural one — hence "Active in the last
+// hour" rather than a live 5-minute headcount, which the ~hourly refresh
+// cadence cannot support.
+//
+// The table is outside the Prisma schema, hence raw SQL. Every interpolated
+// value is an integer validated by intOrThrow or a literal from this file.
+
+export interface ActiveUserStats {
+  activeNow: number;
+  dauToday: number;
+  dauYesterday: number;
+  wauCurrent: number;
+  wauPrevious: number;
+  mauCurrent: number;
+  mauPrevious: number;
+  activeWindowMinutes: number;
+}
+
+export const ACTIVE_NOW_WINDOW_MINUTES = 60;
+
+export async function fetchActiveUserStats(): Promise<ActiveUserStats> {
+  const rows = await prisma.$queryRawUnsafe<Record<string, bigint | number>[]>(`
+    SELECT
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= now() - interval '${ACTIVE_NOW_WINDOW_MINUTES} minutes') AS active_now,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= date_trunc('day', now())) AS dau_today,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= date_trunc('day', now()) - interval '1 day'
+          AND created_at <  date_trunc('day', now())) AS dau_yesterday,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= now() - interval '7 days') AS wau_current,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= now() - interval '14 days'
+          AND created_at <  now() - interval '7 days') AS wau_previous,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= now() - interval '30 days') AS mau_current,
+      count(DISTINCT user_id) FILTER (
+        WHERE created_at >= now() - interval '60 days'
+          AND created_at <  now() - interval '30 days') AS mau_previous
+    FROM auth.refresh_tokens
+    WHERE created_at >= now() - interval '60 days'
+  `);
+  const r = rows[0] ?? {};
+  const n = (k: string) => Number(r[k] ?? 0);
+  return {
+    activeNow: n("active_now"),
+    dauToday: n("dau_today"),
+    dauYesterday: n("dau_yesterday"),
+    wauCurrent: n("wau_current"),
+    wauPrevious: n("wau_previous"),
+    mauCurrent: n("mau_current"),
+    mauPrevious: n("mau_previous"),
+    activeWindowMinutes: ACTIVE_NOW_WINDOW_MINUTES,
+  };
+}
+
+/** Postgres date_trunc units + to_char formats matching the client's keys. */
+const PG_BUCKET: Record<Granularity, { unit: string; fmt: string }> = {
+  // date_trunc('week') is Monday-start, matching the dashboard convention.
+  hour: { unit: "hour", fmt: 'YYYY-MM-DD"T"HH24' },
+  day: { unit: "day", fmt: "YYYY-MM-DD" },
+  week: { unit: "week", fmt: "YYYY-MM-DD" },
+  month: { unit: "month", fmt: "YYYY-MM" },
+};
+
+/** Distinct signed-in users per bucket, gap-filled to `count` buckets. */
+export async function fetchActiveUserSeries(
+  granularity: Granularity,
+  count: number
+): Promise<SeriesPoint[]> {
+  const n = intOrThrow(count);
+  const { unit, fmt } = PG_BUCKET[granularity];
+  const rows = await prisma.$queryRawUnsafe<
+    { bucket: string; value: bigint | number }[]
+  >(`
+    SELECT to_char(date_trunc('${unit}', created_at), '${fmt}') AS bucket,
+           count(DISTINCT user_id) AS value
+    FROM auth.refresh_tokens
+    WHERE created_at >= date_trunc('${unit}', now())
+                        - make_interval(${unit}s => ${n - 1})
+    GROUP BY 1 ORDER BY 1
+  `);
+  const map = new Map<string, number>();
+  for (const row of rows) map.set(String(row.bucket), Number(row.value) || 0);
+  return fillSeries(map, granularity, n);
+}
+
+// ── Conversion: Vercel visitors (denominator) + DB conversions (numerator) ─
+// Vercel Web Analytics counts unique visitors per route but cannot identify
+// them; the app database knows exactly who signed up but never sees the
+// visitors who didn't. Pairing the two gives the standard top-of-funnel
+// rate — "signups that day ÷ unique visitors that day" — rather than a
+// person-linked funnel. Both sides are counted over the same UTC day.
+
+export interface ConversionPoint extends SeriesPoint {
+  visitors: number;
+  conversions: number;
+}
+
+export interface ConversionWindow {
+  visitors: number;
+  conversions: number;
+  ratePct: number | null;
+  prevVisitors: number;
+  prevConversions: number;
+  prevRatePct: number | null;
+}
+
+export const FUNNELS = {
+  landing: {
+    path: "/",
+    /** Landing visitors who became accounts. */
+    numerator: "signups" as const,
+  },
+  promo: {
+    path: "/promo",
+    /** Promo viewers who activated the first-month VIP offer. */
+    numerator: "promo_subs" as const,
+  },
+};
+
+export type FunnelKind = keyof typeof FUNNELS;
+
+const ratePct = (c: number, v: number) => (v > 0 ? (c / v) * 100 : null);
+
+/** UTC day key — matches the day buckets Vercel returns. */
+function utcDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Conversion events per UTC day for a funnel's numerator. */
+async function conversionsByDay(
+  kind: FunnelKind,
+  since: Date
+): Promise<Map<string, number>> {
+  const dates =
+    FUNNELS[kind].numerator === "signups"
+      ? (
+          await prisma.user.findMany({
+            where: { createdAt: { gte: since } },
+            select: { createdAt: true },
+          })
+        ).map((r) => r.createdAt)
+      : (
+          await prisma.subscription.findMany({
+            // The /promo page sells the $5.99 first-month VIP offer; that
+            // is the only source tag its checkout writes.
+            where: {
+              createdAt: { gte: since },
+              acquisitionSource: "vip-first-month",
+            },
+            select: { createdAt: true },
+          })
+        ).map((r) => r.createdAt);
+
+  const map = new Map<string, number>();
+  for (const d of dates) {
+    const k = utcDayKey(d);
+    map.set(k, (map.get(k) ?? 0) + 1);
+  }
+  return map;
+}
+
+/**
+ * Daily conversion series plus current-vs-previous window totals. Fetches
+ * 2×`days` so the previous window is the same length; the returned series
+ * covers only the current window.
+ */
+export async function fetchConversion(
+  kind: FunnelKind,
+  days: number
+): Promise<{ window: ConversionWindow; series: ConversionPoint[] }> {
+  const n = intOrThrow(days);
+  const visitorRows = await fetchDailyVisitors(FUNNELS[kind].path, n * 2);
+  const since = new Date(Date.now() - 2 * n * 86_400_000);
+  const conversions = await conversionsByDay(kind, since);
+
+  const visitorsByDay = new Map<string, number>();
+  for (const v of visitorRows) {
+    visitorsByDay.set(v.timestamp.slice(0, 10), v.visitors);
+  }
+
+  // Build the axis from calendar days so a day Vercel omits (zero traffic)
+  // still appears, and the current/previous split is exact.
+  const today = new Date();
+  const dayAt = (offset: number) =>
+    utcDayKey(new Date(today.getTime() - offset * 86_400_000));
+
+  const point = (key: string): ConversionPoint => {
+    const visitors = visitorsByDay.get(key) ?? 0;
+    const converted = conversions.get(key) ?? 0;
+    return {
+      date: key,
+      value: ratePct(converted, visitors),
+      visitors,
+      conversions: converted,
+    };
+  };
+
+  const current: ConversionPoint[] = [];
+  for (let i = n - 1; i >= 0; i--) current.push(point(dayAt(i)));
+
+  const sum = (points: ConversionPoint[], pick: (p: ConversionPoint) => number) =>
+    points.reduce((s, p) => s + pick(p), 0);
+  const previous: ConversionPoint[] = [];
+  for (let i = 2 * n - 1; i >= n; i--) previous.push(point(dayAt(i)));
+
+  const visitors = sum(current, (p) => p.visitors);
+  const converted = sum(current, (p) => p.conversions);
+  const prevVisitors = sum(previous, (p) => p.visitors);
+  const prevConversions = sum(previous, (p) => p.conversions);
+
+  return {
+    window: {
+      visitors,
+      conversions: converted,
+      ratePct: ratePct(converted, visitors),
+      prevVisitors,
+      prevConversions,
+      prevRatePct: ratePct(prevConversions, prevVisitors),
+    },
+    series: current,
+  };
+}
+
+// ── Signup → paid conversion (database only) ──────────────────────────────
+// A signup cohort's conversion rate: of the accounts created in a period,
+// how many started a subscription. Both sides are rows we own, so unlike the
+// landing/promo rates this needs no visitor data and always works.
+//
+// What it actually measures: signup is embedded in the checkout flow (the
+// standalone /signup page draws almost no traffic), so an account is
+// typically created mid-purchase. Audited against production 2026-09-03:
+// 232 of 247 conversions in the 30-day cohort landed within TEN MINUTES of
+// registration, 240 within an hour, only 3 after a day. So this is close to
+// a checkout-completion rate, not a measure of nurturing casual signups —
+// stated in the drill-down so nobody reads it as the latter.
+//
+// A consequence worth noting: because conversion is near-immediate, cohorts
+// are effectively final within the hour, so recent buckets are NOT
+// meaningfully censored. Weekly bucketing is purely for volume smoothing.
+
+/** Signup-cohort conversion for the last `days`, vs the `days` before. */
+export async function fetchSignupConversion(
+  days: number
+): Promise<ConversionWindow> {
+  const n = intOrThrow(days);
+  const now = Date.now();
+  const curStart = new Date(now - n * 86_400_000);
+  const prevStart = new Date(now - 2 * n * 86_400_000);
+  const [visitors, conversions, prevVisitors, prevConversions] =
+    await Promise.all([
+      prisma.user.count({ where: { createdAt: { gte: curStart } } }),
+      prisma.user.count({
+        where: { createdAt: { gte: curStart }, subscription: { isNot: null } },
+      }),
+      prisma.user.count({
+        where: { createdAt: { gte: prevStart, lt: curStart } },
+      }),
+      prisma.user.count({
+        where: {
+          createdAt: { gte: prevStart, lt: curStart },
+          subscription: { isNot: null },
+        },
+      }),
+    ]);
+  return {
+    visitors,
+    conversions,
+    ratePct: ratePct(conversions, visitors),
+    prevVisitors,
+    prevConversions,
+    prevRatePct: ratePct(prevConversions, prevVisitors),
+  };
+}
+
+/** Weekly signup cohorts. `weeks = null` means every week on record. */
+export async function fetchSignupConversionSeries(
+  weeks: number | null
+): Promise<ConversionPoint[]> {
+  const start =
+    weeks == null
+      ? new Date(0)
+      : stepBack(currentBucketStart("week"), "week", intOrThrow(weeks) - 1);
+
+  // Hundreds of rows — bucket in JS so the cohort rule stays in one place.
+  const users = await prisma.user.findMany({
+    where: { createdAt: { gte: start } },
+    select: { createdAt: true, subscription: { select: { id: true } } },
+  });
+
+  const totals = new Map<string, { visitors: number; conversions: number }>();
+  for (const u of users) {
+    const k = keyOf(u.createdAt, "week");
+    const bucket = totals.get(k) ?? { visitors: 0, conversions: 0 };
+    bucket.visitors += 1;
+    if (u.subscription) bucket.conversions += 1;
+    totals.set(k, bucket);
+  }
+
+  const end = currentBucketStart("week");
+  let cursor =
+    weeks == null
+      ? totals.size
+        ? parseKey(Array.from(totals.keys()).sort()[0], "week")
+        : end
+      : stepBack(end, "week", weeks - 1);
+
+  const series: ConversionPoint[] = [];
+  while (cursor <= end && series.length < 600) {
+    const key = keyOf(cursor, "week");
+    const t = totals.get(key) ?? { visitors: 0, conversions: 0 };
+    series.push({
+      date: key,
+      value: ratePct(t.conversions, t.visitors),
+      visitors: t.visitors,
+      conversions: t.conversions,
+    });
+    cursor = step(cursor, "week");
+  }
+  return series;
 }
