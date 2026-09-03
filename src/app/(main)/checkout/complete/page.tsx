@@ -77,7 +77,7 @@ function CompleteContent() {
             // that fires server-side from the grant): how long confirmation
             // took, and below, how often it never arrived. Rising timeouts =
             // webhook lag/misdelivery, the July 2026 failure signature.
-            trackCheckoutCompleteOutcome({
+            void trackCheckoutCompleteOutcome({
               provider,
               initialStatus: hint,
               outcome: "confirmed",
@@ -98,7 +98,7 @@ function CompleteContent() {
       if (cancelled) return;
       if (attempts.current >= POLL_ATTEMPTS) {
         setPhase("unconfirmed");
-        trackCheckoutCompleteOutcome({
+        void trackCheckoutCompleteOutcome({
           provider,
           initialStatus: hint,
           outcome: hint === "error" ? "error" : "timeout",

@@ -10,6 +10,7 @@ import {
   tiktokTrackOnce,
   tiktokIdentifyEmail,
 } from "./tiktokPixel";
+import { waitForAdIdentity } from "./adIdentity";
 import { googleAdsPurchase } from "./googleAds";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
@@ -529,7 +530,7 @@ export function trackCheckoutApiError(props: {
 // /checkout/complete verification result. NOT the activation event (that is
 // server-side, from the grant) — this measures what the BUYER saw: how long
 // verification took, and how often it times out (webhook lag) or errors.
-export function trackCheckoutCompleteOutcome(props: {
+export async function trackCheckoutCompleteOutcome(props: {
   provider: string | null;
   initialStatus: string | null;
   outcome: "confirmed" | "timeout" | "error";
@@ -559,6 +560,14 @@ export function trackCheckoutCompleteOutcome(props: {
   // Timeouts under-count here by design; the Conversions API is the eventual
   // fix for that.
   if (props.outcome === "confirmed" && props.tier && props.transactionId) {
+    // Identity BEFORE conversion, not in a race with it. This page confirms
+    // the subscription in one round trip; UserContext needs two plus an async
+    // hash to attach the buyer's email/external_id, so these events used to
+    // win and go out anonymous — 0% email coverage on the purchase event, and
+    // an anonymous conversion is one the ad platform cannot attribute back to
+    // the click that paid for it. Capped inside waitForAdIdentity, so a
+    // failing /api/user/me costs match quality, never the conversion itself.
+    await waitForAdIdentity();
     metaTrackOnce(purchaseEventId(props.transactionId), "Purchase", {
       content_category: "subscription",
       content_name: props.tier,

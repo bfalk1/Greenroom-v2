@@ -8,6 +8,7 @@ import {
   googleAdsSetUserData,
 } from "./googleAds";
 import { trackCheckoutCompleteOutcome } from "./analytics";
+import { markAdIdentityAttached } from "./adIdentity";
 
 // googleAds.ts is a browser module; these tests run it against a minimal
 // window stand-in. That is deliberate — the two things worth locking down
@@ -123,16 +124,22 @@ test("blocked localStorage fires anyway — transaction_id still dedupes server-
 // must reach googleAdsPurchase on a verified activation, and must not on a
 // timeout. Meta/TikTok/PostHog are all inert here (no env ids, uninitialized
 // posthog no-ops), so the dataLayer is this test's only observable output.
-test("trackCheckoutCompleteOutcome fires the Google conversion only when confirmed", () => {
+test("trackCheckoutCompleteOutcome fires the Google conversion only when confirmed", async () => {
   const win = installWindow();
-  trackCheckoutCompleteOutcome({
+  // A confirmed outcome now WAITS for the ad pixels' identity attachment
+  // before firing (src/lib/adIdentity.ts), so stand in for the UserContext
+  // that would have attached it — otherwise this test would sit out the full
+  // safety-valve timeout. The gate's own behaviour is covered in
+  // adIdentity.test.ts.
+  markAdIdentityAttached();
+  await trackCheckoutCompleteOutcome({
     provider: "stripe",
     initialStatus: null,
     outcome: "timeout",
   });
   assert.equal(win.dataLayer, undefined);
 
-  trackCheckoutCompleteOutcome({
+  await trackCheckoutCompleteOutcome({
     provider: "stripe",
     initialStatus: null,
     outcome: "confirmed",
