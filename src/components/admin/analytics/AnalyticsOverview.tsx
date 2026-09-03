@@ -134,7 +134,7 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     key: "signup_conversion",
     title: "Signup → Paid Conversion",
     description:
-      "Of the accounts created in each week, the share that ever started a subscription. Recent weeks read low and settle upward — someone who signed up yesterday may still subscribe. Source: database.",
+      "Of the accounts created in each week, the share that started a subscription. Signup is embedded in checkout, so ~94% subscribe within 10 minutes of registering — read this as checkout completion, not long-run nurture of casual signups. Source: database.",
     ranges: [
       { id: "12w", label: "12W" },
       { id: "26w", label: "26W" },
