@@ -35,8 +35,8 @@ type MetricKey =
   | "purchases"
   | "credits"
   | "subs"
-  | "landing_conversion"
-  | "promo_conversion"
+  | "pricing_conversion"
+  | "vip_conversion"
   | "signup_conversion";
 
 // range key → interval count in the metric's own unit (null = all time).
@@ -48,8 +48,8 @@ const RANGES: Record<MetricKey, Record<string, number | null>> = {
   purchases: { "30d": 30, "90d": 90, "180d": 180, all: null },
   credits: { "30d": 30, "90d": 90, "180d": 180, all: null },
   subs: { "30d": 30, "90d": 90, "180d": 180, all: null },
-  landing_conversion: { "30d": 30, "90d": 90 },
-  promo_conversion: { "30d": 30, "90d": 90 },
+  pricing_conversion: { "30d": 30, "90d": 90 },
+  vip_conversion: { "30d": 30, "90d": 90 },
   // Weekly cohorts: daily signup cohorts are mostly noise at this volume.
   signup_conversion: { "12w": 12, "26w": 26, "52w": 52, all: null },
 };
@@ -118,11 +118,11 @@ export async function GET(request: NextRequest) {
         series = await fetchSignupConversionSeries(n);
         break;
       }
-      case "landing_conversion":
-      case "promo_conversion": {
+      case "pricing_conversion":
+      case "vip_conversion": {
         granularity = "day";
         const result = await fetchConversion(
-          metric === "landing_conversion" ? "landing" : "promo",
+          metric === "pricing_conversion" ? "pricing" : "vip",
           n as number
         );
         series = result.series;

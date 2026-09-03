@@ -54,8 +54,8 @@ export interface OverviewResponse {
     error: string | null;
     /** Database-only, always present. */
     signup: ConversionWindow;
-    landing: ConversionPayload | null;
-    promo: ConversionPayload | null;
+    pricing: ConversionPayload | null;
+    vip: ConversionPayload | null;
   };
   actionItems: {
     pendingApplications: number;
@@ -72,8 +72,8 @@ export type MetricKey =
   | "purchases"
   | "credits"
   | "subs"
-  | "landing_conversion"
-  | "promo_conversion"
+  | "pricing_conversion"
+  | "vip_conversion"
   | "signup_conversion";
 
 export interface TrendResponse {
