@@ -55,7 +55,7 @@ export interface OverviewResponse {
     /** Database-only, always present. */
     signup: ConversionWindow;
     landing: ConversionPayload | null;
-    promo: ConversionPayload | null;
+    vip: ConversionPayload | null;
   };
   actionItems: {
     pendingApplications: number;
@@ -73,7 +73,7 @@ export type MetricKey =
   | "credits"
   | "subs"
   | "landing_conversion"
-  | "promo_conversion"
+  | "vip_conversion"
   | "signup_conversion";
 
 export interface TrendResponse {

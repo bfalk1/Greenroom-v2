@@ -100,7 +100,7 @@ async function main() {
   }
 
   console.log("\n── Conversion (Vercel visitors + DB conversions) ──");
-  for (const kind of ["landing", "promo"] as const) {
+  for (const kind of ["landing", "vip"] as const) {
     const { window: w, series } = await fetchConversion(kind, 30);
     console.log(
       `${kind}: ${w.conversions}/${w.visitors} = ${w.ratePct?.toFixed(2) ?? "—"}% ` +

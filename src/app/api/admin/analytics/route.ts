@@ -21,7 +21,7 @@ import { vercelAnalyticsConfigured } from "@/lib/vercelAnalytics";
  * commerce = today, conversion = rolling 30 days) and the drill-down trend
  * endpoint (/api/admin/analytics/trend) owns longer horizons.
  *
- * Everything here comes from our own database except the landing/promo
+ * Everything here comes from our own database except the landing/VIP
  * conversion pair, which needs visitor counts from the Vercel Web Analytics
  * API (VERCEL_ANALYTICS_TOKEN). Without that token — or if the API errors —
  * those two are null and the client omits them rather than showing empty
@@ -85,7 +85,7 @@ export async function GET() {
       conversionConfigured
         ? Promise.allSettled([
             fetchConversion("landing", 30),
-            fetchConversion("promo", 30),
+            fetchConversion("vip", 30),
           ])
         : Promise.resolve(null),
     ]);
@@ -105,7 +105,7 @@ export async function GET() {
     };
 
     const landing = settled(conversions?.[0]);
-    const promo = settled(conversions?.[1]);
+    const vip = settled(conversions?.[1]);
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
@@ -137,7 +137,7 @@ export async function GET() {
         error: conversionError,
         signup: signupConversion,
         landing,
-        promo,
+        vip,
       },
       actionItems: { pendingApplications, samplesInReview, presetsInReview },
     });

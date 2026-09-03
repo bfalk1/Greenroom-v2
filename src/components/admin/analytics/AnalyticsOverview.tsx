@@ -21,7 +21,7 @@ import type { MetricKey, OverviewResponse } from "./types";
 
 /**
  * Admin analytics Overview — clickable KPI tiles (active users/DAU/WAU/MAU,
- * today's purchases/credits/new subs, 30-day landing & promo conversion),
+ * today's purchases/credits/new subs, 30-day landing & VIP conversion),
  * each opening a trend drill-down, driven by GET /api/admin/analytics.
  * Everything but the conversion tiles comes from our own database and always
  * renders; the conversion pair needs Vercel Web Analytics and is omitted
@@ -157,11 +157,11 @@ const METRICS: Record<MetricKey, MetricConfig> = {
     format: "percent",
     tooltipLabel: "conversion",
   },
-  promo_conversion: {
-    key: "promo_conversion",
-    title: "VIP Promo Conversion",
+  vip_conversion: {
+    key: "vip_conversion",
+    title: "VIP Offer Conversion",
     description:
-      "First-month VIP subscriptions started that day ÷ unique visitors to /promo that day. Low traffic makes this figure noisy.",
+      "Lifetime VIP subscriptions started that day ÷ unique visitors to the /vip offer page that day. The page is password-gated, so visitors include people who only reached the gate.",
     ranges: [
       { id: "30d", label: "30D" },
       { id: "90d", label: "90D" },
@@ -452,7 +452,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
 
   const { engagement, commerce, conversion } = data;
   const activeNow = activePoll ?? engagement.activeNow.current;
-  const hasConversion = !!(conversion.landing || conversion.promo);
+  const hasConversion = !!(conversion.landing || conversion.vip);
 
   const updatedAt = new Date(data.generatedAt).toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -584,7 +584,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
         </section>
 
         {/* Conversion — the signup tile is database-only and always shows;
-            the landing/promo pair joins it when Vercel Analytics answered. */}
+            the landing/VIP pair joins it when Vercel Analytics answered. */}
         <section>
           <SectionLabel>Conversion · Last 30 Days</SectionLabel>
           <div
@@ -623,22 +623,22 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
                 onClick={() => setOpenMetric("landing_conversion")}
               />
             )}
-            {conversion.promo && (
+            {conversion.vip && (
               <StatCard
-                label="VIP Promo → Paid Sub"
-                value={fmtPct(conversion.promo.window.ratePct)}
+                label="VIP Offer → Paid Sub"
+                value={fmtPct(conversion.vip.window.ratePct)}
                 delta={pctDelta(
-                  conversion.promo.window.ratePct,
-                  conversion.promo.window.prevRatePct
+                  conversion.vip.window.ratePct,
+                  conversion.vip.window.prevRatePct
                 )}
                 deltaTitle="vs previous 30 days (relative)"
-                series={conversion.promo.series}
+                series={conversion.vip.series}
                 note={`${fmtInt(
-                  conversion.promo.window.visitors
+                  conversion.vip.window.visitors
                 )} visitors → ${fmtInt(
-                  conversion.promo.window.conversions
-                )} activations`}
-                onClick={() => setOpenMetric("promo_conversion")}
+                  conversion.vip.window.conversions
+                )} lifetime subs`}
+                onClick={() => setOpenMetric("vip_conversion")}
               />
             )}
           </div>
