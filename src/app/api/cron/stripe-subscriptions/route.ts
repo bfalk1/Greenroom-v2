@@ -14,6 +14,7 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
+import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 // Nightly Stripe↔DB reconciliation. The webhook is the primary grant path,
@@ -274,7 +275,9 @@ async function reconcileOne(
           }),
         ]);
         const originSession = sessions.data[0] ?? null;
-        metaCapiPurchase({
+        // Facts both ad channels must agree on — see the Stripe webhook for
+        // why these are shared rather than restated per channel.
+        const purchaseFacts = {
           userId,
           email: userRow?.email,
           tier: tier.name,
@@ -288,7 +291,6 @@ async function reconcileOne(
               : tier.priceUsdCents),
           currency: originSession?.currency,
           transactionId: originSession?.id ?? subscription.id,
-          identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
           // The account-banked click id backstops metadata written before
           // the durable-fbc fallback shipped (or banked after checkout).
           attribution: withUserFbcFallback(
@@ -298,7 +300,12 @@ async function reconcileOne(
             }),
             userRow
           ),
+        };
+        metaCapiPurchase({
+          ...purchaseFacts,
+          identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
         });
+        tiktokCapiPurchase(purchaseFacts);
       } catch (capiError) {
         console.error(
           `[stripe-reconcile] CAPI Purchase for ${subscription.id} not sent:`,

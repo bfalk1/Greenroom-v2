@@ -10,6 +10,7 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
+import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
 
@@ -239,13 +240,24 @@ async function handleCheckoutCompleted(
       select: { metaFbc: true, metaFbcUpdatedAt: true },
     })
     .catch(() => null);
-  metaCapiPurchase({
+  // The facts both ad channels must agree on. Shared rather than restated
+  // per channel because drift here is silent and expensive: the browser and
+  // server halves dedupe on transactionId, and a value that disagrees
+  // misreports ROAS on whichever channel got the wrong one.
+  const purchaseFacts = {
     userId,
     email: session.customer_details?.email ?? undefined,
     tier: tier.name,
     valueUsdCents: session.amount_total ?? tier.priceUsdCents,
     currency: session.currency,
     transactionId: session.id,
+    attribution: withUserFbcFallback(
+      capiAttributionFromMetadata(session.metadata ?? undefined),
+      fbcUser
+    ),
+  };
+  metaCapiPurchase({
+    ...purchaseFacts,
     // Stripe's collected billing details are the best identity source here —
     // an actual billing name + address, present even when the buyer never
     // filled their Greenroom profile.
@@ -257,11 +269,10 @@ async function handleCheckoutCompleted(
       // Stripe sends ISO alpha-2 already; countryToIso2 passes it through.
       country: session.customer_details?.address?.country,
     }),
-    attribution: withUserFbcFallback(
-      capiAttributionFromMetadata(session.metadata ?? undefined),
-      fbcUser
-    ),
   });
+  // TikTok's twin, same slot and same event_id. No identity argument: the
+  // Events API takes only email/phone/external_id, and we store no phone.
+  tiktokCapiPurchase(purchaseFacts);
 
   // A VIP activation is the trigger that pays out a pending referral — only for
   // a genuinely ACTIVE subscription. Idempotent and never throws — safe

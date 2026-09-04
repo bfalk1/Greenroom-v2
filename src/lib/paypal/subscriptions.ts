@@ -17,6 +17,7 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
+import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import {
   VIP_LIFETIME_OFFER,
@@ -526,7 +527,9 @@ export async function syncPaypalSubscription(
       const attribution = await prisma.checkoutAttribution
         .findUnique({ where: { id: subscriptionId } })
         .catch(() => null);
-      metaCapiPurchase({
+      // Facts both ad channels must agree on — see the Stripe webhook for
+      // why these are shared rather than restated per channel.
+      const purchaseFacts = {
         userId,
         email: user.email,
         tier: tier.name,
@@ -545,7 +548,6 @@ export async function syncPaypalSubscription(
                   tier.priceUsdCents * 12)
                 : tier.priceUsdCents,
         transactionId: subscriptionId,
-        identity: capiIdentityFromProfile(user),
         // The row's checkout-time signals, with the account-banked click id
         // as a last resort — covers rows written before the fallback existed
         // and buyers whose checkout jar had no fbc that /me later banked.
@@ -559,7 +561,12 @@ export async function syncPaypalSubscription(
           },
           user
         ),
+      };
+      metaCapiPurchase({
+        ...purchaseFacts,
+        identity: capiIdentityFromProfile(user),
       });
+      tiktokCapiPurchase(purchaseFacts);
     }
   }
 
