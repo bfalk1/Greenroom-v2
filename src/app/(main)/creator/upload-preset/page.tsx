@@ -9,6 +9,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { toast } from "sonner";
 import { uploadPresetFiles } from "@/lib/uploadClient";
+import { DEFAULT_MAX_CREDIT_PRICE, maxCreditPriceFor } from "@/lib/creditPriceCaps";
 
 const SYNTHS = [
   { value: "SERUM", label: "Serum" },
@@ -382,16 +383,16 @@ export default function CreatorUploadPresetPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-white mb-2">
-                Credit Price {!user?.is_whitelisted && <span className="text-[#666] font-normal">(max 5)</span>}
+                Credit Price {!user?.is_whitelisted && <span className="text-[#666] font-normal">(max {DEFAULT_MAX_CREDIT_PRICE})</span>}
               </label>
               <Input
                 type="number"
                 min="1"
-                max={user?.is_whitelisted ? 50 : 5}
+                max={maxCreditPriceFor(user?.is_whitelisted)}
                 value={formData.creditPrice}
                 onChange={(e) => {
                   const val = parseInt(e.target.value) || 1;
-                  const max = user?.is_whitelisted ? 50 : 5;
+                  const max = maxCreditPriceFor(user?.is_whitelisted);
                   handleChange("creditPrice", String(Math.min(val, max)));
                 }}
                 className="bg-[#0a0a0a] border-[#2a2a2a] text-white"

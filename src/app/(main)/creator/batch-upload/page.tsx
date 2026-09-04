@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { KeySelector } from "@/components/ui/KeySelector";
 import { Checkbox } from "@/components/ui/checkbox";
 import { uploadSampleFiles, looksLikeWav } from "@/lib/uploadClient";
+import { maxCreditPriceFor } from "@/lib/creditPriceCaps";
 
 const GENRES = [
   "Hip Hop", "R&B", "Pop", "Electronic", "Trap", "Lo-Fi", 
@@ -747,14 +748,14 @@ export default function BatchUploadPage() {
                       value={sample.creditPrice}
                       onChange={(e) => {
                         const val = parseInt(e.target.value) || 1;
-                        const max = user?.is_whitelisted ? 50 : 5;
+                        const max = maxCreditPriceFor(user?.is_whitelisted);
                         updateSample(sample.id, "creditPrice", String(Math.min(val, max)));
                       }}
                       placeholder="Credits"
                       disabled={sample.status !== "pending"}
                       className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-16"
                       min="1"
-                      max={user?.is_whitelisted ? 50 : 5}
+                      max={maxCreditPriceFor(user?.is_whitelisted)}
                     />
                     
                     {/* Remove */}
