@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredWav, verifyStoredImage, removeObject } from "@/lib/storageValidate";
 import { getSampleDownloadCounts } from "@/lib/downloadCounts";
+import { parseOptionalCreditPrice } from "@/lib/creditPriceCaps";
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -499,15 +500,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Enforce credit price limit: max 5 for non-whitelisted creators
-    const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
-    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-    if (parsedCreditPrice > maxCreditPrice) {
+    const creditPriceResult = parseOptionalCreditPrice(
+      creditPrice,
+      dbUser.isWhitelisted
+    );
+    if (!creditPriceResult.ok) {
       return NextResponse.json(
-        { error: `Credit price cannot exceed ${maxCreditPrice}` },
+        { error: creditPriceResult.error },
         { status: 400 }
       );
     }
+    const parsedCreditPrice = creditPriceResult.value;
 
     const slug =
       name

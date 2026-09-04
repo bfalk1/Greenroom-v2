@@ -18,6 +18,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
 import { Waveform } from "@/components/audio/Waveform";
 import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
+import { maxCreditPriceFor } from "@/lib/creditPriceCaps";
 
 interface CreatorSample {
   id: string;
@@ -1127,7 +1128,7 @@ export default function CreatorDashboardPage() {
           count={selectedIds.size}
           onClose={() => setBulkEditOpen(false)}
           onApply={(changes) => runCreatorBulk({ metadata: changes })}
-          maxCreditPrice={user?.is_whitelisted ? 50 : 5}
+          maxCreditPrice={maxCreditPriceFor(user?.is_whitelisted)}
         />
       </div>
     </div>
