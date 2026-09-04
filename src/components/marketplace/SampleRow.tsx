@@ -26,6 +26,8 @@ export interface SampleRowProps {
   userRating?: number;
   isSelected?: boolean;
   showArtist?: boolean;
+  /** Why this row was surfaced — rendered under the name on recommendation lists. */
+  reason?: string;
   onPurchase: (sample: Sample) => void;
   onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
   onHighlight?: () => void;
@@ -40,6 +42,7 @@ export function SampleRow({
   userRating,
   isSelected = false,
   showArtist = true,
+  reason,
   onPurchase,
   onFavoriteChange,
   onHighlight,
@@ -392,6 +395,11 @@ export function SampleRow({
             </Link>
           ) : (
             <span className="max-w-full truncate text-xs text-[#39b54a]">{sample.genre || "Sample"}</span>
+          )}
+          {reason && (
+            <span className="max-w-full truncate text-[11px] text-[#8a8a8a]">
+              {reason}
+            </span>
           )}
           {sample.tags && sample.tags.length > 0 && (
             <div className="hidden min-w-0 lg:flex items-center gap-1 overflow-hidden">

@@ -13,6 +13,7 @@ import { MarketplaceTabs, MarketplaceTab } from "@/components/marketplace/Market
 import { PresetFilters, PresetFilterState } from "@/components/marketplace/PresetFilters";
 import { SearchSuggestions } from "@/components/marketplace/SearchSuggestions";
 import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
+import { RecommendedPanel, Recommendations } from "@/components/marketplace/RecommendedPanel";
 import { useUser } from "@/lib/hooks/useUser";
 import { useKeyboardNavigation } from "@/hooks/useKeyboardNavigation";
 import { trackSearch, trackFilterChange, trackSortChange, trackSamplePurchase, trackPurchaseFailed } from "@/lib/analytics";
@@ -75,6 +76,12 @@ export default function MarketplacePage() {
     sortBy: "random",
   });
   const hasFetchedPresetsRef = useRef(false);
+
+  // Recommendations are derived from purchases, so a purchase made anywhere on
+  // this page invalidates them; the tab refetches next time it is opened.
+  const [recommendations, setRecommendations] = useState<Recommendations | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const recommendationsStaleRef = useRef(true);
   const [filters, setFilters] = useState({
     genre: "all",
     instrumentType: "all",
@@ -193,7 +200,7 @@ export default function MarketplacePage() {
   }, [presetCurrentPage]);
 
   const { selectedIndex, isSelected: isKeyboardSelected, setSelectedIndex } = useKeyboardNavigation(samples, {
-    enabled: samples.length > 0 && !loading,
+    enabled: activeTab === "samples" && samples.length > 0 && !loading,
     onPlay: handleKeyboardPlay,
     onReachEnd: () => goToNextSamplesPage(),
     onReachStart: () => goToPrevSamplesPage(),
@@ -353,6 +360,23 @@ export default function MarketplacePage() {
     }
   }, [user]);
 
+  const fetchRecommendations = useCallback(async () => {
+    if (!user) return;
+    try {
+      setRecommendationsLoading(true);
+      const res = await fetch("/api/recommendations");
+      if (!res.ok) throw new Error("Failed to fetch recommendations");
+      const data = await res.json();
+      setRecommendations(data);
+      recommendationsStaleRef.current = false;
+    } catch (error) {
+      console.error("Error fetching recommendations:", error);
+      toast.error("Failed to load recommendations");
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }, [user]);
+
   // Preset fetching
   const fetchPresets = useCallback(
     async (page: number) => {
@@ -425,6 +449,18 @@ export default function MarketplacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, presetCurrentPage, searchQuery, presetFilters, randomSeed]);
 
+  // Recompute on entry to the tab, and only when the cached set is stale, so
+  // browsing back and forth doesn't re-run the neighbour queries every time —
+  // and a purchase made while sitting here doesn't reload the list underneath.
+  const onRecommendedRef = useRef(false);
+  useEffect(() => {
+    const wasOnTab = onRecommendedRef.current;
+    onRecommendedRef.current = activeTab === "recommended";
+    if (activeTab !== "recommended" || wasOnTab) return;
+    if (!user || !recommendationsStaleRef.current) return;
+    fetchRecommendations();
+  }, [activeTab, user, fetchRecommendations]);
+
   const handleTabChange = (tab: MarketplaceTab) => {
     setActiveTab(tab);
     setSelectedIndex(0);
@@ -433,6 +469,10 @@ export default function MarketplacePage() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
+    // Recommendations aren't searchable — send the typist somewhere that is.
+    if (query && activeTab === "recommended") {
+      setActiveTab("samples");
+    }
   };
 
   // Reset to first page when filters/search change so the user
@@ -444,17 +484,7 @@ export default function MarketplacePage() {
   // Register the active tab's items as the player's queue so the
   // NowPlayingBar's prev/next can step through them.
   useEffect(() => {
-    if (activeTab === "samples") {
-      setNowPlayingQueue(
-        samples.map((s) => ({
-          id: s.id,
-          name: s.name,
-          artistName: s.artist_name,
-          coverUrl: s.cover_art_url || s.creator_avatar,
-          artistSlug: s.artist_name || s.creator_id,
-        }))
-      );
-    } else {
+    if (activeTab === "presets") {
       setNowPlayingQueue(
         presets.map((p) => ({
           id: p.id,
@@ -464,8 +494,19 @@ export default function MarketplacePage() {
           artistSlug: p.artist_name || p.creator_id,
         }))
       );
+    } else {
+      const queue = activeTab === "recommended" ? recommendations?.samples ?? [] : samples;
+      setNowPlayingQueue(
+        queue.map((s) => ({
+          id: s.id,
+          name: s.name,
+          artistName: s.artist_name,
+          coverUrl: s.cover_art_url || s.creator_avatar,
+          artistSlug: s.artist_name || s.creator_id,
+        }))
+      );
     }
-  }, [activeTab, samples, presets]);
+  }, [activeTab, samples, presets, recommendations]);
 
   useEffect(() => () => setNowPlayingQueue([]), []);
 
@@ -509,7 +550,9 @@ export default function MarketplacePage() {
   // Register cross-page navigation for the active tab so the bar can
   // auto-advance/retreat when at the queue edges.
   useEffect(() => {
-    if (activeTab === "samples") {
+    if (activeTab === "recommended") {
+      setQueueNavigation({});
+    } else if (activeTab === "samples") {
       setQueueNavigation({
         hasPrevPage: currentPage > 1,
         hasNextPage: currentPage < totalPages,
@@ -630,6 +673,7 @@ export default function MarketplacePage() {
 
       // Update purchased set
       setPurchasedIds((prev) => new Set([...prev, sample.id]));
+      recommendationsStaleRef.current = true;
       // Refresh user credits
       refreshUser();
 
@@ -704,6 +748,7 @@ export default function MarketplacePage() {
       }
 
       setPurchasedPresetIds((prev) => new Set([...prev, preset.id]));
+      recommendationsStaleRef.current = true;
       refreshUser();
       toast.success(`Purchased "${preset.name}"`);
     } catch (error) {
@@ -730,6 +775,37 @@ export default function MarketplacePage() {
 
   const handleReroll = () => {
     setRandomSeed(Math.random());
+  };
+
+  // Suggestion chips are shortcuts into the browsable tabs: apply the filter,
+  // then hand the user over to the list that filter belongs to.
+  const applySampleFacet = (patch: Partial<typeof filters>) => {
+    const next = { ...filters, ...patch };
+    trackFilterChange({
+      genre: next.genre !== "all" ? next.genre : undefined,
+      instrumentType: next.instrumentType !== "all" ? next.instrumentType : undefined,
+      sampleType: next.sampleType !== "all" ? next.sampleType : undefined,
+      key: next.key !== "all" ? next.key : undefined,
+    });
+    setFilters(next);
+    setActiveTab("samples");
+    setSelectedIndex(0);
+    stopGlobalPlayback();
+  };
+
+  const handleRecommendedGenre = (genre: string) => applySampleFacet({ genre });
+  const handleRecommendedInstrument = (instrumentType: string) =>
+    applySampleFacet({ instrumentType });
+
+  const handleRecommendedPresetCategory = (category: string) => {
+    setPresetFilters((prev) => ({ ...prev, category }));
+    setActiveTab("presets");
+    stopGlobalPlayback();
+  };
+
+  const handleRecommendationsRefresh = () => {
+    recommendationsStaleRef.current = true;
+    fetchRecommendations();
   };
 
   const userForCard = user
@@ -864,7 +940,7 @@ export default function MarketplacePage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#a1a1a1] z-10" />
             <Input
               type="text"
-              placeholder={activeTab === "samples" ? "Search samples, creators, genres..." : "Search presets, synths, creators..."}
+              placeholder={activeTab === "presets" ? "Search presets, synths, creators..." : "Search samples, creators, genres..."}
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               onFocus={() => setSearchFocused(true)}
@@ -884,12 +960,17 @@ export default function MarketplacePage() {
         </div>
 
         {/* Tabs */}
-        <MarketplaceTabs activeTab={activeTab} onTabChange={handleTabChange} />
+        <MarketplaceTabs
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          tabs={user ? ["recommended", "samples", "presets"] : ["samples", "presets"]}
+        />
 
-        {/* Filters */}
-        {activeTab === "samples" ? (
+        {/* Filters — the recommended list has its own ordering, so no filter bar */}
+        {activeTab === "samples" && (
           <SampleFilters filters={filters} onFilterChange={handleFilterChange} />
-        ) : (
+        )}
+        {activeTab === "presets" && (
           <PresetFilters filters={presetFilters} onFilterChange={handlePresetFilterChange} />
         )}
 
@@ -900,6 +981,30 @@ export default function MarketplacePage() {
             <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Space</span> play/pause
             <span className="bg-[#2a2a2a] px-2 py-0.5 rounded">Esc</span> stop
           </div>
+        )}
+
+        {/* Recommended Tab Content */}
+        {activeTab === "recommended" && (
+          <RecommendedPanel
+            data={recommendations}
+            loading={recommendationsLoading}
+            user={userForCard}
+            purchasedIds={purchasedIds}
+            favoritedIds={favoritedIds}
+            userRatings={userRatings}
+            purchasedPresetIds={purchasedPresetIds}
+            favoritedPresetIds={favoritedPresetIds}
+            userPresetRatings={userPresetRatings}
+            onPurchase={handlePurchase}
+            onFavoriteChange={handleFavoriteChange}
+            onPresetPurchase={handlePresetPurchase}
+            onPresetFavoriteChange={handlePresetFavoriteChange}
+            onGenreSelect={handleRecommendedGenre}
+            onInstrumentSelect={handleRecommendedInstrument}
+            onPresetCategorySelect={handleRecommendedPresetCategory}
+            onRefresh={handleRecommendationsRefresh}
+            refreshUser={refreshUser}
+          />
         )}
 
         {/* Samples Tab Content */}
