@@ -42,6 +42,9 @@ export interface TikTokCapiAttribution {
   clientIp?: string | null;
   clientUserAgent?: string | null;
   eventSourceUrl?: string | null;
+  // The STAMPED click id (tt.1.<ms>.<ttclid>), same convention metaFbc uses —
+  // only the <ttclid> segment goes on the wire, see rawTtclid.
+  ttclid?: string | null;
 }
 
 interface TikTokCapiEventInput {
@@ -106,6 +109,12 @@ export function buildTikTokCapiEvent(
   if (input.attribution.clientIp?.trim()) {
     user.ip = input.attribution.clientIp.trim();
   }
+  // The click id, raw and unhashed. This is the single highest-value match
+  // key TikTok has: email proves WHO bought, ttclid proves WHICH AD CLICK
+  // they came from. Without it a matched conversion still can't be credited
+  // to the campaign that paid for it.
+  const clickId = rawTtclid(input.attribution.ttclid);
+  if (clickId) user.ttclid = clickId;
 
   return {
     event: input.event,
@@ -192,6 +201,86 @@ export function sendTikTokCapiEvent(input: TikTokCapiEventInput): void {
     // Outside a request scope (scripts/tests) — best-effort immediate send.
     void send();
   }
+}
+
+// --- Durable click id (the twin of metaCapiServer's fbc plumbing) ---
+
+// Our stamped wrapper: tt.1.<first-seen-ms>.<ttclid>. The <ttclid> charset is
+// deliberately WIDER than Meta's fbclid rule — a real TikTok click id looks
+// like "E.C.P.xxxxx", so a dot-free charset would reject every one of them.
+const TTCLID_FORMAT = /^tt\.\d+\.\d+\.[A-Za-z0-9._-]{1,400}$/;
+
+export function normalizeTtclid(value: string | null | undefined): string | null {
+  const v = value?.trim();
+  if (!v || v.length > 500) return null;
+  return TTCLID_FORMAT.test(v) ? v : null;
+}
+
+// The wire value. TikTok wants the click id exactly as it appeared in the URL
+// — the tt.1.<ms>. prefix is bookkeeping of ours and must be stripped, or the
+// id matches nothing. Splitting on "." would corrupt an id that contains dots
+// (they all do), hence the anchored capture.
+export function rawTtclid(value: string | null | undefined): string | null {
+  const v = normalizeTtclid(value);
+  const m = v?.match(/^tt\.\d+\.\d+\.(.+)$/);
+  return m ? m[1] : null;
+}
+
+// Only gr_ttclid, the stamped copy our middleware mints from the ?ttclid URL
+// param. TikTok's own `ttclid` cookie is deliberately NOT read: events.js
+// writes it raw, with no timestamp, so it cannot take part in the
+// latest-click-wins comparison below — and middleware sees the same URL param
+// at the same moment anyway, so nothing is lost by preferring our copy.
+export function ttclidFromCookies(
+  cookieValue: (name: string) => string | undefined
+): string | null {
+  return normalizeTtclid(cookieValue("gr_ttclid"));
+}
+
+// How long a banked click id stays usable. Shorter than Meta's 90 days on
+// purpose: TikTok's own ttclid cookie lives ~30 days and its longest click
+// attribution window is 28, so an older id would add noise, not conversions.
+export const USER_TTCLID_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+// First-sight time embedded in a stamped value; 0 when absent/malformed so
+// comparisons treat "nothing" as oldest.
+export function ttclidClickTimeMs(value: string | null | undefined): number {
+  const v = normalizeTtclid(value);
+  if (!v) return 0;
+  const ms = Number(v.split(".")[2]);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Fall back to the click id banked on the user row (see /api/user/me) when the
+ * live request carried none — the whole reason the column exists. TikTok ad
+ * traffic lands in TikTok's in-app browser; when the payment redirect hands
+ * off to the system browser, the cookies do not follow, so activation sees no
+ * click id at all. A live cookie always wins; the stored id must be fresh by
+ * BOTH bounds (bank time and embedded first-sight time), so an id banked on
+ * day 29 of its life cannot buy itself a second 30-day lease.
+ */
+export function withUserTtclidFallback(
+  attr: TikTokCapiAttribution,
+  user:
+    | { tiktokTtclid: string | null; tiktokTtclidUpdatedAt: Date | null }
+    | null
+    | undefined,
+  nowMs: number = Date.now()
+): TikTokCapiAttribution {
+  const live = normalizeTtclid(attr.ttclid);
+  if (live) return { ...attr, ttclid: live };
+  const stored = normalizeTtclid(user?.tiktokTtclid);
+  const bankedAt = user?.tiktokTtclidUpdatedAt?.getTime();
+  if (
+    !stored ||
+    !bankedAt ||
+    nowMs - bankedAt > USER_TTCLID_MAX_AGE_MS ||
+    nowMs - ttclidClickTimeMs(stored) > USER_TTCLID_MAX_AGE_MS
+  ) {
+    return { ...attr, ttclid: live };
+  }
+  return { ...attr, ttclid: stored };
 }
 
 /**

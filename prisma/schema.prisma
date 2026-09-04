@@ -114,73 +114,75 @@ enum MessageSenderRole {
 // ─────────────────────────────────────────────
 
 model User {
-  id                 String    @id @default(uuid()) @db.Uuid
-  email              String    @unique
-  username           String?   @unique
-  artistName         String?   @unique @map("artist_name")
-  fullName           String?   @map("full_name")
-  bio                String?
-  avatarUrl          String?   @map("avatar_url")
-  bannerUrl          String?   @map("banner_url")
-  role               UserRole  @default(USER)
-  socialLinks        Json?     @map("social_links") @db.JsonB
-  addressLine1       String?   @map("address_line1")
-  addressLine2       String?   @map("address_line2")
-  city               String?
-  state              String?
-  postalCode         String?   @map("postal_code")
-  country            String?
-  subscriptionStatus String?   @map("subscription_status")
-  profileCompleted   Boolean   @default(false) @map("profile_completed")
-  stripeCustomerId   String?   @map("stripe_customer_id")
-  payoutRate         Int?      @map("payout_rate") // DEPRECATED — unused. Per-creator rate lives in customPayoutRate (cents/credit).
-  isActive           Boolean   @default(true) @map("is_active")
-  isFlagged          Boolean   @default(false) @map("is_flagged")
-  flagReason         String?   @map("flag_reason")
-  flaggedAt          DateTime? @map("flagged_at")
-  flaggedBy          String?   @map("flagged_by") @db.Uuid
-  isWhitelisted      Boolean   @default(false) @map("is_whitelisted")
-  customPayoutRate   Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
-  paypalEmail        String?   @map("paypal_email") // PayPal address the creator wants payouts sent to. Must be set before a payout can be requested, queued or approved.
-  termsAcceptedAt    DateTime? @map("terms_accepted_at")
-  creatorWelcomeSeenAt DateTime? @map("creator_welcome_seen_at") // Set when a newly-approved creator dismisses the congratulations modal. Null on a CREATOR means the welcome is still pending; re-armed on re-approval.
-  emailOptOutAt      DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
-  referralCode       String?   @unique @map("referral_code") // Personal referral code, allocated lazily on first use of the referral panel
-  metaFbc            String?   @map("meta_fbc") // Meta ad click id (fb.1.<ms>.<fbclid>), banked from the _fbc/gr_fbc cookies on authenticated page loads (/api/user/me). Checkout falls back to it when the live cookie jar carries no click id (cross-browser conversion, expired _fbc) — see withUserFbcFallback.
-  metaFbcUpdatedAt   DateTime? @map("meta_fbc_updated_at") // Freshness bound for metaFbc: the fallback ignores ids banked >90d ago (USER_FBC_MAX_AGE_MS).
-  vipOfferUnlockedAt DateTime? @map("vip_offer_unlocked_at") // Set when a creator referral grants this account the VIP lifetime discount; honored by checkout as an unlock (alongside the gr_vip_offer cookie). Permanent, never-paid eligibility still applies.
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid()) @db.Uuid
+  email                 String    @unique
+  username              String?   @unique
+  artistName            String?   @unique @map("artist_name")
+  fullName              String?   @map("full_name")
+  bio                   String?
+  avatarUrl             String?   @map("avatar_url")
+  bannerUrl             String?   @map("banner_url")
+  role                  UserRole  @default(USER)
+  socialLinks           Json?     @map("social_links") @db.JsonB
+  addressLine1          String?   @map("address_line1")
+  addressLine2          String?   @map("address_line2")
+  city                  String?
+  state                 String?
+  postalCode            String?   @map("postal_code")
+  country               String?
+  subscriptionStatus    String?   @map("subscription_status")
+  profileCompleted      Boolean   @default(false) @map("profile_completed")
+  stripeCustomerId      String?   @map("stripe_customer_id")
+  payoutRate            Int?      @map("payout_rate") // DEPRECATED — unused. Per-creator rate lives in customPayoutRate (cents/credit).
+  isActive              Boolean   @default(true) @map("is_active")
+  isFlagged             Boolean   @default(false) @map("is_flagged")
+  flagReason            String?   @map("flag_reason")
+  flaggedAt             DateTime? @map("flagged_at")
+  flaggedBy             String?   @map("flagged_by") @db.Uuid
+  isWhitelisted         Boolean   @default(false) @map("is_whitelisted")
+  customPayoutRate      Int?      @map("custom_payout_rate") // Per-creator payout rate in cents per credit (e.g., 7 = $0.07/credit). Null = platform default.
+  paypalEmail           String?   @map("paypal_email") // PayPal address the creator wants payouts sent to. Must be set before a payout can be requested, queued or approved.
+  termsAcceptedAt       DateTime? @map("terms_accepted_at")
+  creatorWelcomeSeenAt  DateTime? @map("creator_welcome_seen_at") // Set when a newly-approved creator dismisses the congratulations modal. Null on a CREATOR means the welcome is still pending; re-armed on re-approval.
+  emailOptOutAt         DateTime? @map("email_opt_out_at") // Set when the user unsubscribes; suppresses marketing email (transactional still sends)
+  referralCode          String?   @unique @map("referral_code") // Personal referral code, allocated lazily on first use of the referral panel
+  metaFbc               String?   @map("meta_fbc") // Meta ad click id (fb.1.<ms>.<fbclid>), banked from the _fbc/gr_fbc cookies on authenticated page loads (/api/user/me). Checkout falls back to it when the live cookie jar carries no click id (cross-browser conversion, expired _fbc) — see withUserFbcFallback.
+  metaFbcUpdatedAt      DateTime? @map("meta_fbc_updated_at") // Freshness bound for metaFbc: the fallback ignores ids banked >90d ago (USER_FBC_MAX_AGE_MS).
+  tiktokTtclid          String?   @map("tiktok_ttclid") // TikTok ad click id, stored as tt.1.<first-seen-ms>.<ttclid> — the raw id carries no timestamp, so the stamp is ours and rides alongside it (exactly why metaFbc stores fb.1.<ms>.<fbclid>). Banked from the gr_ttclid cookie on authenticated page loads; the Events API sends only the <ttclid> segment. See withUserTtclidFallback.
+  tiktokTtclidUpdatedAt DateTime? @map("tiktok_ttclid_updated_at") // Freshness bound for tiktokTtclid: the fallback ignores ids banked >30d ago (USER_TTCLID_MAX_AGE_MS).
+  vipOfferUnlockedAt    DateTime? @map("vip_offer_unlocked_at") // Set when a creator referral grants this account the VIP lifetime discount; honored by checkout as an unlock (alongside the gr_vip_offer cookie). Permanent, never-paid eligibility still applies.
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   // Relations
   subscription         Subscription?
   creditBalance        CreditBalance?
   creditTransactions   CreditTransaction[]
-  samples              Sample[]              @relation("CreatorSamples")
-  presets              Preset[]              @relation("CreatorPresets")
+  samples              Sample[]                   @relation("CreatorSamples")
+  presets              Preset[]                   @relation("CreatorPresets")
   purchases            Purchase[]
   downloads            Download[]
   ratings              Rating[]
   favorites            Favorite[]
-  following            Follow[]              @relation("Follower")
-  followers            Follow[]              @relation("Creator")
-  creatorApplication   CreatorApplication?   @relation("Applicant")
-  reviewedApplications CreatorApplication[]  @relation("Reviewer")
+  following            Follow[]                   @relation("Follower")
+  followers            Follow[]                   @relation("Creator")
+  creatorApplication   CreatorApplication?        @relation("Applicant")
+  reviewedApplications CreatorApplication[]       @relation("Reviewer")
   payouts              CreatorPayout[]
   earningAdjustments   CreatorEarningAdjustment[]
   auditLogs            AuditLog[]
-  sentInvites          CreatorInvite[]       @relation("InvitedBy")
-  usedInvite           CreatorInvite?        @relation("InviteUsedBy")
-  betaInvitesSent      BetaInvite[]          @relation("BetaInvitedBy")
-  betaInviteUsed       BetaInvite?           @relation("BetaInviteUsedBy")
+  sentInvites          CreatorInvite[]            @relation("InvitedBy")
+  usedInvite           CreatorInvite?             @relation("InviteUsedBy")
+  betaInvitesSent      BetaInvite[]               @relation("BetaInvitedBy")
+  betaInviteUsed       BetaInvite?                @relation("BetaInviteUsedBy")
   paypalOrders         PaypalOrder[]
-  referralsMade        Referral[]            @relation("Referrer")
-  referralUsed         Referral?             @relation("ReferredUser")
-  notifications        Notification[]        @relation("UserNotifications")
-  messageThreads       MessageThread[]       @relation("UserMessageThreads")
-  openedThreads        MessageThread[]       @relation("OpenedThreads")
-  sentMessages         Message[]             @relation("SentMessages")
-  authoredBroadcasts   Broadcast[]           @relation("AuthoredBroadcasts")
+  referralsMade        Referral[]                 @relation("Referrer")
+  referralUsed         Referral?                  @relation("ReferredUser")
+  notifications        Notification[]             @relation("UserNotifications")
+  messageThreads       MessageThread[]            @relation("UserMessageThreads")
+  openedThreads        MessageThread[]            @relation("OpenedThreads")
+  sentMessages         Message[]                  @relation("SentMessages")
+  authoredBroadcasts   Broadcast[]                @relation("AuthoredBroadcasts")
   checkoutAttributions CheckoutAttribution[]
 
   @@map("users")

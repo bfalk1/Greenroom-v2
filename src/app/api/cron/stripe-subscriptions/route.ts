@@ -14,7 +14,10 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
-import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
+import {
+  tiktokCapiPurchase,
+  withUserTtclidFallback,
+} from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 // Nightly Stripe↔DB reconciliation. The webhook is the primary grant path,
@@ -267,6 +270,8 @@ async function reconcileOne(
               postalCode: true,
               metaFbc: true,
               metaFbcUpdatedAt: true,
+              tiktokTtclid: true,
+              tiktokTtclidUpdatedAt: true,
             },
           }),
           stripe.checkout.sessions.list({
@@ -305,7 +310,18 @@ async function reconcileOne(
           ...purchaseFacts,
           identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
         });
-        tiktokCapiPurchase(purchaseFacts);
+        // TikTok's half additionally recovers the banked click id: nothing upstream
+        // carries a live ttclid to activation (the in-app-browser handoff is exactly
+        // where those cookies die), so the column /api/user/me banks is the only
+        // source that credits this sale to the ad click rather than just matching
+        // the buyer.
+        tiktokCapiPurchase({
+          ...purchaseFacts,
+          attribution: withUserTtclidFallback(
+            purchaseFacts.attribution,
+            userRow
+          ),
+        });
       } catch (capiError) {
         console.error(
           `[stripe-reconcile] CAPI Purchase for ${subscription.id} not sent:`,

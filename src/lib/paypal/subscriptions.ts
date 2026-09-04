@@ -17,7 +17,10 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
-import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
+import {
+  tiktokCapiPurchase,
+  withUserTtclidFallback,
+} from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import {
   VIP_LIFETIME_OFFER,
@@ -566,7 +569,15 @@ export async function syncPaypalSubscription(
         ...purchaseFacts,
         identity: capiIdentityFromProfile(user),
       });
-      tiktokCapiPurchase(purchaseFacts);
+      // TikTok's half additionally recovers the banked click id: nothing upstream
+      // carries a live ttclid to activation (the in-app-browser handoff is exactly
+      // where those cookies die), so the column /api/user/me banks is the only
+      // source that credits this sale to the ad click rather than just matching
+      // the buyer.
+      tiktokCapiPurchase({
+        ...purchaseFacts,
+        attribution: withUserTtclidFallback(purchaseFacts.attribution, user),
+      });
     }
   }
 

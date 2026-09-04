@@ -10,7 +10,10 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
-import { tiktokCapiPurchase } from "@/lib/tiktokCapiServer";
+import {
+  tiktokCapiPurchase,
+  withUserTtclidFallback,
+} from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import Stripe from "stripe";
 
@@ -237,7 +240,12 @@ async function handleCheckoutCompleted(
   const fbcUser = await prisma.user
     .findUnique({
       where: { id: userId },
-      select: { metaFbc: true, metaFbcUpdatedAt: true },
+      select: {
+        metaFbc: true,
+        metaFbcUpdatedAt: true,
+        tiktokTtclid: true,
+        tiktokTtclidUpdatedAt: true,
+      },
     })
     .catch(() => null);
   // The facts both ad channels must agree on. Shared rather than restated
@@ -272,7 +280,15 @@ async function handleCheckoutCompleted(
   });
   // TikTok's twin, same slot and same event_id. No identity argument: the
   // Events API takes only email/phone/external_id, and we store no phone.
-  tiktokCapiPurchase(purchaseFacts);
+  // TikTok's half additionally recovers the banked click id: nothing upstream
+  // carries a live ttclid to activation (the in-app-browser handoff is exactly
+  // where those cookies die), so the column /api/user/me banks is the only
+  // source that credits this sale to the ad click rather than just matching
+  // the buyer.
+  tiktokCapiPurchase({
+    ...purchaseFacts,
+    attribution: withUserTtclidFallback(purchaseFacts.attribution, fbcUser),
+  });
 
   // A VIP activation is the trigger that pays out a pending referral — only for
   // a genuinely ACTIVE subscription. Idempotent and never throws — safe

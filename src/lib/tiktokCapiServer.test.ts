@@ -6,8 +6,12 @@ import {
   buildTikTokCapiEvent,
   hashEmail,
   sha256Hex,
+  normalizeTtclid,
+  rawTtclid,
   tiktokCapiEnabled,
   tiktokCapiPurchase,
+  ttclidFromCookies,
+  withUserTtclidFallback,
 } from "./tiktokCapiServer";
 import { purchaseEventId } from "./metaPixel";
 
@@ -261,4 +265,131 @@ test("inert without config — no pixel id or no token sends nothing", () => {
     process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID = prev.pixel;
     process.env.TIKTOK_ACCESS_TOKEN = prev.token;
   }
+});
+
+// --- Durable click id ---
+
+test("normalizeTtclid accepts the stamped form and real dotted click ids", () => {
+  // A real TikTok click id contains dots. Meta's fbclid charset (no dots)
+  // would reject every genuine one, which is why this rule is its own.
+  assert.equal(
+    normalizeTtclid("tt.1.1788487651804.E.C.P.abc_123-XY"),
+    "tt.1.1788487651804.E.C.P.abc_123-XY"
+  );
+  // A RAW id is not acceptable storage — it carries no first-sight stamp, so
+  // it could never lose a latest-click-wins comparison.
+  assert.equal(normalizeTtclid("E.C.P.abc_123"), null);
+  assert.equal(normalizeTtclid(""), null);
+  assert.equal(normalizeTtclid(null), null);
+  assert.equal(normalizeTtclid("tt.1.notanumber.abc"), null);
+  // Oversized values are refused rather than truncated into something wrong.
+  assert.equal(normalizeTtclid("tt.1.123." + "x".repeat(600)), null);
+});
+
+test("rawTtclid strips OUR prefix and nothing else — dots in the id survive", () => {
+  // The single most breakable line in this module: split(".")[3] would return
+  // "E" for every real click id and match nothing on TikTok's side.
+  assert.equal(rawTtclid("tt.1.1788487651804.E.C.P.abc_123"), "E.C.P.abc_123");
+  assert.equal(rawTtclid("tt.1.1788487651804.simpleid"), "simpleid");
+  assert.equal(rawTtclid("E.C.P.abc_123"), null);
+  assert.equal(rawTtclid(null), null);
+});
+
+test("ttclidFromCookies reads only our stamped cookie, not TikTok's raw one", () => {
+  // events.js writes `ttclid` with no timestamp, so it cannot take part in the
+  // freshness comparison; middleware mints gr_ttclid from the same URL param
+  // at the same moment, so nothing is lost by ignoring the vendor cookie.
+  const jar: Record<string, string> = {
+    ttclid: "E.C.P.raw_from_events_js",
+    gr_ttclid: "tt.1.1788487651804.E.C.P.ours",
+  };
+  assert.equal(
+    ttclidFromCookies((n) => jar[n]),
+    "tt.1.1788487651804.E.C.P.ours"
+  );
+  assert.equal(ttclidFromCookies((n) => ({ ttclid: jar.ttclid })[n]), null);
+});
+
+test("withUserTtclidFallback: live wins, fresh bank recovers, stale is refused", () => {
+  const now = 1_788_500_000_000;
+  const fresh = `tt.1.${now - 1000}.E.C.P.fresh`;
+  const banked = `tt.1.${now - 5 * 24 * 60 * 60 * 1000}.E.C.P.banked`;
+
+  // A live click id always wins.
+  assert.equal(
+    withUserTtclidFallback(
+      { ttclid: fresh },
+      { tiktokTtclid: banked, tiktokTtclidUpdatedAt: new Date(now - 1000) },
+      now
+    ).ttclid,
+    fresh
+  );
+
+  // No live id — the bank is exactly what the column exists for.
+  assert.equal(
+    withUserTtclidFallback(
+      {},
+      { tiktokTtclid: banked, tiktokTtclidUpdatedAt: new Date(now - 1000) },
+      now
+    ).ttclid,
+    banked
+  );
+
+  // Too old by CLICK time, even though it was banked seconds ago: a 40-day-old
+  // cookie must not buy a fresh 30-day lease just by being re-banked today.
+  const ancient = `tt.1.${now - 40 * 24 * 60 * 60 * 1000}.E.C.P.ancient`;
+  assert.equal(
+    withUserTtclidFallback(
+      {},
+      { tiktokTtclid: ancient, tiktokTtclidUpdatedAt: new Date(now - 1000) },
+      now
+    ).ttclid,
+    null
+  );
+
+  // Too old by BANK time.
+  assert.equal(
+    withUserTtclidFallback(
+      {},
+      {
+        tiktokTtclid: fresh,
+        tiktokTtclidUpdatedAt: new Date(now - 40 * 24 * 60 * 60 * 1000),
+      },
+      now
+    ).ttclid,
+    null
+  );
+
+  // Nothing anywhere is not an error.
+  assert.equal(withUserTtclidFallback({}, null, now).ttclid, null);
+});
+
+test("the event carries the RAW click id, never our stamped wrapper", () => {
+  const event = buildTikTokCapiEvent({
+    event: "CompletePayment",
+    eventId: purchaseEventId("cs_click"),
+    eventTimeSeconds: 1_788_000_000,
+    email: "buyer@example.com",
+    userId: "user-1",
+    attribution: {
+      clientUserAgent: UA,
+      ttclid: "tt.1.1788487651804.E.C.P.on_the_wire",
+    },
+  });
+  const user = event.user as Record<string, unknown>;
+  assert.equal(user.ttclid, "E.C.P.on_the_wire");
+  // Unhashed — hashing the click id makes it match nothing.
+  assert.ok(!/^[0-9a-f]{64}$/.test(user.ttclid as string));
+});
+
+test("the cookie middleware mints is exactly what normalizeTtclid accepts", () => {
+  // middleware.ts validates the raw id against /^[A-Za-z0-9._-]{1,255}$/ and
+  // builds `tt.1.${Date.now()}.${ttclid}`. That format contract spans two files
+  // that CANNOT import each other — middleware is edge runtime, this module
+  // pulls node:crypto — so it is asserted here or it drifts silently, and the
+  // symptom would be a banked click id that never validates and never sends.
+  const raw = "E.C.P.abc_123-XY";
+  const minted = `tt.1.${Date.now()}.${raw}`;
+  assert.equal(normalizeTtclid(minted), minted);
+  assert.equal(rawTtclid(minted), raw);
 });
