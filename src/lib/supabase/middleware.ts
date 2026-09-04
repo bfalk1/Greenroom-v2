@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
   // first at capture), so gr_fbc never shadows it.
   // httpOnly is safe (only the server reads gr_fbc, unlike _fbc which fbevents
   // reads); the strict charset guards against a junk/oversized cookie value.
-  // The Set-Cookie must ride EVERY response branch below (withGrFbc) — when it
+  // The Set-Cookie must ride EVERY response branch below (withAdCookies) — when it
   // rode only the fall-through supabaseResponse, each redirect return silently
   // dropped the click id, most damagingly the protected-route bounce to
   // /login, which buries fbclid inside the ?redirect param where no later
@@ -73,7 +73,28 @@ export async function updateSession(request: NextRequest) {
       grFbc = `fb.1.${Date.now()}.${fbclid}`;
     }
   }
-  const withGrFbc = <T extends NextResponse>(res: T): T => {
+  // TikTok's ad click id, given the same first-party treatment as fbclid — and
+  // for a sharper reason. TikTok ad traffic arrives in TikTok's in-app browser,
+  // and when the payment redirect hands off to the system browser the
+  // _ttp/ttclid cookies do NOT follow, so activation sees no click id at all
+  // and the conversion can only ever be matched by email, never credited to
+  // the click that paid for it. events.js writes its own `ttclid` cookie raw,
+  // with no timestamp; stamping first-sight time here is what later lets
+  // /api/user/me tell a fresh click from a stale one in a second browser's jar.
+  // Same overwrite rule as gr_fbc: a NEW id wins, a repeat sighting of the same
+  // id keeps its original stamp.
+  const ttclid = request.nextUrl.searchParams.get("ttclid");
+  let grTtclid: string | null = null;
+  // Charset admits dots — a real TikTok click id looks like "E.C.P.xxxxx", so
+  // gr_fbc's dot-free rule would reject every one of them.
+  if (ttclid && /^[A-Za-z0-9._-]{1,255}$/.test(ttclid)) {
+    const existing = request.cookies.get("gr_ttclid")?.value;
+    if (!existing || !existing.endsWith(`.${ttclid}`)) {
+      grTtclid = `tt.1.${Date.now()}.${ttclid}`;
+    }
+  }
+
+  const withAdCookies = <T extends NextResponse>(res: T): T => {
     if (grFbc) {
       res.cookies.set("gr_fbc", grFbc, {
         httpOnly: true,
@@ -83,14 +104,20 @@ export async function updateSession(request: NextRequest) {
         maxAge: 60 * 60 * 24 * 90, // 90 days, matching Meta's _fbc TTL
       });
     }
+    if (grTtclid) {
+      res.cookies.set("gr_ttclid", grTtclid, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        // 30 days: TikTok's own ttclid cookie lives about that long and its
+        // longest click-attribution window is 28, so a longer lease would
+        // bank ids that can no longer win attribution.
+        maxAge: 60 * 60 * 24 * 30,
+        path: "/",
+      });
+    }
     return res;
   };
-
-  // TikTok's ad click id. Unlike fbclid there is no first-party cookie to
-  // mint: nothing server-side reads it yet (there is no TikTok Events API
-  // channel), and events.js recovers ttclid from the URL itself. It is read
-  // here only so redirects below can forward it — see the /signup hop.
-  const ttclid = request.nextUrl.searchParams.get("ttclid");
 
   // For any authenticated request, load the account's status ONCE. Reused for
   // both suspension enforcement (immediately below) and the subscription
@@ -119,16 +146,16 @@ export async function updateSession(request: NextRequest) {
 
       if (!allowedWhileSuspended) {
         if (pathname.startsWith("/api/")) {
-          return withGrFbc(
+          return withAdCookies(
             NextResponse.json({ error: "Account suspended" }, { status: 403 })
           );
         }
         const url = request.nextUrl.clone();
         url.pathname = "/login";
         url.searchParams.set("error", "suspended");
-        return withGrFbc(NextResponse.redirect(url));
+        return withAdCookies(NextResponse.redirect(url));
       }
-      return withGrFbc(supabaseResponse);
+      return withAdCookies(supabaseResponse);
     }
   }
 
@@ -206,7 +233,7 @@ export async function updateSession(request: NextRequest) {
       carried && !carried.startsWith("/login") && !carried.startsWith("/signup")
         ? carried
         : "/marketplace";
-    return withGrFbc(NextResponse.redirect(new URL(dest, request.url)));
+    return withAdCookies(NextResponse.redirect(new URL(dest, request.url)));
   }
 
   // Hard paywall on account creation: a bare, logged-out hit on /signup is a
@@ -237,17 +264,17 @@ export async function updateSession(request: NextRequest) {
       // /signup attributable.
       if (fbclid) url.searchParams.set("fbclid", fbclid);
       if (ttclid) url.searchParams.set("ttclid", ttclid);
-      return withGrFbc(NextResponse.redirect(url));
+      return withAdCookies(NextResponse.redirect(url));
     }
   }
 
   if (isPublicPath) {
-    return withGrFbc(supabaseResponse);
+    return withAdCookies(supabaseResponse);
   }
 
   // API routes should return 401, not redirect
   if (pathname.startsWith("/api/") && !user) {
-    return withGrFbc(
+    return withAdCookies(
       NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     );
   }
@@ -263,7 +290,7 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/login";
     url.search = "";
     url.searchParams.set("redirect", target);
-    return withGrFbc(NextResponse.redirect(url));
+    return withAdCookies(NextResponse.redirect(url));
   }
 
   // Subscription paywall — users without active subscription are limited
@@ -295,10 +322,10 @@ export async function updateSession(request: NextRequest) {
         const url = request.nextUrl.clone();
         url.pathname = "/pricing";
         url.searchParams.set("redirect", pathname);
-        return withGrFbc(NextResponse.redirect(url));
+        return withAdCookies(NextResponse.redirect(url));
       }
     }
   }
 
-  return withGrFbc(supabaseResponse);
+  return withAdCookies(supabaseResponse);
 }

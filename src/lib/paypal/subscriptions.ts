@@ -17,6 +17,10 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
+import {
+  tiktokCapiPurchase,
+  withUserTtclidFallback,
+} from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 import {
   VIP_LIFETIME_OFFER,
@@ -526,7 +530,9 @@ export async function syncPaypalSubscription(
       const attribution = await prisma.checkoutAttribution
         .findUnique({ where: { id: subscriptionId } })
         .catch(() => null);
-      metaCapiPurchase({
+      // Facts both ad channels must agree on — see the Stripe webhook for
+      // why these are shared rather than restated per channel.
+      const purchaseFacts = {
         userId,
         email: user.email,
         tier: tier.name,
@@ -545,7 +551,6 @@ export async function syncPaypalSubscription(
                   tier.priceUsdCents * 12)
                 : tier.priceUsdCents,
         transactionId: subscriptionId,
-        identity: capiIdentityFromProfile(user),
         // The row's checkout-time signals, with the account-banked click id
         // as a last resort — covers rows written before the fallback existed
         // and buyers whose checkout jar had no fbc that /me later banked.
@@ -559,6 +564,19 @@ export async function syncPaypalSubscription(
           },
           user
         ),
+      };
+      metaCapiPurchase({
+        ...purchaseFacts,
+        identity: capiIdentityFromProfile(user),
+      });
+      // TikTok's half additionally recovers the banked click id: nothing upstream
+      // carries a live ttclid to activation (the in-app-browser handoff is exactly
+      // where those cookies die), so the column /api/user/me banks is the only
+      // source that credits this sale to the ad click rather than just matching
+      // the buyer.
+      tiktokCapiPurchase({
+        ...purchaseFacts,
+        attribution: withUserTtclidFallback(purchaseFacts.attribution, user),
       });
     }
   }

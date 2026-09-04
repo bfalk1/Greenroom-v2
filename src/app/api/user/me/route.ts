@@ -9,6 +9,10 @@ import {
   fbcFromCookies,
   metaCapiCompleteRegistration,
 } from "@/lib/metaCapiServer";
+import {
+  ttclidClickTimeMs,
+  ttclidFromCookies,
+} from "@/lib/tiktokCapiServer";
 import { profileFromAuthMetadata } from "@/lib/signupProfile";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -376,6 +380,32 @@ export async function GET(request: NextRequest) {
         })
         .catch((error) =>
           console.error("Failed to bank Meta click id:", error)
+        );
+    }
+
+    // The same banking for TikTok's click id — the channel that needs it most.
+    // A TikTok in-app-browser buyer whose payment redirect hands off to the
+    // system browser reaches activation with NO cookies, so without this the
+    // conversion can only ever be matched by email, never credited to the ad
+    // click. Same latest-click-wins rule, same never-fail-the-request rule.
+    const cookieTtclid = ttclidFromCookies(
+      (name) => cookieStore.get(name)?.value
+    );
+    if (
+      cookieTtclid &&
+      cookieTtclid !== user.tiktokTtclid &&
+      ttclidClickTimeMs(cookieTtclid) >= ttclidClickTimeMs(user.tiktokTtclid)
+    ) {
+      await prisma.user
+        .update({
+          where: { id: user.id },
+          data: {
+            tiktokTtclid: cookieTtclid,
+            tiktokTtclidUpdatedAt: new Date(),
+          },
+        })
+        .catch((error) =>
+          console.error("Failed to bank TikTok click id:", error)
         );
     }
 

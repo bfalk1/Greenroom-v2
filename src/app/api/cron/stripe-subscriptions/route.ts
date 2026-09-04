@@ -14,6 +14,10 @@ import {
   capiIdentityFromProfile,
   withUserFbcFallback,
 } from "@/lib/metaCapiServer";
+import {
+  tiktokCapiPurchase,
+  withUserTtclidFallback,
+} from "@/lib/tiktokCapiServer";
 import { grantReferralRewardIfVip } from "@/lib/referralActivation";
 
 // Nightly Stripe↔DB reconciliation. The webhook is the primary grant path,
@@ -266,6 +270,8 @@ async function reconcileOne(
               postalCode: true,
               metaFbc: true,
               metaFbcUpdatedAt: true,
+              tiktokTtclid: true,
+              tiktokTtclidUpdatedAt: true,
             },
           }),
           stripe.checkout.sessions.list({
@@ -274,7 +280,9 @@ async function reconcileOne(
           }),
         ]);
         const originSession = sessions.data[0] ?? null;
-        metaCapiPurchase({
+        // Facts both ad channels must agree on — see the Stripe webhook for
+        // why these are shared rather than restated per channel.
+        const purchaseFacts = {
           userId,
           email: userRow?.email,
           tier: tier.name,
@@ -288,7 +296,6 @@ async function reconcileOne(
               : tier.priceUsdCents),
           currency: originSession?.currency,
           transactionId: originSession?.id ?? subscription.id,
-          identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
           // The account-banked click id backstops metadata written before
           // the durable-fbc fallback shipped (or banked after checkout).
           attribution: withUserFbcFallback(
@@ -296,6 +303,22 @@ async function reconcileOne(
               ...(originSession?.metadata ?? {}),
               ...subscription.metadata,
             }),
+            userRow
+          ),
+        };
+        metaCapiPurchase({
+          ...purchaseFacts,
+          identity: userRow ? capiIdentityFromProfile(userRow) : undefined,
+        });
+        // TikTok's half additionally recovers the banked click id: nothing upstream
+        // carries a live ttclid to activation (the in-app-browser handoff is exactly
+        // where those cookies die), so the column /api/user/me banks is the only
+        // source that credits this sale to the ad click rather than just matching
+        // the buyer.
+        tiktokCapiPurchase({
+          ...purchaseFacts,
+          attribution: withUserTtclidFallback(
+            purchaseFacts.attribution,
             userRow
           ),
         });
