@@ -48,6 +48,7 @@ import { CreatorUploadsPanel } from "@/components/admin/CreatorUploadsPanel";
 import AnalyticsOverview from "@/components/admin/analytics/AnalyticsOverview";
 import { MessageUserModal } from "@/components/admin/MessageUserModal";
 import { useUnreadCount } from "@/lib/hooks/useUnreadCount";
+import { useUser } from "@/lib/hooks/useUser";
 import { SubscribersPanel } from "@/components/admin/SubscribersPanel";
 import { BroadcastPanel } from "@/components/admin/BroadcastPanel";
 import { toast } from "sonner";
@@ -245,6 +246,18 @@ export default function AdminDashboardPage() {
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [messagingApp, setMessagingApp] = useState<Application | null>(null);
   const { total: staffUnread } = useUnreadCount({ staff: true });
+  const { user: currentUser } = useUser();
+
+  // Moderators can read the analytics, but not from here — most of this page's
+  // routes still 403 for them. Send them to the staff analytics page instead of
+  // a dashboard that half-loads. Wait for the role: it is null while loading.
+  useEffect(() => {
+    if (currentUser && currentUser.role !== "ADMIN") {
+      router.replace(
+        currentUser.role === "MODERATOR" ? "/mod/analytics" : "/marketplace"
+      );
+    }
+  }, [currentUser, router]);
 
   // Settings state
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>({
@@ -661,6 +674,7 @@ export default function AdminDashboardPage() {
         <div className="flex-1 min-w-0">
           {activeSection === "overview" && (
             <AnalyticsOverview
+              canExport
               onNavigate={(id) => {
                 // Preset moderation lives on the mod queue page, not in a
                 // dashboard section.

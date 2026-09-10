@@ -11,7 +11,8 @@ import {
 import type { Prisma } from "@prisma/client";
 
 /**
- * GET /api/admin/subscribers — subscriber counts and tier mix (ADMIN only)
+ * GET /api/admin/subscribers — subscriber counts and tier mix, readable by
+ * staff (MODERATOR or ADMIN).
  *
  * Query: ?status=active|canceling|expired|comped&tierId=<uuid>&q=<search>
  *        &limit=<1-200>&offset=<n>
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest) {
       select: { role: true },
     });
 
-    if (!dbUser || dbUser.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (!dbUser || (dbUser.role !== "ADMIN" && dbUser.role !== "MODERATOR")) {
+      return NextResponse.json({ error: "Staff access required" }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
