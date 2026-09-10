@@ -20,6 +20,15 @@ import type { Prisma } from "@prisma/client";
  * The headline counts always describe the whole platform; status/tierId/q only
  * filter the paginated list underneath them.
  *
+ * Two parts of the payload are ADMIN-only, and both are withheld here rather
+ * than merely hidden in the UI — this is the access control:
+ * - **`list` comes back null for a moderator.** Aggregates say how the
+ *   business is doing; the roster names individual customers and what they
+ *   bought. The query is skipped outright.
+ * - **Every dollar figure is nulled and `includesRevenue` is false.**
+ *   Moderators see how many subscriptions there are, not what they earn.
+ *   Tier list prices go too: price × subscribers is revenue with extra steps.
+ *
  * Definitions match GET /api/admin/analytics so the two dashboards never
  * disagree:
  * - Active   = a provider-backed subscriptions row not past currentPeriodEnd.
@@ -58,6 +67,55 @@ function displayName(u: {
   return u.artistName || u.fullName || u.username || u.email;
 }
 
+/** The money-bearing parts of the payload — all `withoutRevenue` touches. */
+interface RevenueFields {
+  totals: {
+    mrrUsd: number;
+    listMrrUsd: number;
+    avgMrrUsd: number | null;
+    promoFirstMonthUsd: number;
+  };
+  tiers: {
+    priceUsd: number;
+    mrrUsd: number;
+    listMrrUsd: number;
+    cohorts: { unitPriceUsd: number; mrrUsd: number }[];
+  }[];
+}
+
+/**
+ * Strip every dollar figure from a payload before it reaches a moderator.
+ * Nulls rather than deletes, so the client renders one shape and just omits
+ * the money tiles/columns when `includesRevenue` is false.
+ *
+ * Deliberately includes tier/cohort list prices: leaving them in would let
+ * anyone multiply price × subscribers back into the MRR this is hiding.
+ */
+function withoutRevenue<P extends RevenueFields>(payload: P) {
+  return {
+    ...payload,
+    includesRevenue: false as const,
+    totals: {
+      ...payload.totals,
+      mrrUsd: null,
+      listMrrUsd: null,
+      avgMrrUsd: null,
+      promoFirstMonthUsd: null,
+    },
+    tiers: payload.tiers.map((tier) => ({
+      ...tier,
+      priceUsd: null,
+      mrrUsd: null,
+      listMrrUsd: null,
+      cohorts: tier.cohorts.map((c) => ({
+        ...c,
+        unitPriceUsd: null,
+        mrrUsd: null,
+      })),
+    })),
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -77,6 +135,8 @@ export async function GET(request: NextRequest) {
     if (!dbUser || (dbUser.role !== "ADMIN" && dbUser.role !== "MODERATOR")) {
       return NextResponse.json({ error: "Staff access required" }, { status: 403 });
     }
+
+    const isAdmin = dbUser.role === "ADMIN";
 
     const { searchParams } = new URL(request.url);
 
@@ -349,7 +409,11 @@ export async function GET(request: NextRequest) {
     }[];
     let listTotal: number;
 
-    if (status === "comped") {
+    if (!isAdmin) {
+      // Moderator: aggregates only. Don't fetch rows we won't return.
+      subscribers = [];
+      listTotal = 0;
+    } else if (status === "comped") {
       // No subscriptions row to join — these come straight off users.
       const where: Prisma.UserWhereInput = {
         ...compedWhere,
@@ -432,8 +496,10 @@ export async function GET(request: NextRequest) {
       }));
     }
 
-    return NextResponse.json({
+    const payload = {
       generatedAt: now.toISOString(),
+      /** False = every *Usd field below is null (moderator view). */
+      includesRevenue: true as const,
       totals: {
         active: activeTotal,
         canceling: cancelingTotal,
@@ -479,16 +545,20 @@ export async function GET(request: NextRequest) {
       acquisitionSources: [...acquisitionCounts.entries()]
         .map(([source, count]) => ({ source, count }))
         .sort((a, b) => b.count - a.count),
-      list: {
-        status,
-        tierId,
-        q: q || null,
-        limit,
-        offset,
-        total: listTotal,
-        subscribers,
-      },
-    });
+      list: isAdmin
+        ? {
+            status,
+            tierId,
+            q: q || null,
+            limit,
+            offset,
+            total: listTotal,
+            subscribers,
+          }
+        : null,
+    };
+
+    return NextResponse.json(isAdmin ? payload : withoutRevenue(payload));
   } catch (error) {
     console.error("GET /api/admin/subscribers error:", error);
     return NextResponse.json(
