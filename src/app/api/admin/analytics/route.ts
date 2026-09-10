@@ -13,8 +13,11 @@ import {
 import { vercelAnalyticsConfigured } from "@/lib/vercelAnalytics";
 
 /**
- * GET /api/admin/analytics — overview payload for the admin analytics
- * dashboard (ADMIN only).
+ * GET /api/admin/analytics — overview payload for the analytics dashboard,
+ * readable by staff (MODERATOR or ADMIN).
+ *
+ * Read-only, so moderators get it too: the creative team needs the numbers
+ * without the admin dashboard's write powers (payouts, invites, settings).
  *
  * One fixed shape, no range param: every tile owns its natural window
  * (active-now = last hour, DAU = today, WAU/MAU = rolling 7/30 days,
@@ -51,8 +54,8 @@ export async function GET() {
       select: { role: true },
     });
 
-    if (!dbUser || dbUser.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (!dbUser || (dbUser.role !== "ADMIN" && dbUser.role !== "MODERATOR")) {
+      return NextResponse.json({ error: "Staff access required" }, { status: 403 });
     }
 
     const conversionConfigured = vercelAnalyticsConfigured();

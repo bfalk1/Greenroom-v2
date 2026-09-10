@@ -26,7 +26,12 @@ import type { MetricKey, OverviewResponse } from "./types";
  * Everything but the conversion tiles comes from our own database and always
  * renders; the conversion pair needs Vercel Web Analytics and is omitted
  * entirely when unavailable rather than shown empty. Mounted inside the admin
- * dashboard's Overview section; `onNavigate` switches dashboard sections.
+ * dashboard's Overview section and the staff analytics page; `onNavigate`
+ * moves the surrounding page to another section.
+ *
+ * Moderators read the same tiles, so `canExport` is a required decision at
+ * every call site: the CSV reports behind it are full user, transaction and
+ * payout dumps from the admin-only /api/admin/export, not dashboard numbers.
  */
 
 const fmtInt = (n: number | null | undefined) =>
@@ -352,9 +357,17 @@ function OverviewSkeleton() {
 interface AnalyticsOverviewProps {
   /** Switch the surrounding dashboard to another section (e.g. "applications"). */
   onNavigate?: (section: string) => void;
+  /**
+   * Show the CSV report menu. ADMIN only — /api/admin/export stays admin-gated,
+   * so rendering it for a moderator would only download a 403.
+   */
+  canExport: boolean;
 }
 
-export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps) {
+export default function AnalyticsOverview({
+  onNavigate,
+  canExport,
+}: AnalyticsOverviewProps) {
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -483,7 +496,7 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
           >
             <RefreshCw className="w-4 h-4" />
           </Button>
-          <DownloadReportMenu />
+          {canExport && <DownloadReportMenu />}
         </div>
       </div>
 

@@ -21,6 +21,12 @@ import { Panel } from "./analytics/Panel";
  * Counts use the same definitions as the analytics Overview: "paying" means a
  * provider-backed subscription inside its period; "comped" is the beta bypass
  * (access flag, no billing row, no tier).
+ *
+ * Two parts render only for admins, and the server is what withholds them —
+ * a moderator's response simply doesn't carry the data:
+ * - `list` is null → no roster (who subscribed, on what, when).
+ * - `includesRevenue` is false → every *Usd field is null, so the MRR tiles
+ *   and the Price/MRR columns drop out and only subscriber counts remain.
  */
 
 type Status = "active" | "canceling" | "expired" | "comped";
@@ -43,24 +49,24 @@ interface CohortRow {
   stripe: number;
   paypal: number;
   /** Monthly-equivalent price per sub — annual is its yearly charge ÷ 12. */
-  unitPriceUsd: number;
-  mrrUsd: number;
+  unitPriceUsd: number | null;
+  mrrUsd: number | null;
 }
 
 interface TierRow {
   id: string;
   name: string;
   displayName: string;
-  priceUsd: number;
+  priceUsd: number | null;
   creditsPerMonth: number;
   isActive: boolean;
   active: number;
   canceling: number;
   sharePct: number | null;
   /** Effective MRR — each cohort at the price it actually bills. */
-  mrrUsd: number;
+  mrrUsd: number | null;
   /** MRR if every sub on this tier paid monthly list price. */
-  listMrrUsd: number;
+  listMrrUsd: number | null;
   stripe: number;
   paypal: number;
   /** One entry per cohort with at least one sub on this tier. */
@@ -86,6 +92,8 @@ interface SubscriberRow {
 
 interface SubscribersResponse {
   generatedAt: string;
+  /** False for moderators — every *Usd field below is null. */
+  includesRevenue: boolean;
   totals: {
     active: number;
     canceling: number;
@@ -93,14 +101,14 @@ interface SubscribersResponse {
     comped: number;
     withAccess: number;
     untieredActive: number;
-    mrrUsd: number;
-    listMrrUsd: number;
+    mrrUsd: number | null;
+    listMrrUsd: number | null;
     lifetimeActive: number;
     /** Active subs from the $5.99-first-month /promo funnel. */
     promoActive: number;
     /** Active subs on yearly billing. */
     annualActive: number;
-    promoFirstMonthUsd: number;
+    promoFirstMonthUsd: number | null;
     avgMrrUsd: number | null;
     avgCreditsPerMonth: number | null;
     monthlyCreditsTotal: number;
@@ -121,6 +129,7 @@ interface SubscribersResponse {
   };
   tiers: TierRow[];
   acquisitionSources: { source: string; count: number }[];
+  /** ADMIN-only; null for moderators, who see aggregates without the roster. */
   list: {
     status: Status;
     tierId: string | null;
@@ -129,7 +138,7 @@ interface SubscribersResponse {
     offset: number;
     total: number;
     subscribers: SubscriberRow[];
-  };
+  } | null;
 }
 
 const fmtInt = (n: number | null | undefined) =>
@@ -363,9 +372,10 @@ export function SubscribersPanel() {
   if (!data) return null;
 
   const t = data.totals;
+  const showMoney = data.includesRevenue;
   const list = data.list;
-  const pageStart = list.total === 0 ? 0 : list.offset + 1;
-  const pageEnd = Math.min(list.offset + list.limit, list.total);
+  const pageStart = !list || list.total === 0 ? 0 : list.offset + 1;
+  const pageEnd = list ? Math.min(list.offset + list.limit, list.total) : 0;
 
   // A tier splits into one row per billing cohort it actually has — monthly
   // list, annual, promo, lifetime — so every row's Price × Subscribers equals
@@ -393,7 +403,7 @@ export function SubscribersPanel() {
           stripe: 0,
           paypal: 0,
           sharePct: tier.sharePct,
-          mrrUsd: 0,
+          mrrUsd: showMoney ? 0 : null,
         },
       ];
     }
@@ -405,26 +415,34 @@ export function SubscribersPanel() {
         case "lifetime":
           return {
             label: `${tier.displayName} · Lifetime`,
-            detail: `locked ${fmtUsd(c.unitPriceUsd)}/mo · same ${credits}`,
+            detail: showMoney
+              ? `locked ${fmtUsd(c.unitPriceUsd)}/mo · same ${credits}`
+              : `locked lifetime rate · same ${credits}`,
           };
         case "promo":
           return {
             label: `${tier.displayName} · Promo`,
-            detail: `${fmtUsd(t.promoFirstMonthUsd)} first month, then ${fmtUsd(
-              tier.priceUsd
-            )} · same ${credits}`,
+            detail: showMoney
+              ? `${fmtUsd(t.promoFirstMonthUsd)} first month, then ${fmtUsd(
+                  tier.priceUsd
+                )} · same ${credits}`
+              : `discounted first month, then list · same ${credits}`,
           };
         case "annual":
           return {
             label: `${tier.displayName} · Annual`,
-            detail: `${fmtUsd(c.unitPriceUsd * 12)}/yr = ${fmtUsd(
-              c.unitPriceUsd
-            )}/mo · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`,
+            detail: showMoney
+              ? `${fmtUsd((c.unitPriceUsd ?? 0) * 12)}/yr = ${fmtUsd(
+                  c.unitPriceUsd
+                )}/mo · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`
+              : `billed yearly · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`,
           };
         default:
           return {
             label: tier.displayName,
-            detail: `${tier.name} · ${credits}${only ? "" : " · monthly list price"}${retired}`,
+            detail: `${tier.name} · ${credits}${
+              only || !showMoney ? "" : " · monthly list price"
+            }${retired}`,
           };
       }
     };
@@ -520,21 +538,27 @@ export function SubscribersPanel() {
             value={fmtInt(t.withAccess)}
             hint="paying + comped"
           />
-          <BigStat
-            label="MRR"
-            value={fmtUsd(t.mrrUsd)}
-            hint={
-              t.listMrrUsd > t.mrrUsd
-                ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
-                    t.listMrrUsd - t.mrrUsd
-                  )} lifetime + annual discounts`
-                : "all subscribers at list price"
-            }
-          />
+          {showMoney && (
+            <BigStat
+              label="MRR"
+              value={fmtUsd(t.mrrUsd)}
+              hint={
+                (t.listMrrUsd ?? 0) > (t.mrrUsd ?? 0)
+                  ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
+                      (t.listMrrUsd ?? 0) - (t.mrrUsd ?? 0)
+                    )} lifetime + annual discounts`
+                  : "all subscribers at list price"
+              }
+            />
+          )}
           <BigStat
             label="Promo (first month)"
             value={fmtInt(t.promoActive)}
-            hint={`${fmtUsd(t.promoFirstMonthUsd)} first month, then list`}
+            hint={
+              showMoney
+                ? `${fmtUsd(t.promoFirstMonthUsd)} first month, then list`
+                : "discounted first month, then list"
+            }
             accent={t.promoActive > 0 ? "#e0b33c" : undefined}
           />
           <BigStat
@@ -547,11 +571,13 @@ export function SubscribersPanel() {
             }
             accent={t.annualActive > 0 ? "#7c9cf5" : undefined}
           />
-          <BigStat
-            label="Avg MRR / Subscriber"
-            value={fmtUsd(t.avgMrrUsd)}
-            hint="effective MRR ÷ paying subscribers"
-          />
+          {showMoney && (
+            <BigStat
+              label="Avg MRR / Subscriber"
+              value={fmtUsd(t.avgMrrUsd)}
+              hint="effective MRR ÷ paying subscribers"
+            />
+          )}
           <BigStat
             label="Avg Credits / Subscriber"
             value={
@@ -654,7 +680,9 @@ export function SubscribersPanel() {
                 <thead>
                   <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
                     <th className="py-2 pr-4 font-medium">Tier</th>
-                    <th className="py-2 px-4 font-medium text-right">Price</th>
+                    {showMoney && (
+                      <th className="py-2 px-4 font-medium text-right">Price</th>
+                    )}
                     <th className="py-2 px-4 font-medium text-right">
                       Subscribers
                     </th>
@@ -662,7 +690,9 @@ export function SubscribersPanel() {
                     <th className="py-2 px-4 font-medium text-right">Stripe</th>
                     <th className="py-2 px-4 font-medium text-right">PayPal</th>
                     <th className="py-2 px-4 font-medium text-right">Canceling</th>
-                    <th className="py-2 pl-4 font-medium text-right">MRR</th>
+                    {showMoney && (
+                      <th className="py-2 pl-4 font-medium text-right">MRR</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -698,9 +728,11 @@ export function SubscribersPanel() {
                           {row.detail}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
-                        {fmtUsd(row.priceUsd)}
-                      </td>
+                      {showMoney && (
+                        <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
+                          {fmtUsd(row.priceUsd)}
+                        </td>
+                      )}
                       <td className="py-2.5 px-4 text-right text-white font-bold tabular-nums">
                         {fmtInt(row.active)}
                       </td>
@@ -737,9 +769,11 @@ export function SubscribersPanel() {
                           <span className="text-[#444]">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 pl-4 text-right text-white font-medium tabular-nums">
-                        {fmtUsd(row.mrrUsd)}
-                      </td>
+                      {showMoney && (
+                        <td className="py-2.5 pl-4 text-right text-white font-medium tabular-nums">
+                          {fmtUsd(row.mrrUsd)}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -775,200 +809,210 @@ export function SubscribersPanel() {
           )}
         </Panel>
 
-        {/* Roster */}
-        <Panel title="Subscriber List">
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
-              {STATUS_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => changeStatus(tab.id)}
-                  className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
-                    status === tab.id
-                      ? "bg-[#39b54a] text-black font-medium"
-                      : "text-[#a1a1a1] hover:text-white"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {status !== "comped" && data.tiers.length > 0 && (
+        {/* Roster — ADMIN-only: a moderator's response carries no list. */}
+        {list && (
+          <Panel title="Subscriber List">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
               <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => changeTier(null)}
-                  className={`px-3 py-1.5 text-sm rounded-md transition ${
-                    tierId === null
-                      ? "bg-[#2a2a2a] text-white font-medium"
-                      : "text-[#a1a1a1] hover:text-white"
-                  }`}
-                >
-                  All tiers
-                </button>
-                {data.tiers.map((tier) => (
+                {STATUS_TABS.map((tab) => (
                   <button
-                    key={tier.id}
+                    key={tab.id}
                     type="button"
-                    onClick={() => changeTier(tier.id)}
+                    onClick={() => changeStatus(tab.id)}
                     className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
-                      tierId === tier.id
+                      status === tab.id
+                        ? "bg-[#39b54a] text-black font-medium"
+                        : "text-[#a1a1a1] hover:text-white"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {status !== "comped" && data.tiers.length > 0 && (
+                <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => changeTier(null)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition ${
+                      tierId === null
                         ? "bg-[#2a2a2a] text-white font-medium"
                         : "text-[#a1a1a1] hover:text-white"
                     }`}
                   >
-                    {tier.name}
+                    All tiers
                   </button>
-                ))}
-              </div>
-            )}
-
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-[#666] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, email or username…"
-                className="pl-9 bg-[#0a0a0a] border-[#2a2a2a] text-white"
-              />
-            </div>
-          </div>
-
-          {list.subscribers.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
-              <p className="text-[#a1a1a1] text-sm">
-                {query
-                  ? "No subscribers match that search."
-                  : "No subscribers in this group."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
-                      <th className="py-2 pr-4 font-medium">Subscriber</th>
-                      <th className="py-2 px-4 font-medium">Tier</th>
-                      <th className="py-2 px-4 font-medium">Provider</th>
-                      <th className="py-2 px-4 font-medium">Started</th>
-                      <th className="py-2 pl-4 font-medium">
-                        {status === "expired" ? "Ended" : "Renews"}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.subscribers.map((s) => (
-                      <tr key={s.userId} className="border-b border-[#1f1f1f]">
-                        <td className="py-2.5 pr-4 min-w-0">
-                          <span className="text-white font-medium">{s.name}</span>
-                          {s.role === "CREATOR" && (
-                            <span className="ml-2 text-[10px] text-[#39b54a] border border-[#39b54a]/30 rounded px-1.5 py-0.5">
-                              Creator
-                            </span>
-                          )}
-                          <span className="block text-xs text-[#666] truncate">
-                            {s.email}
-                            {s.username && ` (@${s.username})`}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-4">
-                          {s.tierName ? (
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium"
-                              style={{
-                                color: tierColor(s.tierName),
-                                backgroundColor: `${tierColor(s.tierName)}1a`,
-                              }}
-                            >
-                              {s.tierName}
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-[#666]">
-                              comped
-                            </span>
-                          )}
-                          {isAnnualRow(s) && (
-                            <span
-                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                              style={{
-                                color: COHORT_COLOR.annual,
-                                backgroundColor: `${COHORT_COLOR.annual}1a`,
-                              }}
-                            >
-                              annual
-                            </span>
-                          )}
-                          {s.acquisitionSource && (
-                            <span className="block text-[10px] text-[#666] mt-0.5">
-                              {s.acquisitionSource}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <ProviderPill provider={s.provider} />
-                        </td>
-                        <td className="py-2.5 px-4 text-[#a1a1a1] whitespace-nowrap">
-                          {fmtDate(s.startedAt)}
-                        </td>
-                        <td className="py-2.5 pl-4 whitespace-nowrap">
-                          <span className="text-[#a1a1a1]">
-                            {fmtDate(s.currentPeriodEnd)}
-                          </span>
-                          {s.cancelAtPeriodEnd && (
-                            <span className="block text-[10px] text-yellow-400">
-                              cancels
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 mt-4">
-                <p className="text-xs text-[#666] tabular-nums">
-                  {pageStart}–{pageEnd} of {fmtInt(list.total)}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => changePage(Math.max(0, list.offset - list.limit))}
-                    disabled={list.offset === 0 || refreshing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => changePage(list.offset + list.limit)}
-                    disabled={pageEnd >= list.total || refreshing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
-                  >
-                    Next
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                  {data.tiers.map((tier) => (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => changeTier(tier.id)}
+                      className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
+                        tierId === tier.id
+                          ? "bg-[#2a2a2a] text-white font-medium"
+                          : "text-[#a1a1a1] hover:text-white"
+                      }`}
+                    >
+                      {tier.name}
+                    </button>
+                  ))}
                 </div>
+              )}
+
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 text-[#666] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, email or username…"
+                  className="pl-9 bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                />
               </div>
-            </>
-          )}
-        </Panel>
+            </div>
+
+            {list.subscribers.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
+                <p className="text-[#a1a1a1] text-sm">
+                  {query
+                    ? "No subscribers match that search."
+                    : "No subscribers in this group."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
+                        <th className="py-2 pr-4 font-medium">Subscriber</th>
+                        <th className="py-2 px-4 font-medium">Tier</th>
+                        <th className="py-2 px-4 font-medium">Provider</th>
+                        <th className="py-2 px-4 font-medium">Started</th>
+                        <th className="py-2 pl-4 font-medium">
+                          {status === "expired" ? "Ended" : "Renews"}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.subscribers.map((s) => (
+                        <tr key={s.userId} className="border-b border-[#1f1f1f]">
+                          <td className="py-2.5 pr-4 min-w-0">
+                            <span className="text-white font-medium">{s.name}</span>
+                            {s.role === "CREATOR" && (
+                              <span className="ml-2 text-[10px] text-[#39b54a] border border-[#39b54a]/30 rounded px-1.5 py-0.5">
+                                Creator
+                              </span>
+                            )}
+                            <span className="block text-xs text-[#666] truncate">
+                              {s.email}
+                              {s.username && ` (@${s.username})`}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            {s.tierName ? (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium"
+                                style={{
+                                  color: tierColor(s.tierName),
+                                  backgroundColor: `${tierColor(s.tierName)}1a`,
+                                }}
+                              >
+                                {s.tierName}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-[#666]">
+                                comped
+                              </span>
+                            )}
+                            {isAnnualRow(s) && (
+                              <span
+                                className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                style={{
+                                  color: COHORT_COLOR.annual,
+                                  backgroundColor: `${COHORT_COLOR.annual}1a`,
+                                }}
+                              >
+                                annual
+                              </span>
+                            )}
+                            {s.acquisitionSource && (
+                              <span className="block text-[10px] text-[#666] mt-0.5">
+                                {s.acquisitionSource}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <ProviderPill provider={s.provider} />
+                          </td>
+                          <td className="py-2.5 px-4 text-[#a1a1a1] whitespace-nowrap">
+                            {fmtDate(s.startedAt)}
+                          </td>
+                          <td className="py-2.5 pl-4 whitespace-nowrap">
+                            <span className="text-[#a1a1a1]">
+                              {fmtDate(s.currentPeriodEnd)}
+                            </span>
+                            {s.cancelAtPeriodEnd && (
+                              <span className="block text-[10px] text-yellow-400">
+                                cancels
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mt-4">
+                  <p className="text-xs text-[#666] tabular-nums">
+                    {pageStart}–{pageEnd} of {fmtInt(list.total)}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => changePage(Math.max(0, list.offset - list.limit))}
+                      disabled={list.offset === 0 || refreshing}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changePage(list.offset + list.limit)}
+                      disabled={pageEnd >= list.total || refreshing}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Panel>
+        )}
 
         <p className="text-xs text-[#666]">
-          Paying = a Stripe or PayPal subscription inside its current period.
-          MRR counts VIP lifetime-offer subscribers at their locked discounted
-          price and annual subscribers at their yearly charge ÷ 12; everyone
-          else, including the {fmtUsd(t.promoFirstMonthUsd)} first-month promo
-          cohort, counts at list price — that discount covers one cycle, then
-          renews at full price. Annual is identified by a billing period
-          spanning about a year (the interval isn&apos;t stored on our side);
-          other one-off coupons aren&apos;t tracked. Averages are per paying
-          subscriber — comped accounts are excluded.
+          Paying = a Stripe or PayPal subscription inside its current period.{" "}
+          {showMoney && (
+            <>
+              MRR counts VIP lifetime-offer subscribers at their locked
+              discounted price and annual subscribers at their yearly charge ÷
+              12; everyone else, including the{" "}
+              {fmtUsd(t.promoFirstMonthUsd)} first-month promo cohort, counts at
+              list price — that discount covers one cycle, then renews at full
+              price.{" "}
+            </>
+          )}
+          Annual is identified by a billing period spanning about a year (the
+          interval isn&apos;t stored on our side); other one-off coupons
+          aren&apos;t tracked.{" "}
+          {showMoney
+            ? "Averages are per paying subscriber — comped accounts are excluded."
+            : "Averages are per paying subscriber — comped accounts are excluded. Revenue figures are admin-only."}
         </p>
       </div>
     </div>
