@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BarChart3, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,15 +16,21 @@ import { useUser } from "@/lib/hooks/useUser";
  * endpoints (/api/admin/analytics, .../trend, /api/admin/subscribers), which
  * accept staff. Nothing here writes: moderators still can't touch payouts,
  * invites, settings, moderator management or the CSV exports.
+ *
+ * This is the moderators' door specifically — admins are sent to their own
+ * dashboard, which already mounts these panels alongside everything else.
  */
 export default function ModAnalyticsPage() {
   const router = useRouter();
   const { user } = useUser();
   const [activeTab, setActiveTab] = useState("overview");
 
-  // CSV reports come from the admin-only export route; hide the menu for
-  // moderators rather than hand them a button that downloads a 403.
+  // One door per role: admins read these panels in the admin dashboard, so
+  // this route is for moderators. Wait for the role — it's null while loading.
   const isAdmin = user?.role === "ADMIN";
+  useEffect(() => {
+    if (isAdmin) router.replace("/admin/dashboard");
+  }, [isAdmin, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a0a] via-[#141414] to-[#0a0a0a]">
@@ -56,6 +62,9 @@ export default function ModAnalyticsPage() {
 
           <TabsContent value="overview">
             <AnalyticsOverview
+              // Never true in practice: an admin is redirected above. Kept
+              // honest rather than hardcoded false, so the one-frame render
+              // before the redirect doesn't lie about what this role can do.
               canExport={isAdmin}
               onNavigate={(id) => {
                 // The queue tiles are shortcuts into the moderation pages;

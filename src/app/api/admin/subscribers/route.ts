@@ -335,26 +335,59 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // ── New signups, by cohort ─────────────────
+    // ── New signups, by cohort and by tier ─────
+    // Two cuts of the same rows: which OFFER people came in on (standard /
+    // annual / promo / lifetime) and which TIER they bought. recentSubs
+    // already selects tierId, so the tier cut costs no extra query.
     const WINDOWS = [
       { key: "last24h" as const, days: 1 },
       { key: "last7d" as const, days: 7 },
       { key: "last30d" as const, days: 30 },
     ];
-    const newTotals = { last24h: 0, last7d: 0, last30d: 0 };
-    const newByCohort = new Map<SubCohort, typeof newTotals>();
+    const emptyWindows = () => ({ last24h: 0, last7d: 0, last30d: 0 });
+    type Windows = ReturnType<typeof emptyWindows>;
+    const newTotals = emptyWindows();
+    const newByCohort = new Map<SubCohort, Windows>();
+    /** Keyed by tierId; null key = a sub whose tier row no longer exists. */
+    const newByTier = new Map<string | null, Windows>();
     for (const sub of recentSubs) {
       const cohort = cohortOf(sub);
-      const entry =
-        newByCohort.get(cohort) ?? { last24h: 0, last7d: 0, last30d: 0 };
+      const cohortEntry = newByCohort.get(cohort) ?? emptyWindows();
+      const tierEntry = newByTier.get(sub.tierId) ?? emptyWindows();
       for (const w of WINDOWS) {
         if (sub.createdAt >= since(w.days)) {
           newTotals[w.key]++;
-          entry[w.key]++;
+          cohortEntry[w.key]++;
+          tierEntry[w.key]++;
         }
       }
-      newByCohort.set(cohort, entry);
+      newByCohort.set(cohort, cohortEntry);
+      newByTier.set(sub.tierId, tierEntry);
     }
+
+    // Tier rows in the same order as the breakdown table (cheapest first).
+    // Signups whose tier row no longer exists collect in a trailing "No tier"
+    // row instead of vanishing, so the rows still sum to the windows above.
+    const knownTierIds = new Set(tierRows.map((tier) => tier.id));
+    const orphanWindows = [...newByTier.entries()]
+      .filter(([id]) => id === null || !knownTierIds.has(id))
+      .reduce((acc, [, w]) => {
+        for (const key of WINDOWS) acc[key.key] += w[key.key];
+        return acc;
+      }, emptyWindows());
+    const newTierRows = [
+      ...tierRows
+        .filter((tier) => newByTier.has(tier.id))
+        .map((tier) => ({
+          id: tier.id as string | null,
+          name: tier.name,
+          label: tier.displayName,
+          ...newByTier.get(tier.id)!,
+        })),
+      ...(orphanWindows.last30d > 0
+        ? [{ id: null, name: "—", label: "No tier", ...orphanWindows }]
+        : []),
+    ];
 
     // Subs whose tierId no longer resolves to a tier row would silently vanish
     // from the per-tier table while still counting in the total — surface the
@@ -540,6 +573,8 @@ export async function GET(request: NextRequest) {
           label: COHORT_LABEL[c],
           ...newByCohort.get(c)!,
         })),
+        /** Same windows, split by tier — which plans people are buying. */
+        tiers: newTierRows,
       },
       tiers,
       acquisitionSources: [...acquisitionCounts.entries()]
