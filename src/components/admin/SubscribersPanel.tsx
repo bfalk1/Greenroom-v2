@@ -126,6 +126,16 @@ interface SubscribersResponse {
       last7d: number;
       last30d: number;
     }[];
+    /** The same signups cut by tier instead of by offer. */
+    tiers: {
+      /** null = the sub's tier row no longer exists ("No tier"). */
+      id: string | null;
+      name: string;
+      label: string;
+      last24h: number;
+      last7d: number;
+      last30d: number;
+    }[];
   };
   tiers: TierRow[];
   acquisitionSources: { source: string; count: number }[];
@@ -193,6 +203,62 @@ const isAnnualRow = (s: SubscriberRow) =>
   new Date(s.currentPeriodEnd).getTime() -
     new Date(s.currentPeriodStart).getTime() >
     ANNUAL_SPAN_MS;
+
+/**
+ * One 24h / 7d / 30d signup table. The New Subscribers panel renders two —
+ * the same signups cut by offer and by tier — so they share a shape.
+ */
+function WindowTable({
+  heading,
+  rows,
+}: {
+  heading: string;
+  rows: {
+    key: string;
+    label: string;
+    color: string;
+    last24h: number;
+    last7d: number;
+    last30d: number;
+  }[];
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-[10px] text-[#666]">
+          <th className="pb-1.5 pr-4 font-medium">{heading}</th>
+          <th className="pb-1.5 px-4 font-medium text-right">24h</th>
+          <th className="pb-1.5 px-4 font-medium text-right">7d</th>
+          <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.key} className="border-t border-[#1f1f1f]">
+            <td className="py-1.5 pr-4 text-[#a1a1a1]">
+              <span className="inline-flex items-center gap-2">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: r.color }}
+                />
+                {r.label}
+              </span>
+            </td>
+            <td className="py-1.5 px-4 text-right text-white tabular-nums">
+              {fmtInt(r.last24h)}
+            </td>
+            <td className="py-1.5 px-4 text-right text-white tabular-nums">
+              {fmtInt(r.last7d)}
+            </td>
+            <td className="py-1.5 pl-4 text-right text-white tabular-nums">
+              {fmtInt(r.last30d)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 function BigStat({
   label,
@@ -619,44 +685,43 @@ export function SubscribersPanel() {
             ))}
           </div>
 
-          {/* Which offer each batch of signups came in on. Rows only appear
-              for cohorts that actually signed up in the last 30 days. */}
-          {data.newSubscribers.cohorts.length > 0 && (
-            <div className="border-t border-[#2a2a2a] mt-4 pt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[10px] text-[#666]">
-                    <th className="pb-1.5 pr-4 font-medium">Offer</th>
-                    <th className="pb-1.5 px-4 font-medium text-right">24h</th>
-                    <th className="pb-1.5 px-4 font-medium text-right">7d</th>
-                    <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.newSubscribers.cohorts.map((c) => (
-                    <tr key={c.key} className="border-t border-[#1f1f1f]">
-                      <td className="py-1.5 pr-4 text-[#a1a1a1]">
-                        <span className="inline-flex items-center gap-2">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: COHORT_COLOR[c.key] }}
-                          />
-                          {c.label}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last24h)}
-                      </td>
-                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last7d)}
-                      </td>
-                      <td className="py-1.5 pl-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last30d)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* The same signups cut two ways — which OFFER they came in on and
+              which TIER they bought. Rows appear only for cohorts/tiers that
+              actually signed up in the window, so quiet plans don't pad the
+              tables with zeros. */}
+          {(data.newSubscribers.cohorts.length > 0 ||
+            data.newSubscribers.tiers.length > 0) && (
+            <div className="border-t border-[#2a2a2a] mt-4 pt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              {data.newSubscribers.cohorts.length > 0 && (
+                <div className="min-w-0 overflow-x-auto">
+                  <WindowTable
+                    heading="Offer"
+                    rows={data.newSubscribers.cohorts.map((c) => ({
+                      key: c.key,
+                      label: c.label,
+                      color: COHORT_COLOR[c.key],
+                      last24h: c.last24h,
+                      last7d: c.last7d,
+                      last30d: c.last30d,
+                    }))}
+                  />
+                </div>
+              )}
+              {data.newSubscribers.tiers.length > 0 && (
+                <div className="min-w-0 overflow-x-auto">
+                  <WindowTable
+                    heading="Tier"
+                    rows={data.newSubscribers.tiers.map((row) => ({
+                      key: row.id ?? "untiered",
+                      label: row.label,
+                      color: row.id ? tierColor(row.name) : "#444",
+                      last24h: row.last24h,
+                      last7d: row.last7d,
+                      last30d: row.last30d,
+                    }))}
+                  />
+                </div>
+              )}
             </div>
           )}
         </Panel>
