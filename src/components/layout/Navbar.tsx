@@ -74,6 +74,11 @@ export function Navbar() {
                   {user.role === "CREATOR" && navLink(`/artist/${encodeURIComponent(user.artist_name || user.username || user.id)}`, "Profile")}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") &&
                     navLink("/mod/samples", "Moderation")}
+                  {/* Moderators only. An admin reads the same two panels
+                      inside the admin dashboard, so a second route would just
+                      be a duplicate door to the same data. */}
+                  {user.role === "MODERATOR" &&
+                    navLink("/mod/analytics", "Analytics")}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") && (
                     <Link
                       href="/mod/inbox"
@@ -213,6 +218,11 @@ export function Navbar() {
                   {(user.role === "MODERATOR" || user.role === "ADMIN") && (
                     <Link href="/mod/samples" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
                       Moderation
+                    </Link>
+                  )}
+                  {user.role === "MODERATOR" && (
+                    <Link href="/mod/analytics" className="text-sm font-medium text-[#a1a1a1] hover:text-white">
+                      Analytics
                     </Link>
                   )}
                   {(user.role === "MODERATOR" || user.role === "ADMIN") && (

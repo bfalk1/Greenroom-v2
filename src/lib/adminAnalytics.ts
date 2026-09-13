@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { subscriberStateWhere } from "@/lib/subscriberStatus";
 import { fetchDailyVisitors } from "@/lib/vercelAnalytics";
 
 // Metric builders for the admin analytics dashboard (overview + trend
@@ -188,18 +189,10 @@ export async function fetchCommerceStats(seriesDays: number): Promise<CommerceSt
       where: { createdAt: { gte: fetchStart } },
       select: { createdAt: true },
     }),
-    // Real, currently-active subscription records (provider-backed, not past
-    // their period) — excludes beta comps and stale status flags. Same
-    // definition as the subscribers panel.
-    prisma.subscription.count({
-      where: {
-        currentPeriodEnd: { gte: now },
-        OR: [
-          { stripeSubscriptionId: { not: null } },
-          { paypalSubscriptionId: { not: null } },
-        ],
-      },
-    }),
+    // Subscribers paying right now: provider-backed, inside a paid period, no
+    // failed renewal — and no beta comps. Same definition as the subscribers
+    // panel (@/lib/subscriberStatus).
+    prisma.subscription.count({ where: subscriberStateWhere("paying", now) }),
   ]);
 
   const purchaseCounts = purchaseRows.map((r) => ({ at: r.createdAt, value: 1 }));

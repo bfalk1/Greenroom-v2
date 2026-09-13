@@ -18,7 +18,8 @@ import {
 
 /**
  * GET /api/admin/analytics/trend?metric=<key>&range=<key> — a single metric's
- * time series for the dashboard's drill-down view (ADMIN only).
+ * time series for the dashboard's drill-down view, readable by staff
+ * (MODERATOR or ADMIN), same as /api/admin/analytics.
  *
  * Each metric whitelists its own ranges (first entry = default). `active`
  * also returns the current headcount, so the overview tile and its
@@ -77,8 +78,8 @@ export async function GET(request: NextRequest) {
       select: { role: true },
     });
 
-    if (!dbUser || dbUser.role !== "ADMIN") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (!dbUser || (dbUser.role !== "ADMIN" && dbUser.role !== "MODERATOR")) {
+      return NextResponse.json({ error: "Staff access required" }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
