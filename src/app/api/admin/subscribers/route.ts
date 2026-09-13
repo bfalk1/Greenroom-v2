@@ -8,14 +8,24 @@ import {
   monthlyUnitCents,
   type SubCohort,
 } from "@/lib/mrr";
+import {
+  MOVEMENT_WINDOWS,
+  PROVIDER_BACKED,
+  emptyWindowCounts,
+  subscriberMovement,
+  subscriberState,
+  subscriberStateWhere,
+  windowStart,
+  type WindowCounts,
+} from "@/lib/subscriberStatus";
 import type { Prisma } from "@prisma/client";
 
 /**
  * GET /api/admin/subscribers — subscriber counts and tier mix, readable by
  * staff (MODERATOR or ADMIN).
  *
- * Query: ?status=active|canceling|expired|comped&tierId=<uuid>&q=<search>
- *        &limit=<1-200>&offset=<n>
+ * Query: ?status=active|canceling|failing|expired|comped&tierId=<uuid>
+ *        &q=<search>&limit=<1-200>&offset=<n>
  *
  * The headline counts always describe the whole platform; status/tierId/q only
  * filter the paginated list underneath them.
@@ -29,14 +39,17 @@ import type { Prisma } from "@prisma/client";
  *   Moderators see how many subscriptions there are, not what they earn.
  *   Tier list prices go too: price × subscribers is revenue with extra steps.
  *
- * Definitions match GET /api/admin/analytics so the two dashboards never
- * disagree:
- * - Active   = a provider-backed subscriptions row not past currentPeriodEnd.
+ * Subscriber states come from @/lib/subscriberStatus, shared with
+ * GET /api/admin/analytics and computeMrrSnapshot so no two screens disagree:
+ * - Active   = paying: a provider-backed subscriptions row inside its period,
+ *              with no failed payment or cancellation on its owner.
+ * - Failing  = inside its period, but the renewal charge failed and the
+ *              provider is retrying. Not counted as paying.
+ * - Expired  = the period ran out, or the provider canceled.
  * - Comped   = users.subscription_status active/past_due with NO subscriptions
  *              row (the beta bypass). These have no tier and pay nothing.
- * - Expired  = a subscriptions row already past currentPeriodEnd.
  *
- * Every active sub is classified into one of four mutually-exclusive cohorts by
+ * Every paying sub is classified into one of four mutually-exclusive cohorts by
  * cohortOf() in @/lib/mrr — list / lifetime / promo / annual — and priced by
  * monthlyUnitCents(), the same rules computeMrrSnapshot uses, so this dashboard
  * and the MRR snapshot never disagree:
@@ -47,7 +60,7 @@ import type { Prisma } from "@prisma/client";
  * Other one-off coupons aren't tracked and also report at list.
  */
 
-const STATUSES = ["active", "canceling", "expired", "comped"] as const;
+const STATUSES = ["active", "canceling", "failing", "expired", "comped"] as const;
 type Status = (typeof STATUSES)[number];
 
 const DEFAULT_LIMIT = 50;
@@ -65,6 +78,25 @@ function displayName(u: {
   email: string;
 }): string {
   return u.artistName || u.fullName || u.username || u.email;
+}
+
+/** A roster tab as a subscriptions filter (comped users have no row). */
+function rosterWhere(
+  status: Exclude<Status, "comped">,
+  now: Date
+): Prisma.SubscriptionWhereInput {
+  switch (status) {
+    case "active":
+      return subscriberStateWhere("paying", now);
+    case "canceling":
+      return {
+        AND: [subscriberStateWhere("paying", now), { cancelAtPeriodEnd: true }],
+      };
+    case "failing":
+      return subscriberStateWhere("failing", now);
+    case "expired":
+      return subscriberStateWhere("ended", now);
+  }
 }
 
 /** The money-bearing parts of the payload — all `withoutRevenue` touches. */
@@ -159,30 +191,17 @@ export async function GET(request: NextRequest) {
       Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0;
 
     const now = new Date();
-    const since = (days: number) =>
-      new Date(now.getTime() - days * 86_400_000);
+    const widestWindowStart = windowStart(now, 30);
 
-    // A subscriptions row only counts as real billing if a provider actually
-    // backs it — same guard the analytics route uses.
-    const providerBacked: Prisma.SubscriptionWhereInput = {
-      OR: [
-        { stripeSubscriptionId: { not: null } },
-        { paypalSubscriptionId: { not: null } },
-      ],
-    };
-    const activeWhere: Prisma.SubscriptionWhereInput = {
-      currentPeriodEnd: { gte: now },
-      ...providerBacked,
-    };
     const compedWhere: Prisma.UserWhereInput = {
       subscriptionStatus: { in: ["active", "past_due"] },
       subscription: { is: null },
     };
     // Cohort membership can't be expressed as a groupBy: "annual" is a span
     // between two columns, which needs arithmetic Prisma's where can't do. So
-    // the active set is read row-by-row (a handful of small columns, bounded by
-    // the paying-subscriber count) and bucketed in one pass below — the same
-    // shape computeMrrSnapshot already uses.
+    // the rows are read one by one (a handful of small columns, bounded by the
+    // subscriptions live in the last 30 days) and bucketed in one pass below —
+    // the same shape computeMrrSnapshot already uses.
     const cohortSelect = {
       tierId: true,
       provider: true,
@@ -191,15 +210,10 @@ export async function GET(request: NextRequest) {
       currentPeriodStart: true,
       currentPeriodEnd: true,
       createdAt: true,
+      user: { select: { subscriptionStatus: true } },
     } as const;
 
-    const [
-      tierRows,
-      activeSubs,
-      recentSubs,
-      expiredTotal,
-      compedTotal,
-    ] = await Promise.all([
+    const [tierRows, windowRows, expiredTotal, compedTotal] = await Promise.all([
       prisma.subscriptionTier.findMany({
         select: {
           id: true,
@@ -211,25 +225,40 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { priceUsdCents: "asc" },
       }),
+      // Every sub paying or failing now, plus every one that started or ended
+      // in the last 30 days. The headline counts, the movement windows and the
+      // new-signup cuts all come from these same rows, so they reconcile.
       prisma.subscription.findMany({
-        where: activeWhere,
+        where: {
+          AND: [
+            PROVIDER_BACKED,
+            {
+              OR: [
+                { currentPeriodEnd: { gte: widestWindowStart } },
+                { createdAt: { gte: widestWindowStart } },
+              ],
+            },
+          ],
+        },
         select: cohortSelect,
       }),
-      // New-signup windows count every sub STARTED in the window, whether or
-      // not it's still active — a promo sub that already lapsed was still a
-      // signup. 30d covers the widest window; 24h/7d are sliced from it.
-      prisma.subscription.findMany({
-        where: { ...providerBacked, createdAt: { gte: since(30) } },
-        select: cohortSelect,
-      }),
-      prisma.subscription.count({
-        where: { currentPeriodEnd: { lt: now }, ...providerBacked },
-      }),
+      prisma.subscription.count({ where: subscriberStateWhere("ended", now) }),
       prisma.user.count({ where: compedWhere }),
     ]);
 
-    const activeTotal = activeSubs.length;
-    const cancelingTotal = activeSubs.filter((s) => s.cancelAtPeriodEnd).length;
+    const rows = windowRows.map((row) => ({
+      ...row,
+      userStatus: row.user.subscriptionStatus,
+    }));
+    const payingSubs = rows.filter(
+      (row) => subscriberState(row, now) === "paying"
+    );
+    const failingTotal = rows.filter(
+      (row) => subscriberState(row, now) === "failing"
+    ).length;
+
+    const activeTotal = payingSubs.length;
+    const cancelingTotal = payingSubs.filter((s) => s.cancelAtPeriodEnd).length;
 
     // ── Cohort bucketing ───────────────────────
     type CohortBucket = {
@@ -256,7 +285,7 @@ export async function GET(request: NextRequest) {
     const cohortTotals = new Map<SubCohort, number>();
     const acquisitionCounts = new Map<string, number>();
 
-    for (const sub of activeSubs) {
+    for (const sub of payingSubs) {
       const tier = tierById.get(sub.tierId);
       const cohort = cohortOf(sub);
       cohortTotals.set(cohort, (cohortTotals.get(cohort) ?? 0) + 1);
@@ -335,28 +364,25 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // ── Movement ───────────────────────────────
+    // How Paying moved over 24h / 7d / 30d — new subscriptions in, ended and
+    // payment-failed ones out — so the headline reconciles day to day.
+    const movement = subscriberMovement(rows, now);
+
     // ── New signups, by cohort and by tier ─────
-    // Two cuts of the same rows: which OFFER people came in on (standard /
-    // annual / promo / lifetime) and which TIER they bought. recentSubs
-    // already selects tierId, so the tier cut costs no extra query.
-    const WINDOWS = [
-      { key: "last24h" as const, days: 1 },
-      { key: "last7d" as const, days: 7 },
-      { key: "last30d" as const, days: 30 },
-    ];
-    const emptyWindows = () => ({ last24h: 0, last7d: 0, last30d: 0 });
-    type Windows = ReturnType<typeof emptyWindows>;
-    const newTotals = emptyWindows();
-    const newByCohort = new Map<SubCohort, Windows>();
+    // Two cuts of the same new subscriptions: which OFFER people came in on
+    // (standard / annual / promo / lifetime) and which TIER they bought. Each
+    // cut sums to movement.started.
+    const newByCohort = new Map<SubCohort, WindowCounts>();
     /** Keyed by tierId; null key = a sub whose tier row no longer exists. */
-    const newByTier = new Map<string | null, Windows>();
-    for (const sub of recentSubs) {
+    const newByTier = new Map<string | null, WindowCounts>();
+    for (const sub of rows) {
+      if (sub.createdAt < widestWindowStart) continue;
       const cohort = cohortOf(sub);
-      const cohortEntry = newByCohort.get(cohort) ?? emptyWindows();
-      const tierEntry = newByTier.get(sub.tierId) ?? emptyWindows();
-      for (const w of WINDOWS) {
-        if (sub.createdAt >= since(w.days)) {
-          newTotals[w.key]++;
+      const cohortEntry = newByCohort.get(cohort) ?? emptyWindowCounts();
+      const tierEntry = newByTier.get(sub.tierId) ?? emptyWindowCounts();
+      for (const w of MOVEMENT_WINDOWS) {
+        if (sub.createdAt >= windowStart(now, w.days)) {
           cohortEntry[w.key]++;
           tierEntry[w.key]++;
         }
@@ -372,9 +398,9 @@ export async function GET(request: NextRequest) {
     const orphanWindows = [...newByTier.entries()]
       .filter(([id]) => id === null || !knownTierIds.has(id))
       .reduce((acc, [, w]) => {
-        for (const key of WINDOWS) acc[key.key] += w[key.key];
+        for (const { key } of MOVEMENT_WINDOWS) acc[key] += w[key];
         return acc;
-      }, emptyWindows());
+      }, emptyWindowCounts());
     const newTierRows = [
       ...tierRows
         .filter((tier) => newByTier.has(tier.id))
@@ -480,16 +506,14 @@ export async function GET(request: NextRequest) {
         startedAt: u.createdAt.toISOString(),
       }));
     } else {
-      const base: Prisma.SubscriptionWhereInput =
-        status === "expired"
-          ? { currentPeriodEnd: { lt: now }, ...providerBacked }
-          : status === "canceling"
-          ? { ...activeWhere, cancelAtPeriodEnd: true }
-          : activeWhere;
+      // AND, not object spread: the state filter and the search both
+      // constrain `user`, and a spread would let one overwrite the other.
       const where: Prisma.SubscriptionWhereInput = {
-        ...base,
-        ...(tierId ? { tierId } : {}),
-        ...(userSearch ? { user: userSearch } : {}),
+        AND: [
+          rosterWhere(status, now),
+          ...(tierId ? [{ tierId }] : []),
+          ...(userSearch ? [{ user: userSearch }] : []),
+        ],
       };
       const [rows, count] = await Promise.all([
         prisma.subscription.findMany({
@@ -536,10 +560,13 @@ export async function GET(request: NextRequest) {
       totals: {
         active: activeTotal,
         canceling: cancelingTotal,
+        /** Inside their period but the renewal charge failed — not in `active`. */
+        failing: failingTotal,
         expired: expiredTotal,
         comped: compedTotal,
-        /** Everyone with access right now, billed or not. */
-        withAccess: activeTotal + compedTotal,
+        /** Everyone the paywall lets in right now, billed or not. Failing subs
+         *  keep access while the provider retries. */
+        withAccess: activeTotal + failingTotal + compedTotal,
         untieredActive,
         /** Effective MRR: every cohort at the price it actually bills. */
         mrrUsd,
@@ -565,7 +592,15 @@ export async function GET(request: NextRequest) {
         paypal: providerTotals.paypal,
       },
       newSubscribers: {
-        ...newTotals,
+        ...movement.started,
+        /** Out of Paying per window: the period ran out without renewing, or
+         *  the provider canceled. */
+        ended: movement.ended,
+        /** Out of Paying per window: the renewal charge failed and hasn't
+         *  recovered. */
+        paymentFailed: movement.paymentFailed,
+        /** New − ended − payment failed: how far Paying moved. */
+        net: movement.net,
         /** Same windows, split by cohort — how many of the new signups came
          *  from the promo funnel and how many chose annual billing. */
         cohorts: COHORT_ORDER.filter((c) => newByCohort.has(c)).map((c) => ({

@@ -590,7 +590,7 @@ export default function AnalyticsOverview({
               delta={pctDelta(commerce.subs.today, commerce.subs.yesterday)}
               deltaTitle="vs yesterday (full day)"
               series={commerce.subs.series}
-              note={`last 7 days ${fmtInt(commerce.subs.last7)} · ${fmtInt(commerce.subs.activeTotal)} active total`}
+              note={`last 7 days ${fmtInt(commerce.subs.last7)} · ${fmtInt(commerce.subs.activeTotal)} paying`}
               onClick={() => setOpenMetric("subs")}
             />
           </div>
