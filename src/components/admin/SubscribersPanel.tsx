@@ -15,12 +15,15 @@ import { Input } from "@/components/ui/input";
 import { Panel } from "./analytics/Panel";
 
 /**
- * Admin "Subscribers" section — headline subscriber counts, the per-tier mix,
- * and a filterable roster, driven by GET /api/admin/subscribers.
+ * Admin "Subscribers" section — headline subscriber counts, how Paying moved,
+ * the per-tier mix, and a filterable roster, driven by
+ * GET /api/admin/subscribers.
  *
- * Counts use the same definitions as the analytics Overview: "paying" means a
- * provider-backed subscription inside its period; "comped" is the beta bypass
- * (access flag, no billing row, no tier).
+ * Counts use the same definitions as the analytics Overview
+ * (@/lib/subscriberStatus): "paying" means a provider-backed subscription
+ * inside a paid period; "payment failing" is inside its period but the renewal
+ * charge failed, so it isn't paying; "comped" is the beta bypass (access flag,
+ * no billing row, no tier).
  *
  * Two parts render only for admins, and the server is what withholds them —
  * a moderator's response simply doesn't carry the data:
@@ -29,14 +32,22 @@ import { Panel } from "./analytics/Panel";
  *   and the Price/MRR columns drop out and only subscriber counts remain.
  */
 
-type Status = "active" | "canceling" | "expired" | "comped";
+type Status = "active" | "canceling" | "failing" | "expired" | "comped";
 
 const STATUS_TABS: { id: Status; label: string }[] = [
   { id: "active", label: "Paying" },
   { id: "canceling", label: "Canceling" },
+  { id: "failing", label: "Payment failing" },
   { id: "comped", label: "Comped" },
   { id: "expired", label: "Expired" },
 ];
+
+/** One count per rolling window (24h / 7d / 30d). */
+interface WindowCounts {
+  last24h: number;
+  last7d: number;
+  last30d: number;
+}
 
 /** Mutually-exclusive billing cohorts, classified server-side by @/lib/mrr. */
 type CohortKey = "list" | "lifetime" | "promo" | "annual";
@@ -97,6 +108,8 @@ interface SubscribersResponse {
   totals: {
     active: number;
     canceling: number;
+    /** Inside their period but the renewal charge failed — not in `active`. */
+    failing: number;
     expired: number;
     comped: number;
     withAccess: number;
@@ -115,10 +128,14 @@ interface SubscribersResponse {
     stripe: number;
     paypal: number;
   };
-  newSubscribers: {
-    last24h: number;
-    last7d: number;
-    last30d: number;
+  /** New subscribers per window, plus what left Paying over the same windows. */
+  newSubscribers: WindowCounts & {
+    /** The period ran out without renewing, or the provider canceled. */
+    ended: WindowCounts;
+    /** The renewal charge failed and hasn't recovered. */
+    paymentFailed: WindowCounts;
+    /** New − ended − payment failed: how far Paying moved. */
+    net: WindowCounts;
     cohorts: {
       key: CohortKey;
       label: string;
@@ -205,8 +222,8 @@ const isAnnualRow = (s: SubscriberRow) =>
     ANNUAL_SPAN_MS;
 
 /**
- * One 24h / 7d / 30d signup table. The New Subscribers panel renders two —
- * the same signups cut by offer and by tier — so they share a shape.
+ * One 24h / 7d / 30d signup table. The Subscriber Movement panel renders two —
+ * the new signups cut by offer and by tier — so they share a shape.
  */
 function WindowTable({
   heading,
@@ -255,6 +272,83 @@ function WindowTable({
             </td>
           </tr>
         ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * How Paying moved over each window: new subscriptions in, ended and
+ * payment-failed ones out, and the net of the three — the amount the Paying
+ * tile actually moved by.
+ */
+function MovementTable({
+  started,
+  ended,
+  paymentFailed,
+  net,
+}: {
+  started: WindowCounts;
+  ended: WindowCounts;
+  paymentFailed: WindowCounts;
+  net: WindowCounts;
+}) {
+  const windows = ["last24h", "last7d", "last30d"] as const;
+  const flows = [
+    { key: "new", label: "New subscribers", counts: started, sign: "+" },
+    { key: "ended", label: "Ended", counts: ended, sign: "−" },
+    { key: "failed", label: "Payment failed", counts: paymentFailed, sign: "−" },
+  ];
+  const cellPad = (i: number) => (i === windows.length - 1 ? "pl-4" : "px-4");
+  const netColor = (n: number) =>
+    n > 0 ? "#39b54a" : n < 0 ? "#f87171" : "#a1a1a1";
+  const netText = (n: number) =>
+    n > 0 ? `+${fmtInt(n)}` : n < 0 ? `−${fmtInt(-n)}` : "0";
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-[10px] text-[#666]">
+          <th className="pb-1.5 pr-4 font-medium">Change</th>
+          <th className="pb-1.5 px-4 font-medium text-right">24h</th>
+          <th className="pb-1.5 px-4 font-medium text-right">7d</th>
+          <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {flows.map((flow) => (
+          <tr key={flow.key} className="border-t border-[#1f1f1f]">
+            <td className="py-1.5 pr-4 text-[#a1a1a1] whitespace-nowrap">
+              {flow.label}
+            </td>
+            {windows.map((w, i) => (
+              <td
+                key={w}
+                className={`py-1.5 ${cellPad(i)} text-right tabular-nums ${
+                  flow.counts[w] > 0 ? "text-white" : "text-[#444]"
+                }`}
+              >
+                {flow.counts[w] > 0
+                  ? `${flow.sign}${fmtInt(flow.counts[w])}`
+                  : "0"}
+              </td>
+            ))}
+          </tr>
+        ))}
+        <tr className="border-t border-[#2a2a2a]">
+          <td className="pt-2 pr-4 text-white font-medium whitespace-nowrap">
+            Net change
+          </td>
+          {windows.map((w, i) => (
+            <td
+              key={w}
+              className={`pt-2 ${cellPad(i)} text-right text-base font-bold tabular-nums`}
+              style={{ color: netColor(net[w]) }}
+            >
+              {netText(net[w])}
+            </td>
+          ))}
+        </tr>
       </tbody>
     </table>
   );
@@ -602,7 +696,11 @@ export function SubscribersPanel() {
           <BigStat
             label="Total With Access"
             value={fmtInt(t.withAccess)}
-            hint="paying + comped"
+            hint={
+              t.failing > 0
+                ? `paying + comped + ${fmtInt(t.failing)} payment failing`
+                : "paying + comped"
+            }
           />
           {showMoney && (
             <BigStat
@@ -659,33 +757,37 @@ export function SubscribersPanel() {
             hint="active until period end"
             accent={t.canceling > 0 ? "#e0b33c" : undefined}
           />
+          <BigStat
+            label="Payment Failing"
+            value={fmtInt(t.failing)}
+            hint="renewal charge failed · not counted as paying"
+            accent={t.failing > 0 ? "#f87171" : undefined}
+          />
         </div>
 
-        {/* New subscribers */}
+        {/* How Paying moved */}
         <Panel
-          title="New Subscribers"
+          title="Subscriber Movement"
           headerRight={
             <span className="text-[10px] text-[#666] whitespace-nowrap">
-              by subscription start date
+              new by start date · ended when a period runs out
             </span>
           }
         >
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: "Last 24 hours", value: data.newSubscribers.last24h },
-              { label: "Last 7 days", value: data.newSubscribers.last7d },
-              { label: "Last 30 days", value: data.newSubscribers.last30d },
-            ].map((s) => (
-              <div key={s.label} className="min-w-0">
-                <p className="text-[11px] text-[#666] truncate">{s.label}</p>
-                <p className="text-lg font-bold text-white tabular-nums">
-                  {fmtInt(s.value)}
-                </p>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <MovementTable
+              started={{
+                last24h: data.newSubscribers.last24h,
+                last7d: data.newSubscribers.last7d,
+                last30d: data.newSubscribers.last30d,
+              }}
+              ended={data.newSubscribers.ended}
+              paymentFailed={data.newSubscribers.paymentFailed}
+              net={data.newSubscribers.net}
+            />
           </div>
 
-          {/* The same signups cut two ways — which OFFER they came in on and
+          {/* The new signups cut two ways — which OFFER they came in on and
               which TIER they bought. Rows appear only for cohorts/tiers that
               actually signed up in the window, so quiet plans don't pad the
               tables with zeros. */}
@@ -695,7 +797,7 @@ export function SubscribersPanel() {
               {data.newSubscribers.cohorts.length > 0 && (
                 <div className="min-w-0 overflow-x-auto">
                   <WindowTable
-                    heading="Offer"
+                    heading="New by offer"
                     rows={data.newSubscribers.cohorts.map((c) => ({
                       key: c.key,
                       label: c.label,
@@ -710,7 +812,7 @@ export function SubscribersPanel() {
               {data.newSubscribers.tiers.length > 0 && (
                 <div className="min-w-0 overflow-x-auto">
                   <WindowTable
-                    heading="Tier"
+                    heading="New by tier"
                     rows={data.newSubscribers.tiers.map((row) => ({
                       key: row.id ?? "untiered",
                       label: row.label,
@@ -956,7 +1058,11 @@ export function SubscribersPanel() {
                         <th className="py-2 px-4 font-medium">Provider</th>
                         <th className="py-2 px-4 font-medium">Started</th>
                         <th className="py-2 pl-4 font-medium">
-                          {status === "expired" ? "Ended" : "Renews"}
+                          {status === "expired"
+                            ? "Ended"
+                            : status === "failing"
+                              ? "Payment failed"
+                              : "Renews"}
                         </th>
                       </tr>
                     </thead>
@@ -1016,7 +1122,13 @@ export function SubscribersPanel() {
                           </td>
                           <td className="py-2.5 pl-4 whitespace-nowrap">
                             <span className="text-[#a1a1a1]">
-                              {fmtDate(s.currentPeriodEnd)}
+                              {fmtDate(
+                                // A failed renewal is dated to when its unpaid
+                                // period opened, not when that period ends.
+                                status === "failing"
+                                  ? s.currentPeriodStart
+                                  : s.currentPeriodEnd
+                              )}
                             </span>
                             {s.cancelAtPeriodEnd && (
                               <span className="block text-[10px] text-yellow-400">
@@ -1061,7 +1173,11 @@ export function SubscribersPanel() {
         )}
 
         <p className="text-xs text-[#666]">
-          Paying = a Stripe or PayPal subscription inside its current period.{" "}
+          Paying = a Stripe or PayPal subscription inside a period that&apos;s
+          been paid for. A renewal whose charge failed counts under Payment
+          failing instead — the provider retries, and it returns to Paying if a
+          retry succeeds. Ended = the period ran out without renewing, or the
+          provider canceled.{" "}
           {showMoney && (
             <>
               MRR counts VIP lifetime-offer subscribers at their locked
