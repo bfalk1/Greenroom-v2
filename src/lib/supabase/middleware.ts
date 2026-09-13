@@ -147,7 +147,12 @@ export async function updateSession(request: NextRequest) {
   // on purpose — they let the deleted paths fall through to Next's 404 for
   // everyone instead of the auth gate bouncing anonymous visitors to /login
   // (a hard 404, not a redirect).
-  const publicPaths = ["/", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore", "/waitlist"];
+  // /unsubscribe (page) and /api/unsubscribe (the page's POST target and the
+  // email List-Unsubscribe endpoint) MUST be public: marketing-email links land
+  // recipients here logged out, and waitlist-only recipients have no account to
+  // log into at all — an auth wall here is a CAN-SPAM/GDPR opt-out violation.
+  // The API rate-limits per IP and no-ops on unknown emails.
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore", "/waitlist", "/unsubscribe", "/api/unsubscribe"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||

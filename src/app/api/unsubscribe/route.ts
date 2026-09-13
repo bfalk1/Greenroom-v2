@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeEmail } from "@/lib/email";
+import { rateLimit, clientIp, tooManyRequests } from "@/lib/ratelimit";
 
 // Records an unsubscribe across every place an email can live, so future
 // marketing sends are suppressed. Safe to call for unknown emails.
@@ -25,9 +26,25 @@ async function processUnsubscribe(rawEmail: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { email } = await request.json();
+    // Unauthenticated DB write (the middleware allowlists this route so
+    // logged-out recipients can opt out) — cap per IP.
+    const rl = await rateLimit(`unsubscribe:${clientIp(request)}`, {
+      limit: 5,
+      windowSec: 60,
+    });
+    if (!rl.success) return tooManyRequests();
 
-    if (!email) {
+    // The email arrives as JSON ({ email }) from our /unsubscribe page, or on
+    // the query string for RFC 8058 one-click POSTs, whose body is the opaque
+    // form string "List-Unsubscribe=One-Click".
+    let email: string | null = null;
+    if ((request.headers.get("content-type") ?? "").includes("application/json")) {
+      const body = await request.json().catch(() => null);
+      if (body && typeof body.email === "string") email = body.email;
+    }
+    if (!email) email = request.nextUrl.searchParams.get("email");
+
+    if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Email required" }, { status: 400 });
     }
 
@@ -40,23 +57,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// One-click unsubscribe target for the List-Unsubscribe header.
+// The List-Unsubscribe URL also lands here via GET: legacy mail clients open
+// it in a browser, and mail security scanners prefetch it. Neither must
+// change state — a prefetch that unsubscribed the recipient would silently
+// opt out anyone whose corporate mail gateway follows links. Real opt-outs
+// happen only via POST (the page button, or a one-click POST from the mail
+// client), so GET just forwards to the confirmation page.
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const email = searchParams.get("email");
-
-  if (!email) {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
-  try {
-    await processUnsubscribe(email);
-  } catch (error) {
-    console.error("[Unsubscribe] Error:", error);
-  }
-
-  // Redirect to confirmation page
-  return NextResponse.redirect(
-    new URL(`/unsubscribe?email=${encodeURIComponent(email)}&done=1`, request.url)
-  );
+  const email = request.nextUrl.searchParams.get("email");
+  const url = new URL("/unsubscribe", request.url);
+  if (email) url.searchParams.set("email", email);
+  return NextResponse.redirect(url);
 }
