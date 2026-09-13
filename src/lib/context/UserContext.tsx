@@ -9,6 +9,7 @@ import {
   metaClearAdvancedMatching,
 } from "@/lib/metaPixel";
 import { tiktokSetIdentity, tiktokClearIdentity } from "@/lib/tiktokPixel";
+import { markAdIdentityAttached, resetAdIdentity } from "@/lib/adIdentity";
 import {
   googleAdsSetUserData,
   googleAdsClearUserData,
@@ -128,7 +129,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           // (Advanced Matching), so the browser half of every event carries
           // email/name/address — not just the CAPI half. Fire-and-forget: it
           // hashes external_id asynchronously and must not block user load.
-          void metaSetAdvancedMatching({
+          const metaIdentity = metaSetAdvancedMatching({
             id: data.user.id,
             email: data.user.email,
             fullName: data.user.full_name,
@@ -141,7 +142,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           // and flags a Critical "Email and phone are missing" diagnostic.
           // TikTok's identity set is narrower than Meta's — email, phone, and
           // external_id only — so name/address are not sent here.
-          void tiktokSetIdentity({
+          const tiktokIdentity = tiktokSetIdentity({
             id: data.user.id,
             email: data.user.email,
           });
@@ -155,6 +156,15 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             postalCode: data.user.postal_code,
             country: data.user.country,
           });
+          // Release the conversion events that wait on identity rather than
+          // racing it (src/lib/adIdentity.ts). Meta's and TikTok's attachments
+          // hash asynchronously, so readiness is the moment those SETTLE —
+          // not the moment they were called. allSettled, not all: a rejected
+          // hash must still end the wait, degrading that conversion to
+          // unidentified rather than holding it until the timeout.
+          void Promise.allSettled([metaIdentity, tiktokIdentity]).then(
+            markAdIdentityAttached
+          );
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
           setUser(null);
@@ -203,6 +213,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         metaClearAdvancedMatching();
         tiktokClearIdentity();
         googleAdsClearUserData();
+        resetAdIdentity();
         setUser(null);
         setSupabaseUser(null);
         setError(false);

@@ -15,32 +15,165 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Panel } from "./Panel";
-import { DeltaChip, StatCard, pctDelta } from "./StatCard";
-import { TrendChart } from "./TrendChart";
-import type { AnalyticsResponse, Bucket, RangeKey } from "./types";
+import { StatCard, pctDelta } from "./StatCard";
+import { TrendModal, type MetricConfig } from "./TrendModal";
+import type { MetricKey, OverviewResponse } from "./types";
 
 /**
- * Admin analytics Overview — KPI cards, marketplace/content/creator-economy/
- * subscriber-health panels and a today-vs-yesterday snapshot, driven by
- * GET /api/admin/analytics. Mounted inside the admin dashboard's Overview
- * section; `onNavigate` lets the action-item cards switch dashboard sections.
+ * Admin analytics Overview — clickable KPI tiles (active users/DAU/WAU/MAU,
+ * today's purchases/credits/new subs, 30-day pricing & VIP conversion),
+ * each opening a trend drill-down, driven by GET /api/admin/analytics.
+ * Everything but the conversion tiles comes from our own database and always
+ * renders; the conversion pair needs Vercel Web Analytics and is omitted
+ * entirely when unavailable rather than shown empty. Mounted inside the admin
+ * dashboard's Overview section and the staff analytics page; `onNavigate`
+ * moves the surrounding page to another section.
+ *
+ * Moderators read the same tiles, so `canExport` is a required decision at
+ * every call site: the CSV reports behind it are full user, transaction and
+ * payout dumps from the admin-only /api/admin/export, not dashboard numbers.
  */
 
-const RANGES: { id: RangeKey; label: string }[] = [
-  { id: "1d", label: "1D" },
-  { id: "7d", label: "7D" },
-  { id: "30d", label: "30D" },
-  { id: "90d", label: "90D" },
-  { id: "all", label: "All Time" },
-];
+const fmtInt = (n: number | null | undefined) =>
+  n == null ? "—" : Math.round(n).toLocaleString("en-US");
 
-const PREV_LABEL: Record<RangeKey, string> = {
-  "1d": "vs previous 24 hours",
-  "7d": "vs previous 7 days",
-  "30d": "vs previous 30 days",
-  "90d": "vs previous 90 days",
-  all: "",
+const fmtPct = (n: number | null | undefined) =>
+  n == null ? "—" : `${n.toFixed(n < 1 && n > 0 ? 2 : 1)}%`;
+
+const METRICS: Record<MetricKey, MetricConfig> = {
+  active: {
+    key: "active",
+    title: "Active Users",
+    description:
+      "Signed-in users with an active session in the last hour. Chart: distinct users per hour. Source: Supabase session activity.",
+    ranges: [
+      { id: "24h", label: "24H" },
+      { id: "48h", label: "48H" },
+      { id: "7d", label: "7D" },
+    ],
+    format: "int",
+    tooltipLabel: "users",
+  },
+  dau: {
+    key: "dau",
+    title: "Daily Active Users",
+    description:
+      "Distinct users with an active signed-in session that day. Source: Supabase session activity.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+      { id: "180d", label: "180D" },
+    ],
+    format: "int",
+    tooltipLabel: "users",
+  },
+  wau: {
+    key: "wau",
+    title: "Weekly Active Users",
+    description:
+      "Distinct users active in each week (Monday-start). The tile shows the rolling last 7 days.",
+    ranges: [
+      { id: "12w", label: "12W" },
+      { id: "26w", label: "26W" },
+      { id: "52w", label: "52W" },
+    ],
+    format: "int",
+    tooltipLabel: "users",
+  },
+  mau: {
+    key: "mau",
+    title: "Monthly Active Users",
+    description:
+      "Distinct users active in each calendar month. The tile shows the rolling last 30 days.",
+    ranges: [
+      { id: "6m", label: "6M" },
+      { id: "12m", label: "12M" },
+      { id: "24m", label: "24M" },
+    ],
+    format: "int",
+    tooltipLabel: "users",
+  },
+  purchases: {
+    key: "purchases",
+    title: "Items Purchased",
+    description:
+      "Marketplace purchases per day (samples + presets). All time is bucketed weekly.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+      { id: "180d", label: "180D" },
+      { id: "all", label: "All" },
+    ],
+    format: "int",
+    tooltipLabel: "purchases",
+  },
+  credits: {
+    key: "credits",
+    title: "Credits Spent",
+    description:
+      "Credits redeemed on marketplace purchases per day. All time is bucketed weekly.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+      { id: "180d", label: "180D" },
+      { id: "all", label: "All" },
+    ],
+    format: "int",
+    tooltipLabel: "credits",
+  },
+  subs: {
+    key: "subs",
+    title: "New Subscribers",
+    description:
+      "Subscriptions started per day (a user's first activation). All time is bucketed weekly.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+      { id: "180d", label: "180D" },
+      { id: "all", label: "All" },
+    ],
+    format: "int",
+    tooltipLabel: "new subscribers",
+  },
+  signup_conversion: {
+    key: "signup_conversion",
+    title: "Signup → Paid Conversion",
+    description:
+      "Of the accounts created in each week, the share that started a subscription. Signup is embedded in checkout, so ~94% subscribe within 10 minutes of registering — read this as checkout completion, not long-run nurture of casual signups. Source: database.",
+    ranges: [
+      { id: "12w", label: "12W" },
+      { id: "26w", label: "26W" },
+      { id: "52w", label: "52W" },
+      { id: "all", label: "All" },
+    ],
+    format: "percent",
+    tooltipLabel: "conversion",
+    denominatorLabel: "signups",
+  },
+  pricing_conversion: {
+    key: "pricing_conversion",
+    title: "Pricing Page Conversion",
+    description:
+      "Accounts created that day ÷ unique visitors to /pricing that day. Signup is embedded in the pricing page, so this is a one-step funnel — chain it with Signup → Paid for the end-to-end rate. Visitors from Vercel Web Analytics, signups from the database.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+    ],
+    format: "percent",
+    tooltipLabel: "conversion",
+  },
+  vip_conversion: {
+    key: "vip_conversion",
+    title: "VIP Offer Conversion",
+    description:
+      "Lifetime VIP subscriptions started that day ÷ unique visitors to the /vip offer page that day. The page is password-gated, so visitors include people who only reached the gate.",
+    ranges: [
+      { id: "30d", label: "30D" },
+      { id: "90d", label: "90D" },
+    ],
+    format: "percent",
+    tooltipLabel: "conversion",
+  },
 };
 
 const REPORT_TYPES = [
@@ -52,52 +185,16 @@ const REPORT_TYPES = [
   { id: "samples", label: "Samples" },
 ];
 
-const fmtInt = (n: number | null | undefined) =>
-  n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const REPORT_RANGES = [
+  { days: 7, label: "7D" },
+  { days: 30, label: "30D" },
+  { days: 90, label: "90D" },
+  { days: null, label: "All" },
+] as const;
 
-const fmtUsd = (n: number | null | undefined) =>
-  n == null
-    ? "—"
-    : n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-const fmtPct = (n: number | null | undefined) =>
-  n == null ? "—" : n > 999 ? ">999%" : `${n.toFixed(1)}%`;
-
-function bucketDateFormatter(bucket: Bucket) {
-  return (key: string) => {
-    if (bucket === "month") {
-      const [y, m] = key.split("-").map(Number);
-      return new Date(y, m - 1, 1).toLocaleDateString("en-US", {
-        month: "short",
-        year: "2-digit",
-      });
-    }
-    if (bucket === "hour") {
-      const [day, hour] = key.split("T");
-      const [y, m, d] = day.split("-").map(Number);
-      return new Date(y, m - 1, d, Number(hour)).toLocaleTimeString("en-US", {
-        hour: "numeric",
-      });
-    }
-    const [y, m, d] = key.split("-").map(Number);
-    const label = new Date(y, m - 1, d).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    return bucket === "week" ? `Wk of ${label}` : label;
-  };
-}
-
-function DownloadReportMenu({
-  range,
-  rangeStart,
-  rangeEnd,
-}: {
-  range: RangeKey;
-  rangeStart: string;
-  rangeEnd: string;
-}) {
+function DownloadReportMenu() {
   const [open, setOpen] = useState(false);
+  const [days, setDays] = useState<number | null>(30);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -111,9 +208,12 @@ function DownloadReportMenu({
 
   const hrefFor = (type: string) => {
     const params = new URLSearchParams({ type });
-    if (range !== "all") {
-      params.set("from", rangeStart);
-      params.set("to", rangeEnd);
+    if (days != null) {
+      const to = new Date();
+      const from = new Date(to);
+      from.setDate(from.getDate() - days);
+      params.set("from", from.toISOString());
+      params.set("to", to.toISOString());
     }
     return `/api/admin/export?${params.toString()}`;
   };
@@ -129,7 +229,23 @@ function DownloadReportMenu({
         <ChevronDown className="w-4 h-4 ml-2" />
       </Button>
       {open && (
-        <div className="absolute right-0 mt-2 w-48 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-20 py-1">
+        <div className="absolute right-0 mt-2 w-52 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl z-20 py-1">
+          <div className="flex gap-1 px-2 pt-1.5 pb-2 border-b border-[#2a2a2a]/60">
+            {REPORT_RANGES.map((r) => (
+              <button
+                key={r.label}
+                type="button"
+                onClick={() => setDays(r.days)}
+                className={`flex-1 px-2 py-1 text-xs rounded transition ${
+                  days === r.days
+                    ? "bg-[#39b54a] text-black font-medium"
+                    : "text-[#a1a1a1] hover:text-white"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
           {REPORT_TYPES.map((t) => (
             // The export route responds with Content-Disposition: attachment,
             // so a plain anchor downloads without leaving the dashboard.
@@ -149,79 +265,11 @@ function DownloadReportMenu({
   );
 }
 
-function PanelStat({
-  label,
-  value,
-  hint,
-  delta,
-  deltaTitle,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  delta?: number | null;
-  deltaTitle?: string;
-}) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-[#666] truncate" title={label}>
-        {label}
-      </p>
-      <div className="flex items-baseline gap-2">
-        <p className="text-lg font-bold text-white tabular-nums">{value}</p>
-        {delta !== undefined && <DeltaChip delta={delta} title={deltaTitle} />}
-      </div>
-      {hint && <p className="text-[10px] text-[#666] leading-tight">{hint}</p>}
-    </div>
-  );
-}
-
-function MetricRow({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-2 border-b border-[#2a2a2a]/60 last:border-0">
-      <span className="text-sm text-[#a1a1a1] min-w-0">
-        {label}
-        {hint && <span className="text-xs text-[#666]"> · {hint}</span>}
-      </span>
-      <span className="text-sm font-semibold text-white tabular-nums shrink-0">
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function SnapshotRow({
-  label,
-  today,
-  yesterday,
-  format,
-}: {
-  label: string;
-  today: number;
-  yesterday: number;
-  format: (n: number) => string;
-}) {
-  return (
-    <div className="py-2.5 border-b border-[#2a2a2a]/60 last:border-0 last:pb-0">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-[#a1a1a1]">{label}</p>
-        <DeltaChip delta={pctDelta(today, yesterday)} title="vs yesterday" />
-      </div>
-      <div className="flex items-baseline justify-between gap-2 mt-0.5">
-        <p className="text-lg font-bold text-white tabular-nums">{format(today)}</p>
-        <p className="text-[11px] text-[#666] tabular-nums">
-          yesterday {format(yesterday)}
-        </p>
-      </div>
-    </div>
+    <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#666] mb-2">
+      {children}
+    </h3>
   );
 }
 
@@ -270,16 +318,16 @@ function ActionItemCard({
 
 function OverviewSkeleton() {
   return (
-    <div className="animate-pulse space-y-4" aria-busy="true">
+    <div className="animate-pulse space-y-6" aria-busy="true">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="h-6 w-32 bg-[#1a1a1a] rounded mb-2" />
           <div className="h-4 w-64 bg-[#1a1a1a] rounded" />
         </div>
-        <div className="h-9 w-80 bg-[#1a1a1a] rounded" />
+        <div className="h-9 w-44 bg-[#1a1a1a] rounded" />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
             className="h-[128px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
@@ -290,20 +338,17 @@ function OverviewSkeleton() {
         {Array.from({ length: 3 }).map((_, i) => (
           <div
             key={i}
-            className="h-[76px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
+            className="h-[128px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
           />
         ))}
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-4">
-        <div className="space-y-4">
-          <div className="h-[340px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
-          <div className="h-[320px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="h-[240px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
-            <div className="h-[240px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
-          </div>
-        </div>
-        <div className="h-[440px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-[128px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
+          />
+        ))}
       </div>
     </div>
   );
@@ -312,32 +357,41 @@ function OverviewSkeleton() {
 interface AnalyticsOverviewProps {
   /** Switch the surrounding dashboard to another section (e.g. "applications"). */
   onNavigate?: (section: string) => void;
+  /**
+   * Show the CSV report menu. ADMIN only — /api/admin/export stays admin-gated,
+   * so rendering it for a moderator would only download a 403.
+   */
+  canExport: boolean;
 }
 
-export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps) {
-  const [range, setRange] = useState<RangeKey>("30d");
-  const [data, setData] = useState<AnalyticsResponse | null>(null);
+export default function AnalyticsOverview({
+  onNavigate,
+  canExport,
+}: AnalyticsOverviewProps) {
+  const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [openMetric, setOpenMetric] = useState<MetricKey | null>(null);
+  // Fresher active-user count from the 60s poll, layered over the last load.
+  const [activePoll, setActivePoll] = useState<number | null>(null);
   const hasDataRef = useRef(false);
 
-  // Pending-state flips happen in the event handlers below (changeRange /
-  // retry), not in the effect body — the effect only runs the fetch.
   useEffect(() => {
     const ctrl = new AbortController();
 
-    fetch(`/api/admin/analytics?range=${range}`, { signal: ctrl.signal })
+    fetch("/api/admin/analytics", { signal: ctrl.signal })
       .then(async (res) => {
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(body?.error || `Request failed (${res.status})`);
         }
-        return res.json() as Promise<AnalyticsResponse>;
+        return res.json() as Promise<OverviewResponse>;
       })
       .then((json) => {
         setData(json);
+        setActivePoll(null);
         hasDataRef.current = true;
       })
       .catch((e: unknown) => {
@@ -352,15 +406,30 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
       });
 
     return () => ctrl.abort();
-  }, [range, reloadKey]);
+  }, [reloadKey]);
 
-  const changeRange = (next: RangeKey) => {
-    if (next === range) return;
-    setError(null);
-    if (hasDataRef.current) setRefreshing(true);
-    else setLoading(true);
-    setRange(next);
-  };
+  // Keep the active-users tile current: one cheap query per minute, skipped
+  // in background tabs and while its drill-down (which polls itself) is open.
+  const hasData = !!data;
+  useEffect(() => {
+    if (!hasData) return;
+    const timer = setInterval(async () => {
+      if (document.hidden || openMetric === "active") return;
+      try {
+        const res = await fetch(
+          "/api/admin/analytics/trend?metric=active&range=24h"
+        );
+        if (!res.ok) return;
+        const json = (await res.json()) as {
+          activeNow?: { current: number };
+        };
+        if (json.activeNow) setActivePoll(json.activeNow.current);
+      } catch {
+        // transient poll failure — the next tick retries
+      }
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [hasData, openMetric]);
 
   const retry = () => {
     setError(null);
@@ -394,74 +463,44 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
 
   if (!data) return null;
 
-  const fmtBucketDate = bucketDateFormatter(data.bucket);
-  const deltaTitle = data.previous ? PREV_LABEL[data.range] : "no previous period";
-  const k = data.kpis;
-  const m = data.marketplace;
-  const c = data.content;
-  const ce = data.creatorEconomy;
-  const sh = data.subscriberHealth;
+  const { engagement, commerce, conversion } = data;
+  const activeNow = activePoll ?? engagement.activeNow.current;
+  const hasConversion = !!(conversion.pricing || conversion.vip);
 
-  // Format from the server's YYYY-MM-DD day keys (parsed as local dates, same
-  // as chart bucket labels) — formatting the ISO instants with the browser's
-  // timezone would show a different date than the charts for non-UTC admins.
-  const fmtDayKey = (key: string, withYear: boolean) => {
-    const [y, m, d] = key.split("-").map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      ...(withYear ? { year: "numeric" as const } : {}),
-    });
-  };
-  const rangeLabel =
-    data.range === "all"
-      ? `All time · since ${fmtDayKey(data.rangeStartDay, true)}`
-      : data.range === "1d"
-      ? // Hour-of-day would have to be rendered in the viewer's timezone while
-        // the chart labels use the server's — so just say the window.
-        "Last 24 hours"
-      : `${fmtDayKey(data.rangeStartDay, false)} – ${fmtDayKey(data.rangeEndDay, true)}`;
+  const updatedAt = new Date(data.generatedAt).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
   return (
     <div>
-      {/* Header: subtitle + range picker + report download */}
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-semibold text-white">Overview</h2>
           <p className="text-sm text-[#a1a1a1]">
-            Key metrics and performance at a glance
+            Click any metric to see its trend over time
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {refreshing && (
             <Loader2 className="w-4 h-4 text-[#39b54a] animate-spin" />
           )}
-          <span className="text-xs text-[#666] tabular-nums">{rangeLabel}</span>
-          <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
-            {RANGES.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => changeRange(r.id)}
-                className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
-                  range === r.id
-                    ? "bg-[#39b54a] text-black font-medium"
-                    : "text-[#a1a1a1] hover:text-white"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-          <DownloadReportMenu
-            range={data.range}
-            rangeStart={data.rangeStart}
-            rangeEnd={data.rangeEnd}
-          />
+          <span className="text-xs text-[#666] tabular-nums">
+            Updated {updatedAt}
+          </span>
+          <Button
+            onClick={retry}
+            aria-label="Refresh metrics"
+            className="h-9 w-9 p-0 bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:bg-[#242424]"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          {canExport && <DownloadReportMenu />}
         </div>
       </div>
 
-      {/* Refresh failed but stale data is still shown */}
+      {/* A refresh failed but stale numbers are still on screen */}
       {error && (
         <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2.5 mb-4">
           <p className="text-sm text-red-400">{error}</p>
@@ -477,269 +516,194 @@ export default function AnalyticsOverview({ onNavigate }: AnalyticsOverviewProps
       )}
 
       <div
-        className={`space-y-4 transition-opacity duration-200 ${
+        className={`space-y-6 transition-opacity duration-200 ${
           refreshing ? "opacity-60" : "opacity-100"
         }`}
       >
-        {/* KPI row */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          <StatCard
-            label="Active Subscribers"
-            value={fmtInt(k.activeSubscribers.current)}
-            delta={pctDelta(
-              k.activeSubscribers.renewals.current,
-              k.activeSubscribers.renewals.previous
+        {/* Active users */}
+        <section>
+          <SectionLabel>Active Users</SectionLabel>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatCard
+              label="Active Now"
+              live
+              value={fmtInt(activeNow)}
+              series={engagement.activeNow.series}
+              note={`signed-in sessions · last ${engagement.activeNow.windowMinutes} min`}
+              onClick={() => setOpenMetric("active")}
+            />
+            <StatCard
+              label="Daily Active Users"
+              value={fmtInt(engagement.dau.today)}
+              delta={pctDelta(engagement.dau.today, engagement.dau.yesterday)}
+              deltaTitle="vs yesterday (full day)"
+              series={engagement.dau.series}
+              note={`today so far · yesterday ${fmtInt(engagement.dau.yesterday)}`}
+              onClick={() => setOpenMetric("dau")}
+            />
+            <StatCard
+              label="Weekly Active Users"
+              value={fmtInt(engagement.wau.current)}
+              delta={pctDelta(engagement.wau.current, engagement.wau.previous)}
+              deltaTitle="vs previous 7 days"
+              series={engagement.wau.series}
+              note="rolling 7 days"
+              onClick={() => setOpenMetric("wau")}
+            />
+            <StatCard
+              label="Monthly Active Users"
+              value={fmtInt(engagement.mau.current)}
+              delta={pctDelta(engagement.mau.current, engagement.mau.previous)}
+              deltaTitle="vs previous 30 days"
+              series={engagement.mau.series}
+              note="rolling 30 days"
+              onClick={() => setOpenMetric("mau")}
+            />
+          </div>
+        </section>
+
+        {/* Marketplace + subscriptions, today */}
+        <section>
+          <SectionLabel>Today</SectionLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard
+              label="Items Purchased Today"
+              value={fmtInt(commerce.purchases.today)}
+              delta={pctDelta(commerce.purchases.today, commerce.purchases.yesterday)}
+              deltaTitle="vs yesterday (full day)"
+              series={commerce.purchases.series}
+              note={`samples + presets · last 7 days ${fmtInt(commerce.purchases.last7)}`}
+              onClick={() => setOpenMetric("purchases")}
+            />
+            <StatCard
+              label="Credits Spent Today"
+              value={fmtInt(commerce.credits.today)}
+              delta={pctDelta(commerce.credits.today, commerce.credits.yesterday)}
+              deltaTitle="vs yesterday (full day)"
+              series={commerce.credits.series}
+              note={`last 7 days ${fmtInt(commerce.credits.last7)}`}
+              onClick={() => setOpenMetric("credits")}
+            />
+            <StatCard
+              label="New Subscribers Today"
+              value={fmtInt(commerce.subs.today)}
+              delta={pctDelta(commerce.subs.today, commerce.subs.yesterday)}
+              deltaTitle="vs yesterday (full day)"
+              series={commerce.subs.series}
+              note={`last 7 days ${fmtInt(commerce.subs.last7)} · ${fmtInt(commerce.subs.activeTotal)} paying`}
+              onClick={() => setOpenMetric("subs")}
+            />
+          </div>
+        </section>
+
+        {/* Conversion — the signup tile is database-only and always shows;
+            the pricing/VIP pair joins it when Vercel Analytics answered. */}
+        <section>
+          <SectionLabel>Conversion · Last 30 Days</SectionLabel>
+          <div
+            className={`grid grid-cols-1 gap-3 ${
+              hasConversion ? "sm:grid-cols-2 xl:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
+            <StatCard
+              label="Signup → Paid"
+              value={fmtPct(conversion.signup.ratePct)}
+              delta={pctDelta(
+                conversion.signup.ratePct,
+                conversion.signup.prevRatePct
+              )}
+              deltaTitle="vs previous 30 days (relative)"
+              note={`${fmtInt(conversion.signup.visitors)} signups → ${fmtInt(
+                conversion.signup.conversions
+              )} subscribed`}
+              onClick={() => setOpenMetric("signup_conversion")}
+            />
+            {conversion.pricing && (
+              <StatCard
+                label="Pricing Page → Signup"
+                value={fmtPct(conversion.pricing.window.ratePct)}
+                delta={pctDelta(
+                  conversion.pricing.window.ratePct,
+                  conversion.pricing.window.prevRatePct
+                )}
+                deltaTitle="vs previous 30 days (relative)"
+                series={conversion.pricing.series}
+                note={`${fmtInt(
+                  conversion.pricing.window.visitors
+                )} visitors → ${fmtInt(
+                  conversion.pricing.window.conversions
+                )} signups`}
+                onClick={() => setOpenMetric("pricing_conversion")}
+              />
             )}
-            deltaTitle={`Subscription renewals ${deltaTitle}`}
-            series={k.activeSubscribers.series}
-            note="Paying · Δ from renewals"
-          />
-          <StatCard
-            label="Items Purchased"
-            value={fmtInt(k.samplesPurchased.current)}
-            delta={pctDelta(k.samplesPurchased.current, k.samplesPurchased.previous)}
-            deltaTitle={deltaTitle}
-            series={k.samplesPurchased.series}
-          />
-          <StatCard
-            label="Credit Utilization"
-            value={fmtPct(k.creditUtilization.current)}
-            delta={pctDelta(k.creditUtilization.current, k.creditUtilization.previous)}
-            deltaTitle={deltaTitle}
-            series={k.creditUtilization.series}
-            note="Redeemed ÷ granted"
-          />
-          <StatCard
-            label="Royalties Paid"
-            value={fmtUsd(k.royaltiesPaidUsd.current)}
-            delta={pctDelta(k.royaltiesPaidUsd.current, k.royaltiesPaidUsd.previous)}
-            deltaTitle={deltaTitle}
-            series={k.royaltiesPaidUsd.series}
-          />
-          <StatCard
-            label="Active Creators"
-            value={fmtInt(k.activeCreators.current)}
-            delta={pctDelta(k.activeCreators.current, k.activeCreators.previous)}
-            deltaTitle={deltaTitle}
-            series={k.activeCreators.series}
-            note="≥1 sale or upload"
-          />
-          <StatCard
-            label="New Creators"
-            value={fmtInt(k.newCreators.current)}
-            delta={pctDelta(k.newCreators.current, k.newCreators.previous)}
-            deltaTitle={deltaTitle}
-            series={k.newCreators.series}
-          />
-        </div>
+            {conversion.vip && (
+              <StatCard
+                label="VIP Offer → Paid Sub"
+                value={fmtPct(conversion.vip.window.ratePct)}
+                delta={pctDelta(
+                  conversion.vip.window.ratePct,
+                  conversion.vip.window.prevRatePct
+                )}
+                deltaTitle="vs previous 30 days (relative)"
+                series={conversion.vip.series}
+                note={`${fmtInt(
+                  conversion.vip.window.visitors
+                )} visitors → ${fmtInt(
+                  conversion.vip.window.conversions
+                )} lifetime subs`}
+                onClick={() => setOpenMetric("vip_conversion")}
+              />
+            )}
+          </div>
+        </section>
 
         {/* Action items */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <ActionItemCard
-            label="Pending Applications"
-            count={data.actionItems.pendingApplications}
-            icon={Clock}
-            onClick={onNavigate ? () => onNavigate("applications") : undefined}
-          />
-          <ActionItemCard
-            label="Samples in Review"
-            count={data.actionItems.samplesInReview}
-            icon={Music}
-            onClick={onNavigate ? () => onNavigate("samples") : undefined}
-          />
-          <ActionItemCard
-            label="Presets in Review"
-            count={data.actionItems.presetsInReview}
-            icon={SlidersHorizontal}
-            onClick={onNavigate ? () => onNavigate("presets") : undefined}
-          />
-        </div>
-
-        {/* Main grid: panels + today sidebar */}
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
-          <div className="space-y-4 min-w-0">
-            <Panel
-              title="Marketplace"
-              headerRight={
-                <span className="text-[10px] text-[#666] whitespace-nowrap">
-                  outstanding is point-in-time
-                </span>
-              }
-            >
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-3 mb-5">
-                <PanelStat
-                  label="Items Purchased"
-                  value={fmtInt(m.samplesPurchased)}
-                />
-                <PanelStat
-                  label="Credits Redeemed"
-                  value={fmtInt(m.creditsRedeemed)}
-                />
-                <PanelStat
-                  label="Credit Utilization"
-                  value={fmtPct(m.creditUtilizationPct)}
-                  hint={`of ${fmtInt(m.creditsGranted)} granted`}
-                />
-                <PanelStat
-                  label="Royalties Paid"
-                  value={fmtUsd(m.royaltiesPaidUsd)}
-                />
-                <PanelStat
-                  label="Credits Outstanding"
-                  value={fmtInt(m.creditsOutstanding)}
-                  hint="all user balances"
-                />
-              </div>
-              <p className="text-xs font-medium text-[#a1a1a1] mb-3">
-                Items Purchased
-              </p>
-              <TrendChart
-                data={m.purchasesSeries}
-                label="purchases"
-                formatValue={fmtInt}
-                formatDate={fmtBucketDate}
-              />
-            </Panel>
-
-            <Panel title="Content">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-3 mb-5">
-                <PanelStat
-                  label="New Samples Uploaded"
-                  value={fmtInt(c.newSamples)}
-                  delta={pctDelta(c.newSamples, c.newSamplesPrevious)}
-                  deltaTitle={deltaTitle}
-                />
-                <PanelStat
-                  label="Total Samples"
-                  value={fmtInt(c.totalPublishedSamples)}
-                  hint="published"
-                />
-                <PanelStat
-                  label="Avg Purchases / Sample"
-                  value={
-                    c.avgPurchasesPerPurchasedSample == null
-                      ? "—"
-                      : c.avgPurchasesPerPurchasedSample.toFixed(2)
-                  }
-                  hint="per sample sold in range"
-                />
-              </div>
-              <p className="text-xs font-medium text-[#a1a1a1] mb-3">
-                New Samples Uploaded
-              </p>
-              <TrendChart
-                data={c.uploadsSeries}
-                label="uploads"
-                formatValue={fmtInt}
-                formatDate={fmtBucketDate}
-              />
-            </Panel>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Panel title="Creator Economy">
-                <MetricRow
-                  label="Average Creator Earnings"
-                  hint="creators with sales"
-                  value={fmtUsd(ce.avgEarningsUsd)}
-                />
-                <MetricRow
-                  label="Median Creator Earnings"
-                  hint="creators with sales"
-                  value={fmtUsd(ce.medianEarningsUsd)}
-                />
-                <MetricRow
-                  label="Top Creator Earnings"
-                  value={fmtUsd(ce.topEarningsUsd)}
-                />
-                <MetricRow
-                  label="Top-10 Creators"
-                  hint="combined"
-                  value={fmtUsd(ce.top10EarningsUsd)}
-                />
-                <MetricRow
-                  label="Creators With ≥1 Sale"
-                  hint={`${fmtInt(ce.creatorsWithSale)} of ${fmtInt(ce.creatorCount)}`}
-                  value={fmtPct(ce.creatorsWithSalePct)}
-                />
-                <p className="text-[10px] text-[#666] mt-3 leading-snug">
-                  Gross earnings in range: credits spent on a creator&apos;s
-                  catalog × their payout rate.
-                </p>
-              </Panel>
-
-              <Panel title="Subscriber Health">
-                <MetricRow
-                  label="Comped (beta)"
-                  hint="active access, no billing"
-                  value={fmtInt(sh.compedSubscribers)}
-                />
-                <MetricRow
-                  label="Upgrade Rate"
-                  hint={`${fmtInt(sh.upgradeUsers)} of ${fmtInt(sh.activeSubscribers)} paying subscribers`}
-                  value={fmtPct(sh.upgradeRatePct)}
-                />
-                <MetricRow
-                  label="Avg Credits Remaining"
-                  hint="per active subscriber"
-                  value={
-                    sh.avgCreditsRemaining == null
-                      ? "—"
-                      : sh.avgCreditsRemaining.toFixed(1)
-                  }
-                />
-                <p className="text-[10px] text-[#666] mt-3 leading-snug">
-                  Upgrade rate counts distinct subscribers with an upgrade
-                  top-up in range.
-                </p>
-              </Panel>
-            </div>
+        <section>
+          <SectionLabel>Needs Attention</SectionLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <ActionItemCard
+              label="Pending Applications"
+              count={data.actionItems.pendingApplications}
+              icon={Clock}
+              onClick={onNavigate ? () => onNavigate("applications") : undefined}
+            />
+            <ActionItemCard
+              label="Samples in Review"
+              count={data.actionItems.samplesInReview}
+              icon={Music}
+              onClick={onNavigate ? () => onNavigate("samples") : undefined}
+            />
+            <ActionItemCard
+              label="Presets in Review"
+              count={data.actionItems.presetsInReview}
+              icon={SlidersHorizontal}
+              onClick={onNavigate ? () => onNavigate("presets") : undefined}
+            />
           </div>
+        </section>
 
-          {/* Today snapshot sidebar */}
-          <Panel
-            title="Today Snapshot"
-            headerRight={
-              <span className="text-[10px] text-[#666] whitespace-nowrap">
-                vs yesterday
-              </span>
-            }
-            className="xl:sticky xl:top-4"
-          >
-            <SnapshotRow
-              label="Items Purchased"
-              today={data.today.samplesPurchased.today}
-              yesterday={data.today.samplesPurchased.yesterday}
-              format={fmtInt}
-            />
-            <SnapshotRow
-              label="Royalties Paid"
-              today={data.today.royaltiesPaidUsd.today}
-              yesterday={data.today.royaltiesPaidUsd.yesterday}
-              format={fmtUsd}
-            />
-            <SnapshotRow
-              label="Active Buyers"
-              today={data.today.activeBuyers.today}
-              yesterday={data.today.activeBuyers.yesterday}
-              format={fmtInt}
-            />
-            <SnapshotRow
-              label="Credits Redeemed"
-              today={data.today.creditsRedeemed.today}
-              yesterday={data.today.creditsRedeemed.yesterday}
-              format={fmtInt}
-            />
-            <SnapshotRow
-              label="Samples Uploaded"
-              today={data.today.samplesUploaded.today}
-              yesterday={data.today.samplesUploaded.yesterday}
-              format={fmtInt}
-            />
-          </Panel>
+        <div className="text-xs text-[#666] space-y-1">
+          <p>
+            Active users come from signed-in session activity; purchases,
+            credits and subscribers from the app database (UTC days).
+          </p>
+          {/* Quiet, not alarming: the page is complete without this. */}
+          {!hasConversion && (
+            <p>
+              {conversion.error
+                ? `Conversion rates unavailable: ${conversion.error}`
+                : "Conversion rates need visitor counts — set VERCEL_ANALYTICS_TOKEN to add them."}
+            </p>
+          )}
         </div>
-
-        <p className="text-xs text-[#666]">All metrics shown in USD.</p>
       </div>
+
+      {openMetric && (
+        <TrendModal
+          config={METRICS[openMetric]}
+          onClose={() => setOpenMetric(null)}
+        />
+      )}
     </div>
   );
 }

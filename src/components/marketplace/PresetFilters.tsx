@@ -42,7 +42,11 @@ export interface PresetFilterState {
   sortBy: string;
 }
 
+// Controlled: the page owns the filter state. This component unmounts on
+// tab switches, so any state held here would silently desync from the
+// selections that keep driving the page's fetches.
 interface PresetFiltersProps {
+  filters: PresetFilterState;
   onFilterChange: (filters: PresetFilterState) => void;
 }
 
@@ -157,12 +161,8 @@ function SearchableSelect({
   );
 }
 
-export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
+export function PresetFilters({ filters, onFilterChange }: PresetFiltersProps) {
   const [mounted, setMounted] = useState(false);
-  const [synthName, setSynthName] = useState("all");
-  const [category, setCategory] = useState("all");
-  const [genre, setGenre] = useState("all");
-  const [sortBy, setSortBy] = useState("random");
   const [genres, setGenres] = useState<string[]>([]);
 
   useEffect(() => {
@@ -181,28 +181,8 @@ export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
       .catch(console.error);
   }, []);
 
-  const handleChange = (field: string, value: string) => {
-    let newSynth = synthName;
-    let newCategory = category;
-    let newGenre = genre;
-    let newSort = sortBy;
-
-    if (field === "synth") newSynth = value;
-    if (field === "category") newCategory = value;
-    if (field === "genre") newGenre = value;
-    if (field === "sort") newSort = value;
-
-    setSynthName(newSynth);
-    setCategory(newCategory);
-    setGenre(newGenre);
-    setSortBy(newSort);
-
-    onFilterChange({
-      synthName: newSynth,
-      category: newCategory,
-      genre: newGenre,
-      sortBy: newSort,
-    });
+  const handleChange = (field: keyof PresetFilterState, value: string) => {
+    onFilterChange({ ...filters, [field]: value });
   };
 
   if (!mounted) {
@@ -226,8 +206,8 @@ export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
       </div>
 
       <SearchableSelect
-        value={synthName}
-        onChange={(v) => handleChange("synth", v)}
+        value={filters.synthName}
+        onChange={(v) => handleChange("synthName", v)}
         options={SYNTHS}
         placeholder="Synth"
         allLabel="All Synths"
@@ -235,7 +215,7 @@ export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
       />
 
       <SearchableSelect
-        value={category}
+        value={filters.category}
         onChange={(v) => handleChange("category", v)}
         options={CATEGORIES}
         placeholder="Category"
@@ -244,7 +224,7 @@ export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
       />
 
       <SearchableSelect
-        value={genre}
+        value={filters.genre}
         onChange={(v) => handleChange("genre", v)}
         options={genreOptions}
         placeholder="Genre"
@@ -253,8 +233,8 @@ export function PresetFilters({ onFilterChange }: PresetFiltersProps) {
       />
 
       <Select
-        value={sortBy}
-        onValueChange={(v) => handleChange("sort", v)}
+        value={filters.sortBy}
+        onValueChange={(v) => handleChange("sortBy", v)}
       >
         <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
           <SelectValue placeholder="Sort" />

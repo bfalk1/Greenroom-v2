@@ -1,4 +1,11 @@
+"use client";
+
+import { useUser } from "@/lib/hooks/useUser";
+
 export function Footer() {
+  // Send members to the real marketplace; visitors to the landing page's
+  // interactive preview widget.
+  const { user } = useUser();
   return (
     <footer className="border-t border-[#2a2a2a] bg-[#0a0a0a] mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -19,7 +26,10 @@ export function Footer() {
             <h3 className="text-white font-semibold mb-4">Platform</h3>
             <ul className="space-y-2 text-sm text-[#a1a1a1]">
               <li>
-                <a href="/marketplace" className="hover:text-white transition">
+                <a
+                  href={user ? "/marketplace" : "/#samples"}
+                  className="hover:text-white transition"
+                >
                   Browse Samples
                 </a>
               </li>

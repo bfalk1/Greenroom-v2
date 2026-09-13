@@ -6,6 +6,7 @@ import { Prisma, PresetCategory, SynthName } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredImage, removeObject } from "@/lib/storageValidate";
 import { getPresetDownloadCounts } from "@/lib/downloadCounts";
+import { parseOptionalCreditPrice } from "@/lib/creditPriceCaps";
 
 // Display names for synth enums
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -425,14 +426,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid preset category" }, { status: 400 });
     }
 
-    const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
-    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-    if (parsedCreditPrice > maxCreditPrice) {
+    const creditPriceResult = parseOptionalCreditPrice(
+      creditPrice,
+      dbUser.isWhitelisted
+    );
+    if (!creditPriceResult.ok) {
       return NextResponse.json(
-        { error: `Credit price cannot exceed ${maxCreditPrice}` },
+        { error: creditPriceResult.error },
         { status: 400 }
       );
     }
+    const parsedCreditPrice = creditPriceResult.value;
 
     const slug =
       name

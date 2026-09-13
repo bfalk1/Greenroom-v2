@@ -4,6 +4,7 @@ import {
   cohortOf,
   monthlyUnitCents,
 } from "@/lib/subscriptionCohorts";
+import { PROVIDER_BACKED, subscriberState } from "@/lib/subscriberStatus";
 
 // The cohort rules (which sub is annual / promo / lifetime, and what each one
 // bills per month) live in @/lib/subscriptionCohorts so the admin dashboard
@@ -47,7 +48,7 @@ export type MrrTierBreakdown = {
 };
 
 export type MrrSnapshot = {
-  /** Active = current period hasn't ended yet. */
+  /** Paying subs — inside a paid period (see @/lib/subscriberStatus). */
   activeSubs: number;
   mrrCents: number;
   arrCents: number;
@@ -56,7 +57,11 @@ export type MrrSnapshot = {
   /** Active now but flagged to cancel — revenue with a known end date. */
   cancelingSubs: number;
   cancelingMrrCents: number;
-  /** Rows whose period already ended (excluded from every figure above). */
+  /** Inside their period but the renewal charge failed (excluded from every
+   *  figure above). */
+  paymentFailingSubs: number;
+  /** Rows whose period already ended, or that the provider canceled (excluded
+   *  from every figure above). */
   lapsedSubs: number;
   /** Tiers referenced by a subscription but missing a price (counted as $0). */
   unpricedSubs: number;
@@ -69,6 +74,7 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
       select: { id: true, name: true, priceUsdCents: true },
     }),
     prisma.subscription.findMany({
+      where: PROVIDER_BACKED,
       select: {
         tierId: true,
         provider: true,
@@ -76,12 +82,22 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
         cancelAtPeriodEnd: true,
         currentPeriodStart: true,
         currentPeriodEnd: true,
+        user: { select: { subscriptionStatus: true } },
       },
     }),
   ]);
 
   const tierById = new Map(tiers.map((t) => [t.id, t]));
-  const active = subs.filter((s) => s.currentPeriodEnd > now);
+  const stateOf = (sub: (typeof subs)[number]) =>
+    subscriberState(
+      {
+        currentPeriodEnd: sub.currentPeriodEnd,
+        userStatus: sub.user.subscriptionStatus,
+      },
+      now
+    );
+  const active = subs.filter((s) => stateOf(s) === "paying");
+  const paymentFailingSubs = subs.filter((s) => stateOf(s) === "failing").length;
 
   const tierBuckets = new Map<string, MrrTierBreakdown>();
   const providerBuckets = new Map<string, { provider: string; subs: number; mrrCents: number }>();
@@ -138,7 +154,8 @@ export async function computeMrrSnapshot(now: Date = new Date()): Promise<MrrSna
     byProvider: [...providerBuckets.values()].sort((a, b) => b.mrrCents - a.mrrCents),
     cancelingSubs,
     cancelingMrrCents,
-    lapsedSubs: subs.length - active.length,
+    paymentFailingSubs,
+    lapsedSubs: subs.length - active.length - paymentFailingSubs,
     unpricedSubs,
     computedAt: now,
   };

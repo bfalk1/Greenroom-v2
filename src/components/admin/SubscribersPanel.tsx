@@ -15,22 +15,39 @@ import { Input } from "@/components/ui/input";
 import { Panel } from "./analytics/Panel";
 
 /**
- * Admin "Subscribers" section — headline subscriber counts, the per-tier mix,
- * and a filterable roster, driven by GET /api/admin/subscribers.
+ * Admin "Subscribers" section — headline subscriber counts, how Paying moved,
+ * the per-tier mix, and a filterable roster, driven by
+ * GET /api/admin/subscribers.
  *
- * Counts use the same definitions as the analytics Overview: "paying" means a
- * provider-backed subscription inside its period; "comped" is the beta bypass
- * (access flag, no billing row, no tier).
+ * Counts use the same definitions as the analytics Overview
+ * (@/lib/subscriberStatus): "paying" means a provider-backed subscription
+ * inside a paid period; "payment failing" is inside its period but the renewal
+ * charge failed, so it isn't paying; "comped" is the beta bypass (access flag,
+ * no billing row, no tier).
+ *
+ * Two parts render only for admins, and the server is what withholds them —
+ * a moderator's response simply doesn't carry the data:
+ * - `list` is null → no roster (who subscribed, on what, when).
+ * - `includesRevenue` is false → every *Usd field is null, so the MRR tiles
+ *   and the Price/MRR columns drop out and only subscriber counts remain.
  */
 
-type Status = "active" | "canceling" | "expired" | "comped";
+type Status = "active" | "canceling" | "failing" | "expired" | "comped";
 
 const STATUS_TABS: { id: Status; label: string }[] = [
   { id: "active", label: "Paying" },
   { id: "canceling", label: "Canceling" },
+  { id: "failing", label: "Payment failing" },
   { id: "comped", label: "Comped" },
   { id: "expired", label: "Expired" },
 ];
+
+/** One count per rolling window (24h / 7d / 30d). */
+interface WindowCounts {
+  last24h: number;
+  last7d: number;
+  last30d: number;
+}
 
 /** Mutually-exclusive billing cohorts, classified server-side by @/lib/mrr. */
 type CohortKey = "list" | "lifetime" | "promo" | "annual";
@@ -43,24 +60,24 @@ interface CohortRow {
   stripe: number;
   paypal: number;
   /** Monthly-equivalent price per sub — annual is its yearly charge ÷ 12. */
-  unitPriceUsd: number;
-  mrrUsd: number;
+  unitPriceUsd: number | null;
+  mrrUsd: number | null;
 }
 
 interface TierRow {
   id: string;
   name: string;
   displayName: string;
-  priceUsd: number;
+  priceUsd: number | null;
   creditsPerMonth: number;
   isActive: boolean;
   active: number;
   canceling: number;
   sharePct: number | null;
   /** Effective MRR — each cohort at the price it actually bills. */
-  mrrUsd: number;
+  mrrUsd: number | null;
   /** MRR if every sub on this tier paid monthly list price. */
-  listMrrUsd: number;
+  listMrrUsd: number | null;
   stripe: number;
   paypal: number;
   /** One entry per cohort with at least one sub on this tier. */
@@ -86,33 +103,51 @@ interface SubscriberRow {
 
 interface SubscribersResponse {
   generatedAt: string;
+  /** False for moderators — every *Usd field below is null. */
+  includesRevenue: boolean;
   totals: {
     active: number;
     canceling: number;
+    /** Inside their period but the renewal charge failed — not in `active`. */
+    failing: number;
     expired: number;
     comped: number;
     withAccess: number;
     untieredActive: number;
-    mrrUsd: number;
-    listMrrUsd: number;
+    mrrUsd: number | null;
+    listMrrUsd: number | null;
     lifetimeActive: number;
     /** Active subs from the $5.99-first-month /promo funnel. */
     promoActive: number;
     /** Active subs on yearly billing. */
     annualActive: number;
-    promoFirstMonthUsd: number;
+    promoFirstMonthUsd: number | null;
     avgMrrUsd: number | null;
     avgCreditsPerMonth: number | null;
     monthlyCreditsTotal: number;
     stripe: number;
     paypal: number;
   };
-  newSubscribers: {
-    last24h: number;
-    last7d: number;
-    last30d: number;
+  /** New subscribers per window, plus what left Paying over the same windows. */
+  newSubscribers: WindowCounts & {
+    /** The period ran out without renewing, or the provider canceled. */
+    ended: WindowCounts;
+    /** The renewal charge failed and hasn't recovered. */
+    paymentFailed: WindowCounts;
+    /** New − ended − payment failed: how far Paying moved. */
+    net: WindowCounts;
     cohorts: {
       key: CohortKey;
+      label: string;
+      last24h: number;
+      last7d: number;
+      last30d: number;
+    }[];
+    /** The same signups cut by tier instead of by offer. */
+    tiers: {
+      /** null = the sub's tier row no longer exists ("No tier"). */
+      id: string | null;
+      name: string;
       label: string;
       last24h: number;
       last7d: number;
@@ -121,6 +156,7 @@ interface SubscribersResponse {
   };
   tiers: TierRow[];
   acquisitionSources: { source: string; count: number }[];
+  /** ADMIN-only; null for moderators, who see aggregates without the roster. */
   list: {
     status: Status;
     tierId: string | null;
@@ -129,7 +165,7 @@ interface SubscribersResponse {
     offset: number;
     total: number;
     subscribers: SubscriberRow[];
-  };
+  } | null;
 }
 
 const fmtInt = (n: number | null | undefined) =>
@@ -184,6 +220,139 @@ const isAnnualRow = (s: SubscriberRow) =>
   new Date(s.currentPeriodEnd).getTime() -
     new Date(s.currentPeriodStart).getTime() >
     ANNUAL_SPAN_MS;
+
+/**
+ * One 24h / 7d / 30d signup table. The Subscriber Movement panel renders two —
+ * the new signups cut by offer and by tier — so they share a shape.
+ */
+function WindowTable({
+  heading,
+  rows,
+}: {
+  heading: string;
+  rows: {
+    key: string;
+    label: string;
+    color: string;
+    last24h: number;
+    last7d: number;
+    last30d: number;
+  }[];
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-[10px] text-[#666]">
+          <th className="pb-1.5 pr-4 font-medium">{heading}</th>
+          <th className="pb-1.5 px-4 font-medium text-right">24h</th>
+          <th className="pb-1.5 px-4 font-medium text-right">7d</th>
+          <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.key} className="border-t border-[#1f1f1f]">
+            <td className="py-1.5 pr-4 text-[#a1a1a1]">
+              <span className="inline-flex items-center gap-2">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: r.color }}
+                />
+                {r.label}
+              </span>
+            </td>
+            <td className="py-1.5 px-4 text-right text-white tabular-nums">
+              {fmtInt(r.last24h)}
+            </td>
+            <td className="py-1.5 px-4 text-right text-white tabular-nums">
+              {fmtInt(r.last7d)}
+            </td>
+            <td className="py-1.5 pl-4 text-right text-white tabular-nums">
+              {fmtInt(r.last30d)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
+ * How Paying moved over each window: new subscriptions in, ended and
+ * payment-failed ones out, and the net of the three — the amount the Paying
+ * tile actually moved by.
+ */
+function MovementTable({
+  started,
+  ended,
+  paymentFailed,
+  net,
+}: {
+  started: WindowCounts;
+  ended: WindowCounts;
+  paymentFailed: WindowCounts;
+  net: WindowCounts;
+}) {
+  const windows = ["last24h", "last7d", "last30d"] as const;
+  const flows = [
+    { key: "new", label: "New subscribers", counts: started, sign: "+" },
+    { key: "ended", label: "Ended", counts: ended, sign: "−" },
+    { key: "failed", label: "Payment failed", counts: paymentFailed, sign: "−" },
+  ];
+  const cellPad = (i: number) => (i === windows.length - 1 ? "pl-4" : "px-4");
+  const netColor = (n: number) =>
+    n > 0 ? "#39b54a" : n < 0 ? "#f87171" : "#a1a1a1";
+  const netText = (n: number) =>
+    n > 0 ? `+${fmtInt(n)}` : n < 0 ? `−${fmtInt(-n)}` : "0";
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-[10px] text-[#666]">
+          <th className="pb-1.5 pr-4 font-medium">Change</th>
+          <th className="pb-1.5 px-4 font-medium text-right">24h</th>
+          <th className="pb-1.5 px-4 font-medium text-right">7d</th>
+          <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {flows.map((flow) => (
+          <tr key={flow.key} className="border-t border-[#1f1f1f]">
+            <td className="py-1.5 pr-4 text-[#a1a1a1] whitespace-nowrap">
+              {flow.label}
+            </td>
+            {windows.map((w, i) => (
+              <td
+                key={w}
+                className={`py-1.5 ${cellPad(i)} text-right tabular-nums ${
+                  flow.counts[w] > 0 ? "text-white" : "text-[#444]"
+                }`}
+              >
+                {flow.counts[w] > 0
+                  ? `${flow.sign}${fmtInt(flow.counts[w])}`
+                  : "0"}
+              </td>
+            ))}
+          </tr>
+        ))}
+        <tr className="border-t border-[#2a2a2a]">
+          <td className="pt-2 pr-4 text-white font-medium whitespace-nowrap">
+            Net change
+          </td>
+          {windows.map((w, i) => (
+            <td
+              key={w}
+              className={`pt-2 ${cellPad(i)} text-right text-base font-bold tabular-nums`}
+              style={{ color: netColor(net[w]) }}
+            >
+              {netText(net[w])}
+            </td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
 
 function BigStat({
   label,
@@ -363,9 +532,10 @@ export function SubscribersPanel() {
   if (!data) return null;
 
   const t = data.totals;
+  const showMoney = data.includesRevenue;
   const list = data.list;
-  const pageStart = list.total === 0 ? 0 : list.offset + 1;
-  const pageEnd = Math.min(list.offset + list.limit, list.total);
+  const pageStart = !list || list.total === 0 ? 0 : list.offset + 1;
+  const pageEnd = list ? Math.min(list.offset + list.limit, list.total) : 0;
 
   // A tier splits into one row per billing cohort it actually has — monthly
   // list, annual, promo, lifetime — so every row's Price × Subscribers equals
@@ -393,7 +563,7 @@ export function SubscribersPanel() {
           stripe: 0,
           paypal: 0,
           sharePct: tier.sharePct,
-          mrrUsd: 0,
+          mrrUsd: showMoney ? 0 : null,
         },
       ];
     }
@@ -405,26 +575,34 @@ export function SubscribersPanel() {
         case "lifetime":
           return {
             label: `${tier.displayName} · Lifetime`,
-            detail: `locked ${fmtUsd(c.unitPriceUsd)}/mo · same ${credits}`,
+            detail: showMoney
+              ? `locked ${fmtUsd(c.unitPriceUsd)}/mo · same ${credits}`
+              : `locked lifetime rate · same ${credits}`,
           };
         case "promo":
           return {
             label: `${tier.displayName} · Promo`,
-            detail: `${fmtUsd(t.promoFirstMonthUsd)} first month, then ${fmtUsd(
-              tier.priceUsd
-            )} · same ${credits}`,
+            detail: showMoney
+              ? `${fmtUsd(t.promoFirstMonthUsd)} first month, then ${fmtUsd(
+                  tier.priceUsd
+                )} · same ${credits}`
+              : `discounted first month, then list · same ${credits}`,
           };
         case "annual":
           return {
             label: `${tier.displayName} · Annual`,
-            detail: `${fmtUsd(c.unitPriceUsd * 12)}/yr = ${fmtUsd(
-              c.unitPriceUsd
-            )}/mo · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`,
+            detail: showMoney
+              ? `${fmtUsd((c.unitPriceUsd ?? 0) * 12)}/yr = ${fmtUsd(
+                  c.unitPriceUsd
+                )}/mo · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`
+              : `billed yearly · 12× ${fmtInt(tier.creditsPerMonth)} credits upfront`,
           };
         default:
           return {
             label: tier.displayName,
-            detail: `${tier.name} · ${credits}${only ? "" : " · monthly list price"}${retired}`,
+            detail: `${tier.name} · ${credits}${
+              only || !showMoney ? "" : " · monthly list price"
+            }${retired}`,
           };
       }
     };
@@ -518,23 +696,33 @@ export function SubscribersPanel() {
           <BigStat
             label="Total With Access"
             value={fmtInt(t.withAccess)}
-            hint="paying + comped"
-          />
-          <BigStat
-            label="MRR"
-            value={fmtUsd(t.mrrUsd)}
             hint={
-              t.listMrrUsd > t.mrrUsd
-                ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
-                    t.listMrrUsd - t.mrrUsd
-                  )} lifetime + annual discounts`
-                : "all subscribers at list price"
+              t.failing > 0
+                ? `paying + comped + ${fmtInt(t.failing)} payment failing`
+                : "paying + comped"
             }
           />
+          {showMoney && (
+            <BigStat
+              label="MRR"
+              value={fmtUsd(t.mrrUsd)}
+              hint={
+                (t.listMrrUsd ?? 0) > (t.mrrUsd ?? 0)
+                  ? `list ${fmtUsd(t.listMrrUsd)} − ${fmtUsd(
+                      (t.listMrrUsd ?? 0) - (t.mrrUsd ?? 0)
+                    )} lifetime + annual discounts`
+                  : "all subscribers at list price"
+              }
+            />
+          )}
           <BigStat
             label="Promo (first month)"
             value={fmtInt(t.promoActive)}
-            hint={`${fmtUsd(t.promoFirstMonthUsd)} first month, then list`}
+            hint={
+              showMoney
+                ? `${fmtUsd(t.promoFirstMonthUsd)} first month, then list`
+                : "discounted first month, then list"
+            }
             accent={t.promoActive > 0 ? "#e0b33c" : undefined}
           />
           <BigStat
@@ -547,11 +735,13 @@ export function SubscribersPanel() {
             }
             accent={t.annualActive > 0 ? "#7c9cf5" : undefined}
           />
-          <BigStat
-            label="Avg MRR / Subscriber"
-            value={fmtUsd(t.avgMrrUsd)}
-            hint="effective MRR ÷ paying subscribers"
-          />
+          {showMoney && (
+            <BigStat
+              label="Avg MRR / Subscriber"
+              value={fmtUsd(t.avgMrrUsd)}
+              hint="effective MRR ÷ paying subscribers"
+            />
+          )}
           <BigStat
             label="Avg Credits / Subscriber"
             value={
@@ -567,70 +757,73 @@ export function SubscribersPanel() {
             hint="active until period end"
             accent={t.canceling > 0 ? "#e0b33c" : undefined}
           />
+          <BigStat
+            label="Payment Failing"
+            value={fmtInt(t.failing)}
+            hint="renewal charge failed · not counted as paying"
+            accent={t.failing > 0 ? "#f87171" : undefined}
+          />
         </div>
 
-        {/* New subscribers */}
+        {/* How Paying moved */}
         <Panel
-          title="New Subscribers"
+          title="Subscriber Movement"
           headerRight={
             <span className="text-[10px] text-[#666] whitespace-nowrap">
-              by subscription start date
+              new by start date · ended when a period runs out
             </span>
           }
         >
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: "Last 24 hours", value: data.newSubscribers.last24h },
-              { label: "Last 7 days", value: data.newSubscribers.last7d },
-              { label: "Last 30 days", value: data.newSubscribers.last30d },
-            ].map((s) => (
-              <div key={s.label} className="min-w-0">
-                <p className="text-[11px] text-[#666] truncate">{s.label}</p>
-                <p className="text-lg font-bold text-white tabular-nums">
-                  {fmtInt(s.value)}
-                </p>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <MovementTable
+              started={{
+                last24h: data.newSubscribers.last24h,
+                last7d: data.newSubscribers.last7d,
+                last30d: data.newSubscribers.last30d,
+              }}
+              ended={data.newSubscribers.ended}
+              paymentFailed={data.newSubscribers.paymentFailed}
+              net={data.newSubscribers.net}
+            />
           </div>
 
-          {/* Which offer each batch of signups came in on. Rows only appear
-              for cohorts that actually signed up in the last 30 days. */}
-          {data.newSubscribers.cohorts.length > 0 && (
-            <div className="border-t border-[#2a2a2a] mt-4 pt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[10px] text-[#666]">
-                    <th className="pb-1.5 pr-4 font-medium">Offer</th>
-                    <th className="pb-1.5 px-4 font-medium text-right">24h</th>
-                    <th className="pb-1.5 px-4 font-medium text-right">7d</th>
-                    <th className="pb-1.5 pl-4 font-medium text-right">30d</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.newSubscribers.cohorts.map((c) => (
-                    <tr key={c.key} className="border-t border-[#1f1f1f]">
-                      <td className="py-1.5 pr-4 text-[#a1a1a1]">
-                        <span className="inline-flex items-center gap-2">
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: COHORT_COLOR[c.key] }}
-                          />
-                          {c.label}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last24h)}
-                      </td>
-                      <td className="py-1.5 px-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last7d)}
-                      </td>
-                      <td className="py-1.5 pl-4 text-right text-white tabular-nums">
-                        {fmtInt(c.last30d)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* The new signups cut two ways — which OFFER they came in on and
+              which TIER they bought. Rows appear only for cohorts/tiers that
+              actually signed up in the window, so quiet plans don't pad the
+              tables with zeros. */}
+          {(data.newSubscribers.cohorts.length > 0 ||
+            data.newSubscribers.tiers.length > 0) && (
+            <div className="border-t border-[#2a2a2a] mt-4 pt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+              {data.newSubscribers.cohorts.length > 0 && (
+                <div className="min-w-0 overflow-x-auto">
+                  <WindowTable
+                    heading="New by offer"
+                    rows={data.newSubscribers.cohorts.map((c) => ({
+                      key: c.key,
+                      label: c.label,
+                      color: COHORT_COLOR[c.key],
+                      last24h: c.last24h,
+                      last7d: c.last7d,
+                      last30d: c.last30d,
+                    }))}
+                  />
+                </div>
+              )}
+              {data.newSubscribers.tiers.length > 0 && (
+                <div className="min-w-0 overflow-x-auto">
+                  <WindowTable
+                    heading="New by tier"
+                    rows={data.newSubscribers.tiers.map((row) => ({
+                      key: row.id ?? "untiered",
+                      label: row.label,
+                      color: row.id ? tierColor(row.name) : "#444",
+                      last24h: row.last24h,
+                      last7d: row.last7d,
+                      last30d: row.last30d,
+                    }))}
+                  />
+                </div>
+              )}
             </div>
           )}
         </Panel>
@@ -654,7 +847,9 @@ export function SubscribersPanel() {
                 <thead>
                   <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
                     <th className="py-2 pr-4 font-medium">Tier</th>
-                    <th className="py-2 px-4 font-medium text-right">Price</th>
+                    {showMoney && (
+                      <th className="py-2 px-4 font-medium text-right">Price</th>
+                    )}
                     <th className="py-2 px-4 font-medium text-right">
                       Subscribers
                     </th>
@@ -662,7 +857,9 @@ export function SubscribersPanel() {
                     <th className="py-2 px-4 font-medium text-right">Stripe</th>
                     <th className="py-2 px-4 font-medium text-right">PayPal</th>
                     <th className="py-2 px-4 font-medium text-right">Canceling</th>
-                    <th className="py-2 pl-4 font-medium text-right">MRR</th>
+                    {showMoney && (
+                      <th className="py-2 pl-4 font-medium text-right">MRR</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -698,9 +895,11 @@ export function SubscribersPanel() {
                           {row.detail}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
-                        {fmtUsd(row.priceUsd)}
-                      </td>
+                      {showMoney && (
+                        <td className="py-2.5 px-4 text-right text-[#a1a1a1] tabular-nums">
+                          {fmtUsd(row.priceUsd)}
+                        </td>
+                      )}
                       <td className="py-2.5 px-4 text-right text-white font-bold tabular-nums">
                         {fmtInt(row.active)}
                       </td>
@@ -737,9 +936,11 @@ export function SubscribersPanel() {
                           <span className="text-[#444]">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 pl-4 text-right text-white font-medium tabular-nums">
-                        {fmtUsd(row.mrrUsd)}
-                      </td>
+                      {showMoney && (
+                        <td className="py-2.5 pl-4 text-right text-white font-medium tabular-nums">
+                          {fmtUsd(row.mrrUsd)}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -775,200 +976,224 @@ export function SubscribersPanel() {
           )}
         </Panel>
 
-        {/* Roster */}
-        <Panel title="Subscriber List">
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
-              {STATUS_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => changeStatus(tab.id)}
-                  className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
-                    status === tab.id
-                      ? "bg-[#39b54a] text-black font-medium"
-                      : "text-[#a1a1a1] hover:text-white"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {status !== "comped" && data.tiers.length > 0 && (
+        {/* Roster — ADMIN-only: a moderator's response carries no list. */}
+        {list && (
+          <Panel title="Subscriber List">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
               <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => changeTier(null)}
-                  className={`px-3 py-1.5 text-sm rounded-md transition ${
-                    tierId === null
-                      ? "bg-[#2a2a2a] text-white font-medium"
-                      : "text-[#a1a1a1] hover:text-white"
-                  }`}
-                >
-                  All tiers
-                </button>
-                {data.tiers.map((tier) => (
+                {STATUS_TABS.map((tab) => (
                   <button
-                    key={tier.id}
+                    key={tab.id}
                     type="button"
-                    onClick={() => changeTier(tier.id)}
+                    onClick={() => changeStatus(tab.id)}
                     className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
-                      tierId === tier.id
+                      status === tab.id
+                        ? "bg-[#39b54a] text-black font-medium"
+                        : "text-[#a1a1a1] hover:text-white"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {status !== "comped" && data.tiers.length > 0 && (
+                <div className="flex gap-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => changeTier(null)}
+                    className={`px-3 py-1.5 text-sm rounded-md transition ${
+                      tierId === null
                         ? "bg-[#2a2a2a] text-white font-medium"
                         : "text-[#a1a1a1] hover:text-white"
                     }`}
                   >
-                    {tier.name}
+                    All tiers
                   </button>
-                ))}
-              </div>
-            )}
-
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-[#666] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search name, email or username…"
-                className="pl-9 bg-[#0a0a0a] border-[#2a2a2a] text-white"
-              />
-            </div>
-          </div>
-
-          {list.subscribers.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
-              <p className="text-[#a1a1a1] text-sm">
-                {query
-                  ? "No subscribers match that search."
-                  : "No subscribers in this group."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
-                      <th className="py-2 pr-4 font-medium">Subscriber</th>
-                      <th className="py-2 px-4 font-medium">Tier</th>
-                      <th className="py-2 px-4 font-medium">Provider</th>
-                      <th className="py-2 px-4 font-medium">Started</th>
-                      <th className="py-2 pl-4 font-medium">
-                        {status === "expired" ? "Ended" : "Renews"}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.subscribers.map((s) => (
-                      <tr key={s.userId} className="border-b border-[#1f1f1f]">
-                        <td className="py-2.5 pr-4 min-w-0">
-                          <span className="text-white font-medium">{s.name}</span>
-                          {s.role === "CREATOR" && (
-                            <span className="ml-2 text-[10px] text-[#39b54a] border border-[#39b54a]/30 rounded px-1.5 py-0.5">
-                              Creator
-                            </span>
-                          )}
-                          <span className="block text-xs text-[#666] truncate">
-                            {s.email}
-                            {s.username && ` (@${s.username})`}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-4">
-                          {s.tierName ? (
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium"
-                              style={{
-                                color: tierColor(s.tierName),
-                                backgroundColor: `${tierColor(s.tierName)}1a`,
-                              }}
-                            >
-                              {s.tierName}
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-[#666]">
-                              comped
-                            </span>
-                          )}
-                          {isAnnualRow(s) && (
-                            <span
-                              className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
-                              style={{
-                                color: COHORT_COLOR.annual,
-                                backgroundColor: `${COHORT_COLOR.annual}1a`,
-                              }}
-                            >
-                              annual
-                            </span>
-                          )}
-                          {s.acquisitionSource && (
-                            <span className="block text-[10px] text-[#666] mt-0.5">
-                              {s.acquisitionSource}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <ProviderPill provider={s.provider} />
-                        </td>
-                        <td className="py-2.5 px-4 text-[#a1a1a1] whitespace-nowrap">
-                          {fmtDate(s.startedAt)}
-                        </td>
-                        <td className="py-2.5 pl-4 whitespace-nowrap">
-                          <span className="text-[#a1a1a1]">
-                            {fmtDate(s.currentPeriodEnd)}
-                          </span>
-                          {s.cancelAtPeriodEnd && (
-                            <span className="block text-[10px] text-yellow-400">
-                              cancels
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 mt-4">
-                <p className="text-xs text-[#666] tabular-nums">
-                  {pageStart}–{pageEnd} of {fmtInt(list.total)}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => changePage(Math.max(0, list.offset - list.limit))}
-                    disabled={list.offset === 0 || refreshing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => changePage(list.offset + list.limit)}
-                    disabled={pageEnd >= list.total || refreshing}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
-                  >
-                    Next
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                  {data.tiers.map((tier) => (
+                    <button
+                      key={tier.id}
+                      type="button"
+                      onClick={() => changeTier(tier.id)}
+                      className={`px-3 py-1.5 text-sm rounded-md transition whitespace-nowrap ${
+                        tierId === tier.id
+                          ? "bg-[#2a2a2a] text-white font-medium"
+                          : "text-[#a1a1a1] hover:text-white"
+                      }`}
+                    >
+                      {tier.name}
+                    </button>
+                  ))}
                 </div>
+              )}
+
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-4 h-4 text-[#666] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, email or username…"
+                  className="pl-9 bg-[#0a0a0a] border-[#2a2a2a] text-white"
+                />
               </div>
-            </>
-          )}
-        </Panel>
+            </div>
+
+            {list.subscribers.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 text-[#2a2a2a] mx-auto mb-3" />
+                <p className="text-[#a1a1a1] text-sm">
+                  {query
+                    ? "No subscribers match that search."
+                    : "No subscribers in this group."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-[#a1a1a1] border-b border-[#2a2a2a]">
+                        <th className="py-2 pr-4 font-medium">Subscriber</th>
+                        <th className="py-2 px-4 font-medium">Tier</th>
+                        <th className="py-2 px-4 font-medium">Provider</th>
+                        <th className="py-2 px-4 font-medium">Started</th>
+                        <th className="py-2 pl-4 font-medium">
+                          {status === "expired"
+                            ? "Ended"
+                            : status === "failing"
+                              ? "Payment failed"
+                              : "Renews"}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.subscribers.map((s) => (
+                        <tr key={s.userId} className="border-b border-[#1f1f1f]">
+                          <td className="py-2.5 pr-4 min-w-0">
+                            <span className="text-white font-medium">{s.name}</span>
+                            {s.role === "CREATOR" && (
+                              <span className="ml-2 text-[10px] text-[#39b54a] border border-[#39b54a]/30 rounded px-1.5 py-0.5">
+                                Creator
+                              </span>
+                            )}
+                            <span className="block text-xs text-[#666] truncate">
+                              {s.email}
+                              {s.username && ` (@${s.username})`}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            {s.tierName ? (
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium"
+                                style={{
+                                  color: tierColor(s.tierName),
+                                  backgroundColor: `${tierColor(s.tierName)}1a`,
+                                }}
+                              >
+                                {s.tierName}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-[#666]">
+                                comped
+                              </span>
+                            )}
+                            {isAnnualRow(s) && (
+                              <span
+                                className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                style={{
+                                  color: COHORT_COLOR.annual,
+                                  backgroundColor: `${COHORT_COLOR.annual}1a`,
+                                }}
+                              >
+                                annual
+                              </span>
+                            )}
+                            {s.acquisitionSource && (
+                              <span className="block text-[10px] text-[#666] mt-0.5">
+                                {s.acquisitionSource}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <ProviderPill provider={s.provider} />
+                          </td>
+                          <td className="py-2.5 px-4 text-[#a1a1a1] whitespace-nowrap">
+                            {fmtDate(s.startedAt)}
+                          </td>
+                          <td className="py-2.5 pl-4 whitespace-nowrap">
+                            <span className="text-[#a1a1a1]">
+                              {fmtDate(
+                                // A failed renewal is dated to when its unpaid
+                                // period opened, not when that period ends.
+                                status === "failing"
+                                  ? s.currentPeriodStart
+                                  : s.currentPeriodEnd
+                              )}
+                            </span>
+                            {s.cancelAtPeriodEnd && (
+                              <span className="block text-[10px] text-yellow-400">
+                                cancels
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 mt-4">
+                  <p className="text-xs text-[#666] tabular-nums">
+                    {pageStart}–{pageEnd} of {fmtInt(list.total)}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => changePage(Math.max(0, list.offset - list.limit))}
+                      disabled={list.offset === 0 || refreshing}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changePage(list.offset + list.limit)}
+                      disabled={pageEnd >= list.total || refreshing}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm bg-[#0a0a0a] border border-[#2a2a2a] text-[#a1a1a1] hover:text-white disabled:opacity-40 disabled:hover:text-[#a1a1a1]"
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </Panel>
+        )}
 
         <p className="text-xs text-[#666]">
-          Paying = a Stripe or PayPal subscription inside its current period.
-          MRR counts VIP lifetime-offer subscribers at their locked discounted
-          price and annual subscribers at their yearly charge ÷ 12; everyone
-          else, including the {fmtUsd(t.promoFirstMonthUsd)} first-month promo
-          cohort, counts at list price — that discount covers one cycle, then
-          renews at full price. Annual is identified by a billing period
-          spanning about a year (the interval isn&apos;t stored on our side);
-          other one-off coupons aren&apos;t tracked. Averages are per paying
-          subscriber — comped accounts are excluded.
+          Paying = a Stripe or PayPal subscription inside a period that&apos;s
+          been paid for. A renewal whose charge failed counts under Payment
+          failing instead — the provider retries, and it returns to Paying if a
+          retry succeeds. Ended = the period ran out without renewing, or the
+          provider canceled.{" "}
+          {showMoney && (
+            <>
+              MRR counts VIP lifetime-offer subscribers at their locked
+              discounted price and annual subscribers at their yearly charge ÷
+              12; everyone else, including the{" "}
+              {fmtUsd(t.promoFirstMonthUsd)} first-month promo cohort, counts at
+              list price — that discount covers one cycle, then renews at full
+              price.{" "}
+            </>
+          )}
+          Annual is identified by a billing period spanning about a year (the
+          interval isn&apos;t stored on our side); other one-off coupons
+          aren&apos;t tracked.{" "}
+          {showMoney
+            ? "Averages are per paying subscriber — comped accounts are excluded."
+            : "Averages are per paying subscriber — comped accounts are excluded. Revenue figures are admin-only."}
         </p>
       </div>
     </div>
