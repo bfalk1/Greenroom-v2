@@ -12,6 +12,7 @@ import { useUser } from "@/lib/hooks/useUser";
 import { GenreInput } from "@/components/creator/GenreInput";
 import { toast } from "sonner";
 import { uploadPresetFiles } from "@/lib/uploadClient";
+import { maxCreditPriceFor } from "@/lib/creditPriceCaps";
 
 const SYNTHS = [
   { value: "SERUM", label: "Serum" },
@@ -633,12 +634,13 @@ export default function BatchUploadPresetsPage() {
                       value={preset.creditPrice}
                       onChange={(e) => {
                         const val = parseInt(e.target.value) || 1;
-                        const max = user?.is_whitelisted ? 50 : 5;
+                        const max = maxCreditPriceFor(user?.is_whitelisted);
                         updatePreset(preset.id, "creditPrice", String(Math.min(val, max)));
                       }}
                       disabled={preset.status !== "pending"}
                       className="bg-[#0a0a0a] border-[#2a2a2a] text-white text-sm h-8 w-16"
                       min="1"
+                      max={maxCreditPriceFor(user?.is_whitelisted)}
                     />
 
                     {/* Attach preview manually */}

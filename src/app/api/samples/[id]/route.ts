@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { parseCreditPrice } from "@/lib/creditPriceCaps";
 
 // GET /api/samples/[id] — Public for PUBLISHED samples; DRAFT/REVIEW are visible
 // only to the owning creator or a MODERATOR/ADMIN.
@@ -196,13 +197,9 @@ export async function PUT(
     // negative, would be *added* to their balance). Validate it the same way
     // POST does: a positive integer no greater than the creator's cap.
     if (body.creditPrice !== undefined) {
-      const price = parseInt(body.creditPrice);
-      const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-      if (!Number.isInteger(price) || price < 1 || price > maxCreditPrice) {
-        return NextResponse.json(
-          { error: `Credit price must be a whole number between 1 and ${maxCreditPrice}` },
-          { status: 400 }
-        );
+      const result = parseCreditPrice(body.creditPrice, dbUser.isWhitelisted);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
       }
     }
     if (body.bpm !== undefined && body.bpm !== null && body.bpm !== "") {
