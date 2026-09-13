@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { useUser } from "@/lib/hooks/useUser";
 import { safeRedirectPath } from "@/lib/safeRedirect";
+import { COUNTRIES } from "@/lib/countries";
 import {
   trackOnboardingStarted,
   trackOnboardingCompleted,
@@ -33,6 +34,20 @@ export default function OnboardingPage() {
   useEffect(() => {
     trackOnboardingStarted();
   }, []);
+
+  // The signup form already collected name + location (and Google signups
+  // arrive with a name) — pre-fill so nobody retypes what we have, and so a
+  // field left untouched can't submit as blank and shadow the stored value.
+  useEffect(() => {
+    if (!user) return;
+    setFormData((prev) => ({
+      ...prev,
+      username: prev.username || user.username || "",
+      full_name: prev.full_name || user.full_name || "",
+      city: prev.city || user.city || "",
+      country: prev.country || user.country || "",
+    }));
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,15 +173,27 @@ export default function OnboardingPage() {
               <label className="block text-sm font-medium text-white mb-2">
                 Country
               </label>
-              <Input
-                type="text"
-                value={formData.country}
+              {/* Select, not free text — country feeds ad-platform matching,
+                  which needs one spelling per country. Legacy free-text values
+                  that aren't in the list simply show as unselected. */}
+              <select
+                value={
+                  (COUNTRIES as readonly string[]).includes(formData.country)
+                    ? formData.country
+                    : ""
+                }
                 onChange={(e) =>
                   setFormData({ ...formData, country: e.target.value })
                 }
-                placeholder="Country"
-                className="bg-[#1a1a1a] border-[#2a2a2a] text-white placeholder-[#666]"
-              />
+                className={`h-9 w-full rounded-md border px-3 text-sm outline-none bg-[#1a1a1a] border-[#2a2a2a] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] ${formData.country ? "text-white" : "text-[#666]"}`}
+              >
+                <option value="">Select country</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c} value={c} className="text-white bg-[#1a1a1a]">
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

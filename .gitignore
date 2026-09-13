@@ -9,6 +9,7 @@
 
 # Next.js
 /.next/
+/.next-alt/
 /out/
 
 # Production
@@ -47,3 +48,6 @@ prisma/migrations/migration_lock.toml
 
 # OS
 Thumbs.db
+
+# AI-detection calibration + sweep artifacts (never commit audio/reports)
+calibration-audio/

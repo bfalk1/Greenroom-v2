@@ -9,6 +9,7 @@ import {
   User,
   Music,
   Download,
+  ShoppingCart,
   ArrowLeft,
   Upload,
   ExternalLink,
@@ -24,6 +25,7 @@ interface CreatorRow {
   avatarUrl: string | null;
   createdAt: string;
   totalUploads: number;
+  totalPurchases: number;
   totalDownloads: number;
   lastUploadAt: string | null;
   publishedCount: number;
@@ -43,6 +45,9 @@ interface UploadSample {
   creditPrice: number;
   durationMs: number | null;
   fileSizeBytes: number | null;
+  // Both counted from the purchases / downloads tables by the API — a sample's
+  // buyers and its actual file downloads are different numbers.
+  purchaseCount: number;
   downloadCount: number;
   ratingAvg: number;
   ratingCount: number;
@@ -68,6 +73,7 @@ interface CreatorDetail {
     published: number;
     review: number;
     draft: number;
+    totalPurchases: number;
     totalDownloads: number;
   };
 }
@@ -187,11 +193,12 @@ export function CreatorUploadsPanel() {
           </div>
 
           {/* Summary cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-6">
             <SummaryStat label="Total uploads" value={summary.total} accent />
             <SummaryStat label="Published" value={summary.published} />
             <SummaryStat label="In review" value={summary.review} />
             <SummaryStat label="Draft" value={summary.draft} />
+            <SummaryStat label="Purchases" value={summary.totalPurchases} />
             <SummaryStat label="Downloads" value={summary.totalDownloads} />
           </div>
         </div>
@@ -218,6 +225,7 @@ export function CreatorUploadsPanel() {
                     <th className="py-2 pr-4 font-medium">Genre</th>
                     <th className="py-2 pr-4 font-medium">Key / BPM</th>
                     <th className="py-2 pr-4 font-medium">Price</th>
+                    <th className="py-2 pr-4 font-medium">Purchases</th>
                     <th className="py-2 pr-4 font-medium">Downloads</th>
                     <th className="py-2 pr-4 font-medium">Status</th>
                     <th className="py-2 pr-4 font-medium">Uploaded</th>
@@ -249,6 +257,12 @@ export function CreatorUploadsPanel() {
                       </td>
                       <td className="py-3 pr-4 text-[#a1a1a1]">
                         {s.creditPrice} cr
+                      </td>
+                      <td className="py-3 pr-4 text-[#a1a1a1]">
+                        <span className="inline-flex items-center gap-1">
+                          <ShoppingCart className="w-3 h-3" />
+                          {s.purchaseCount}
+                        </span>
                       </td>
                       <td className="py-3 pr-4 text-[#a1a1a1]">
                         <span className="inline-flex items-center gap-1">
@@ -351,6 +365,12 @@ export function CreatorUploadsPanel() {
                         <span className="text-[#39b54a]">{c.publishedCount} pub</span>
                         <span className="text-yellow-400">{c.reviewCount} rev</span>
                         <span className="text-[#a1a1a1]">{c.draftCount} draft</span>
+                      </div>
+                      <div className="hidden md:block text-right">
+                        <p className="text-xs text-[#666]">Purchases</p>
+                        <p className="text-sm text-white font-medium">
+                          {c.totalPurchases}
+                        </p>
                       </div>
                       <div className="hidden md:block text-right">
                         <p className="text-xs text-[#666]">Downloads</p>

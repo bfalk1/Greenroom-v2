@@ -4,6 +4,9 @@
 // in the funnel", the pixel exists so Meta can attribute and optimize ad
 // delivery, so only the handful of standard events Meta optimizes on are sent.
 
+import { countryToIso2 } from "./countries";
+import { sha256Hex } from "./hashClient";
+
 interface FbqFunction {
   (...args: unknown[]): void;
   callMethod?: (...args: unknown[]) => void;
@@ -42,6 +45,13 @@ export function metaPixelId(): string | undefined {
 // or PayPal subscription id (I-...).
 export function purchaseEventId(transactionId: string): string {
   return `purchase:${transactionId}`;
+}
+
+// Same contract for CompleteRegistration: keyed on the new account's user id,
+// which both sides know independently — the browser from signUp()'s returned
+// user, the server at the moment it creates the users row.
+export function registrationEventId(userId: string): string {
+  return `registration:${userId}`;
 }
 
 // Programmatic equivalent of Meta's inline base-code snippet: install the fbq
@@ -156,33 +166,16 @@ export function metaSuppressOnce(dedupeKey: string) {
 
 // Local copy of metaCapiServer.splitFullName — that module can't be imported
 // into this browser file (it pulls in Node's crypto and next/server). Same
-// rule: the last whitespace-separated token is the surname.
-function splitName(
+// rule: the last whitespace-separated token is the surname. Exported for the
+// other browser-side ad libs (googleAds.ts) so the split stays identical
+// across channels.
+export function splitName(
   fullName: string | null | undefined
 ): [string | null, string | null] {
   const parts = fullName?.trim().split(/\s+/).filter(Boolean) ?? [];
   if (parts.length === 0) return [null, null];
   if (parts.length === 1) return [parts[0], null];
   return [parts.slice(0, -1).join(" "), parts[parts.length - 1]];
-}
-
-// SHA-256 hex via Web Crypto, byte-matching the server's sha256Lower(userId)
-// so the pixel's external_id equals the CAPI external_id and Meta treats the
-// two channels as the same person. crypto.subtle needs a secure context
-// (https / localhost); returns null if unavailable so external_id is simply
-// omitted rather than sent malformed.
-async function sha256Hex(value: string): Promise<string | null> {
-  try {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(value)
-    );
-    return Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  } catch {
-    return null;
-  }
 }
 
 // Advanced Matching — the browser-side counterpart to the CAPI user_data in
@@ -201,6 +194,7 @@ export async function metaSetAdvancedMatching(user: {
   city?: string | null;
   state?: string | null;
   postalCode?: string | null;
+  country?: string | null;
 }): Promise<void> {
   const fbq = initMetaPixel();
   const id = metaPixelId();
@@ -214,6 +208,11 @@ export async function metaSetAdvancedMatching(user: {
   if (user.city?.trim()) matching.ct = user.city.trim();
   if (user.state?.trim()) matching.st = user.state.trim();
   if (user.postalCode?.trim()) matching.zp = user.postalCode.trim();
+  // Meta matches country on the ISO alpha-2 code, not the display name we
+  // store — resolve first, omit when unresolvable (a hashed display name can
+  // never match anything).
+  const iso2 = countryToIso2(user.country);
+  if (iso2) matching.country = iso2;
   const externalId = await sha256Hex(user.id);
   if (externalId) matching.external_id = externalId;
 
@@ -234,6 +233,7 @@ export function metaClearAdvancedMatching() {
     ct: "",
     st: "",
     zp: "",
+    country: "",
     external_id: "",
   });
 }

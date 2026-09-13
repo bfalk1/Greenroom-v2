@@ -1,9 +1,8 @@
-// Shared types for the admin analytics Overview — mirrors the response shape
-// of GET /api/admin/analytics.
+// Shared types for the admin analytics Overview — mirrors the response
+// shapes of GET /api/admin/analytics and GET /api/admin/analytics/trend.
 
-export type RangeKey = "1d" | "7d" | "30d" | "90d" | "all";
-/** "hour" keys are `YYYY-MM-DDTHH`; the rest are `YYYY-MM-DD` (or `YYYY-MM`). */
-export type Bucket = "hour" | "day" | "week" | "month";
+/** "hour" keys are `YYYY-MM-DDTHH`, month keys `YYYY-MM`, the rest `YYYY-MM-DD`. */
+export type Granularity = "hour" | "day" | "week" | "month";
 
 export interface SeriesPoint {
   date: string;
@@ -11,76 +10,77 @@ export interface SeriesPoint {
   value: number | null;
 }
 
-export interface KpiMetric {
-  current: number | null;
-  previous: number | null;
+export interface ConversionPoint extends SeriesPoint {
+  visitors: number;
+  conversions: number;
+}
+
+export interface ConversionWindow {
+  visitors: number;
+  conversions: number;
+  ratePct: number | null;
+  prevVisitors: number;
+  prevConversions: number;
+  prevRatePct: number | null;
+}
+
+export interface ConversionPayload {
+  window: ConversionWindow;
+  series: ConversionPoint[];
+}
+
+export interface DailyMetric {
+  today: number;
+  yesterday: number;
+  last7: number;
   series: SeriesPoint[];
 }
 
-export interface AnalyticsResponse {
-  range: RangeKey;
-  bucket: Bucket;
-  rangeStart: string;
-  rangeEnd: string;
-  /** Server-local YYYY-MM-DD keys matching the series bucket-key convention. */
-  rangeStartDay: string;
-  rangeEndDay: string;
-  previous: { start: string; end: string } | null;
-  kpis: {
-    activeSubscribers: {
-      current: number;
-      previous: null;
-      series: SeriesPoint[];
-      renewals: { current: number; previous: number | null };
-    };
-    samplesPurchased: KpiMetric;
-    creditUtilization: KpiMetric;
-    royaltiesPaidUsd: KpiMetric;
-    activeCreators: KpiMetric;
-    newCreators: KpiMetric;
+export interface OverviewResponse {
+  generatedAt: string;
+  engagement: {
+    activeNow: { current: number; windowMinutes: number; series: SeriesPoint[] };
+    dau: { today: number; yesterday: number; series: SeriesPoint[] };
+    wau: { current: number; previous: number; series: SeriesPoint[] };
+    mau: { current: number; previous: number; series: SeriesPoint[] };
   };
-  marketplace: {
-    samplesPurchased: number;
-    creditsRedeemed: number;
-    creditsGranted: number;
-    creditUtilizationPct: number | null;
-    royaltiesPaidUsd: number;
-    creditsOutstanding: number;
-    purchasesSeries: SeriesPoint[];
+  commerce: {
+    purchases: DailyMetric;
+    credits: DailyMetric;
+    subs: DailyMetric & { activeTotal: number };
   };
-  content: {
-    newSamples: number;
-    newSamplesPrevious: number | null;
-    totalPublishedSamples: number;
-    avgPurchasesPerPurchasedSample: number | null;
-    uploadsSeries: SeriesPoint[];
-  };
-  creatorEconomy: {
-    creatorCount: number;
-    creatorsWithSale: number;
-    creatorsWithSalePct: number | null;
-    avgEarningsUsd: number | null;
-    medianEarningsUsd: number | null;
-    topEarningsUsd: number | null;
-    top10EarningsUsd: number | null;
-  };
-  subscriberHealth: {
-    activeSubscribers: number;
-    compedSubscribers: number;
-    upgradeUsers: number;
-    upgradeRatePct: number | null;
-    avgCreditsRemaining: number | null;
-  };
-  today: {
-    samplesPurchased: { today: number; yesterday: number };
-    royaltiesPaidUsd: { today: number; yesterday: number };
-    activeBuyers: { today: number; yesterday: number };
-    creditsRedeemed: { today: number; yesterday: number };
-    samplesUploaded: { today: number; yesterday: number };
+  conversion: {
+    configured: boolean;
+    error: string | null;
+    /** Database-only, always present. */
+    signup: ConversionWindow;
+    pricing: ConversionPayload | null;
+    vip: ConversionPayload | null;
   };
   actionItems: {
     pendingApplications: number;
     samplesInReview: number;
     presetsInReview: number;
   };
+}
+
+export type MetricKey =
+  | "active"
+  | "dau"
+  | "wau"
+  | "mau"
+  | "purchases"
+  | "credits"
+  | "subs"
+  | "pricing_conversion"
+  | "vip_conversion"
+  | "signup_conversion";
+
+export interface TrendResponse {
+  metric: MetricKey;
+  range: string;
+  granularity: Granularity;
+  series: SeriesPoint[] | ConversionPoint[];
+  /** Present on metric=active — current headcount for the tile. */
+  activeNow?: { current: number; windowMinutes: number };
 }

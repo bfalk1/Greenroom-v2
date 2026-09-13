@@ -19,6 +19,7 @@ import {
   CheckSquare,
   Square,
   Sliders,
+  Bot,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
@@ -28,6 +29,7 @@ import { BulkEditSampleModal } from "@/components/admin/BulkEditSampleModal";
 import { BulkActionBar } from "@/components/admin/BulkActionBar";
 import { ModerationReasonModal } from "@/components/admin/ModerationReasonModal";
 import { PresetModeration } from "@/components/admin/PresetModeration";
+import { AiScanBadge, type AiScanSummary } from "@/components/admin/AiScanBadge";
 import { formatSampleType } from "@/lib/utils/sampleType";
 import { useUser } from "@/lib/hooks/useUser";
 import { toast } from "sonner";
@@ -58,8 +60,12 @@ interface APISample {
   tags: string[];
   ratingAvg: number;
   ratingCount: number;
+  // Counted from the purchases / downloads tables by /api/mod/samples — buyers
+  // and actual file downloads are different numbers.
+  purchaseCount: number;
   downloadCount: number;
   creator: SampleCreator;
+  audioScan?: AiScanSummary | null;
 }
 
 interface Stats {
@@ -86,6 +92,7 @@ interface PanelSample {
   file_url?: string;
   tags?: string[];
   preview_ready: boolean;
+  audio_scan?: AiScanSummary | null;
 }
 
 function mapSampleForPanel(s: APISample): PanelSample {
@@ -104,6 +111,7 @@ function mapSampleForPanel(s: APISample): PanelSample {
     file_url: previewReady ? (s.previewUrl ?? undefined) : (s.fileUrl || undefined),
     tags: s.tags,
     preview_ready: previewReady,
+    audio_scan: s.audioScan ?? null,
   };
 }
 
@@ -125,6 +133,8 @@ export default function ModSamplesPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Narrow any view to AI-flagged scans only (advisory ACRCloud detection).
+  const [aiOnly, setAiOnly] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [flaggingCreator, setFlaggingCreator] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
@@ -151,6 +161,7 @@ export default function ModSamplesPage() {
         const params = new URLSearchParams();
         params.set("view", view);
         if (search) params.set("search", search);
+        if (aiOnly) params.set("ai", "flagged");
         params.set("limit", String(limit));
         params.set("offset", String(offset));
 
@@ -193,7 +204,7 @@ export default function ModSamplesPage() {
         else setLoading(false);
       }
     },
-    []
+    [aiOnly]
   );
 
   const fetchLowestRated = useCallback(async () => {
@@ -553,8 +564,8 @@ export default function ModSamplesPage() {
 
           {/* Pending Review Tab */}
           <TabsContent value="pending" className="space-y-6">
-            {samples.length > 0 ? (
-              <>
+            <div className="flex items-center justify-between">
+              {samples.length > 0 ? (
                 <button
                   onClick={toggleSelectAll}
                   className="flex items-center gap-2 text-xs text-[#a1a1a1] hover:text-white"
@@ -566,6 +577,24 @@ export default function ModSamplesPage() {
                   )}
                   {allSelected ? "Deselect all" : "Select all"}
                 </button>
+              ) : (
+                <span />
+              )}
+              <button
+                onClick={() => setAiOnly((v) => !v)}
+                className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                  aiOnly
+                    ? "bg-red-500/20 text-red-400 border-red-500/30"
+                    : "bg-[#1a1a1a] text-[#a1a1a1] border-[#2a2a2a] hover:text-white"
+                }`}
+                title="Show only samples the AI-detection scan flagged (advisory)"
+              >
+                <Bot className="w-3 h-3 inline mr-1" />
+                AI-flagged only
+              </button>
+            </div>
+            {samples.length > 0 ? (
+              <>
                 {samples.map((sample) => {
                 const panelSample = mapSampleForPanel(sample);
                 return (
@@ -709,6 +738,7 @@ export default function ModSamplesPage() {
                           }`}>
                             {sample.status}
                           </span>
+                          <AiScanBadge scan={sample.audioScan} />
                           <span className="px-2 py-0.5 rounded-full text-xs bg-[#39b54a]/15 text-[#39b54a] border border-[#39b54a]/30">
                             {formatSampleType(sample.sampleType)}
                           </span>
@@ -721,6 +751,7 @@ export default function ModSamplesPage() {
                             <Star className="w-3 h-3" />
                             {sample.ratingAvg.toFixed(1)} ({sample.ratingCount})
                           </span>
+                          <span>{sample.purchaseCount} purchases</span>
                           <span>{sample.downloadCount} downloads</span>
                         </div>
                       </div>
@@ -797,6 +828,9 @@ export default function ModSamplesPage() {
                           <span className="flex items-center gap-1 text-red-400">
                             <Star className="w-4 h-4 fill-current" />
                             {sample.ratingAvg.toFixed(1)} ({sample.ratingCount} ratings)
+                          </span>
+                          <span className="text-xs text-[#666]">
+                            {sample.purchaseCount} purchases
                           </span>
                           <span className="text-xs text-[#666]">
                             {sample.downloadCount} downloads

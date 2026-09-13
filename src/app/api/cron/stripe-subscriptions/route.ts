@@ -7,6 +7,7 @@ import {
   SUBSCRIPTION_TIERS,
   type TierName,
 } from "@/lib/stripe/config";
+import { stripeCancellationScheduled } from "@/lib/stripe/cancellation";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import {
   capiAttributionFromMetadata,
@@ -74,7 +75,7 @@ async function resolveUserId(
 async function reconcileOne(
   subscription: Stripe.Subscription,
   userId: string
-): Promise<"ok" | "repaired"> {
+): Promise<"ok" | "flag_synced" | "repaired"> {
   const priceId = subscription.items.data[0]?.price.id;
   const tierName = priceId ? tierNameForStripePrice(priceId) : null;
   const tier = tierName
@@ -113,6 +114,7 @@ async function reconcileOne(
       stripeSubscriptionId: true,
       provider: true,
       tierId: true,
+      cancelAtPeriodEnd: true,
       tier: { select: { name: true, creditsPerMonth: true } },
     },
   });
@@ -135,7 +137,23 @@ async function reconcileOne(
     existing.stripeSubscriptionId === subscription.id &&
     !tierDrifted;
 
+  const cancellationScheduled = stripeCancellationScheduled(subscription);
+
   if (rowCurrent && alreadyGranted) {
+    // A healthy row can still carry the wrong cancellation flag: Stripe marks
+    // a scheduled cancellation two ways (see stripeCancellationScheduled), and
+    // a dropped customer.subscription.updated leaves it stale. Sync it so a
+    // scheduled — or taken back — cancellation shows within a day.
+    if (existing && existing.cancelAtPeriodEnd !== cancellationScheduled) {
+      await prisma.subscription.update({
+        where: { userId },
+        data: { cancelAtPeriodEnd: cancellationScheduled },
+      });
+      console.log(
+        `[stripe-reconcile] cancellation flag for ${subscription.id} set to ${cancellationScheduled}`
+      );
+      return "flag_synced";
+    }
     return "ok";
   }
 
@@ -184,7 +202,7 @@ async function reconcileOne(
       ...(acquisitionSource ? { acquisitionSource } : {}),
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd: cancellationScheduled,
     },
     create: {
       userId,
@@ -194,7 +212,7 @@ async function reconcileOne(
       acquisitionSource,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd: cancellationScheduled,
     },
   });
 
@@ -368,6 +386,7 @@ async function runReconcile(request: NextRequest) {
     }
 
     let ok = 0;
+    let flagsSynced = 0;
     let repaired = 0;
     let unresolvable = unattributed;
 
@@ -382,6 +401,7 @@ async function runReconcile(request: NextRequest) {
       try {
         const result = await reconcileOne(subs[0], userId);
         if (result === "ok") ok += 1;
+        else if (result === "flag_synced") flagsSynced += 1;
         else repaired += 1;
       } catch (error) {
         console.error(
@@ -391,17 +411,18 @@ async function runReconcile(request: NextRequest) {
       }
     }
 
-    if (repaired > 0 || unresolvable > 0) {
+    if (repaired > 0 || flagsSynced > 0 || unresolvable > 0) {
       // Loud line for log-based alerting: any non-zero repair means the
       // webhook path dropped something since the last sweep.
       console.error(
-        `[stripe-reconcile] divergence: repaired=${repaired} unresolvable=${unresolvable} (ok=${ok})`
+        `[stripe-reconcile] divergence: repaired=${repaired} flagsSynced=${flagsSynced} unresolvable=${unresolvable} (ok=${ok})`
       );
     }
 
     return NextResponse.json({
       ok: true,
-      checked: ok + repaired + unresolvable,
+      checked: ok + flagsSynced + repaired + unresolvable,
+      flagsSynced,
       repaired,
       unresolvable,
     });

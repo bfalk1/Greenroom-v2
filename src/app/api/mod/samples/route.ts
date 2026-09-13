@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   const statusFilter = searchParams.get("status");
   const search = searchParams.get("search");
   const view = searchParams.get("view"); // "pending", "all", "lowest-rated"
+  const aiFilter = searchParams.get("ai"); // "flagged" narrows to AI-flagged scans
   const limitParam = parseInt(searchParams.get("limit") || "50", 10);
   const offsetParam = parseInt(searchParams.get("offset") || "0", 10);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
@@ -51,6 +52,11 @@ export async function GET(req: NextRequest) {
       where.status = "REVIEW";
     }
     // Show all pending samples - frontend will indicate if preview is pending
+  }
+
+  // Advisory AI-detection filter, composable with any view.
+  if (aiFilter === "flagged") {
+    where.audioScan = { is: { flagged: true } };
   }
 
   // Same search clause for every view: sample metadata plus creator identity,
@@ -89,10 +95,34 @@ export async function GET(req: NextRequest) {
             isFlagged: true,
           },
         },
+        _count: { select: { purchases: true, downloads: true } },
+        // Advisory AI-detection result for the queue badge.
+        audioScan: {
+          select: {
+            status: true,
+            verdict: true,
+            aiProbability: true,
+            likelySource: true,
+            flagged: true,
+          },
+        },
       },
     }),
     prisma.sample.count({ where }),
   ]);
+
+  // Sample.downloadCount is a purchase counter (incremented in /api/purchases),
+  // so it is dropped from the payload rather than shipped to the queue as
+  // "downloads" — both numbers below come from the purchases / downloads
+  // tables. fileSizeBytes is coerced because BigInt isn't JSON-serializable.
+  const mappedSamples = samples.map(
+    ({ downloadCount: _purchaseCounter, _count, fileSizeBytes, ...s }) => ({
+      ...s,
+      fileSizeBytes: fileSizeBytes != null ? Number(fileSizeBytes) : null,
+      purchaseCount: _count.purchases,
+      downloadCount: _count.downloads,
+    })
+  );
 
   // Get sample stats
   const now = new Date();
@@ -109,8 +139,8 @@ export async function GET(req: NextRequest) {
     prisma.sample.count(),
   ]);
 
-  return NextResponse.json({ 
-    samples, 
+  return NextResponse.json({
+    samples: mappedSamples,
     total,
     stats: {
       samplesThisMonth,

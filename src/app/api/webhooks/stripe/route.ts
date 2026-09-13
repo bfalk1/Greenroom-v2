@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe/client";
 import { tierNameForStripePrice } from "@/lib/stripe/config";
+import { stripeCancellationScheduled } from "@/lib/stripe/cancellation";
 import { trackSubscriptionActivatedServer } from "@/lib/analyticsServer";
 import {
   capiAttributionFromMetadata,
@@ -149,7 +150,7 @@ async function handleCheckoutCompleted(
       acquisitionSource,
       currentPeriodStart: periodStart,
       currentPeriodEnd: periodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd: stripeCancellationScheduled(subscription),
     },
     create: {
       userId,
@@ -254,6 +255,8 @@ async function handleCheckoutCompleted(
       city: session.customer_details?.address?.city,
       state: session.customer_details?.address?.state,
       postalCode: session.customer_details?.address?.postal_code,
+      // Stripe sends ISO alpha-2 already; countryToIso2 passes it through.
+      country: session.customer_details?.address?.country,
     }),
     attribution: withUserFbcFallback(
       capiAttributionFromMetadata(session.metadata ?? undefined),
@@ -432,7 +435,7 @@ async function handleSubscriptionUpdated(
         tierId: newTier.id,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
+        cancelAtPeriodEnd: stripeCancellationScheduled(subscription),
       },
     }),
   ];
@@ -500,10 +503,39 @@ async function handleSubscriptionDeleted(
   // PayPal's (e.g. they switched providers before the Stripe period lapsed).
   if (user.subscription && user.subscription.provider !== "stripe") return;
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { subscriptionStatus: "canceled" },
-  });
+  // Nor one whose row now tracks a different Stripe subscription: a late event
+  // for a replaced (or duplicate) sub must leave the live one alone.
+  if (
+    user.subscription?.stripeSubscriptionId &&
+    user.subscription.stripeSubscriptionId !== subscription.id
+  ) {
+    return;
+  }
+
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.user.update({
+      where: { id: user.id },
+      data: { subscriptionStatus: "canceled" },
+    }),
+  ];
+
+  // Close the period where Stripe actually ended it. A period-end cancellation
+  // ends on the boundary, so nothing moves; but a sub Stripe ends early —
+  // retries exhausted on a failed renewal, or cancelled immediately — would
+  // otherwise keep its unpaid period's end date and keep looking live to
+  // anything that reads the period. Access doesn't change: the paywall reads
+  // subscription_status, set above.
+  const endedAt = new Date((subscription.ended_at ?? Date.now() / 1000) * 1000);
+  if (user.subscription && user.subscription.currentPeriodEnd > endedAt) {
+    ops.push(
+      prisma.subscription.update({
+        where: { userId: user.id },
+        data: { currentPeriodEnd: endedAt },
+      })
+    );
+  }
+
+  await prisma.$transaction(ops);
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {

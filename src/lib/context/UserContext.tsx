@@ -8,6 +8,12 @@ import {
   metaSetAdvancedMatching,
   metaClearAdvancedMatching,
 } from "@/lib/metaPixel";
+import { tiktokSetIdentity, tiktokClearIdentity } from "@/lib/tiktokPixel";
+import { markAdIdentityAttached, resetAdIdentity } from "@/lib/adIdentity";
+import {
+  googleAdsSetUserData,
+  googleAdsClearUserData,
+} from "@/lib/googleAds";
 
 export interface AppUser {
   id: string;
@@ -29,11 +35,13 @@ export interface AppUser {
   // Samples + presets this creator has uploaded. Only computed by /api/user/me
   // while the welcome is pending; null otherwise.
   creator_content_count: number | null;
-  // Billing locality — used only to feed Meta Pixel Advanced Matching
-  // (src/lib/metaPixel.ts); sparse, since the profile address is optional.
+  // Locality — feeds Meta Pixel Advanced Matching (src/lib/metaPixel.ts) and
+  // pre-fills the onboarding form. Collected at signup since 2026-08; sparse
+  // on older accounts.
   city: string | null;
   state: string | null;
   postal_code: string | null;
+  country: string | null;
 }
 
 interface UserContextType {
@@ -121,14 +129,42 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           // (Advanced Matching), so the browser half of every event carries
           // email/name/address — not just the CAPI half. Fire-and-forget: it
           // hashes external_id asynchronously and must not block user load.
-          void metaSetAdvancedMatching({
+          const metaIdentity = metaSetAdvancedMatching({
             id: data.user.id,
             email: data.user.email,
             fullName: data.user.full_name,
             city: data.user.city,
             state: data.user.state,
             postalCode: data.user.postal_code,
+            country: data.user.country,
           });
+          // Same for TikTok, which otherwise receives no identifiers at all
+          // and flags a Critical "Email and phone are missing" diagnostic.
+          // TikTok's identity set is narrower than Meta's — email, phone, and
+          // external_id only — so name/address are not sent here.
+          const tiktokIdentity = tiktokSetIdentity({
+            id: data.user.id,
+            email: data.user.email,
+          });
+          // Same identifiers staged for Google's Enhanced Conversions, so a
+          // later Purchase conversion carries them (gtag hashes on send).
+          googleAdsSetUserData({
+            email: data.user.email,
+            fullName: data.user.full_name,
+            city: data.user.city,
+            state: data.user.state,
+            postalCode: data.user.postal_code,
+            country: data.user.country,
+          });
+          // Release the conversion events that wait on identity rather than
+          // racing it (src/lib/adIdentity.ts). Meta's and TikTok's attachments
+          // hash asynchronously, so readiness is the moment those SETTLE —
+          // not the moment they were called. allSettled, not all: a rejected
+          // hash must still end the wait, degrading that conversion to
+          // unidentified rather than holding it until the timeout.
+          void Promise.allSettled([metaIdentity, tiktokIdentity]).then(
+            markAdIdentityAttached
+          );
         } else if (res && res.status === 401) {
           // Session is no longer valid server-side — treat as logged out.
           setUser(null);
@@ -175,6 +211,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Only clear user state on explicit sign-out, not transient states
         resetAnalytics();
         metaClearAdvancedMatching();
+        tiktokClearIdentity();
+        googleAdsClearUserData();
+        resetAdIdentity();
         setUser(null);
         setSupabaseUser(null);
         setError(false);

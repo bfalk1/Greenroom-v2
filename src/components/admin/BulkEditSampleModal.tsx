@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { KeySelector } from "@/components/ui/KeySelector";
 import { GENRES, INSTRUMENTS } from "@/lib/sampleMetadata";
+import { WHITELISTED_MAX_CREDIT_PRICE } from "@/lib/creditPriceCaps";
 
 type FieldKey =
   | "genre"
@@ -63,7 +64,7 @@ export function BulkEditSampleModal({
   count,
   onClose,
   onApply,
-  maxCreditPrice = 50,
+  maxCreditPrice = WHITELISTED_MAX_CREDIT_PRICE,
 }: BulkEditSampleModalProps) {
   const [enabled, setEnabled] = useState<Record<FieldKey, boolean>>({
     genre: false,

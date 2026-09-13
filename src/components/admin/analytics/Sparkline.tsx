@@ -33,35 +33,22 @@ export function Sparkline({ data, className = "h-8 w-full" }: SparklineProps) {
   const y = (v: number) =>
     max <= 0 ? H - PAD : H - PAD - (v / max) * (H - PAD * 2);
 
-  // Contiguous runs of non-null indices — each run is its own subpath so
-  // null buckets show as gaps.
-  const segments: number[][] = [];
-  let run: number[] = [];
-  data.forEach((d, i) => {
-    if (d.value == null) {
-      if (run.length) segments.push(run);
-      run = [];
-    } else {
-      run.push(i);
-    }
-  });
-  if (run.length) segments.push(run);
+  // One continuous path through the buckets that have values — same rule as
+  // TrendChart, so a tile's sparkline has the same shape as its drill-down.
+  const filled = data
+    .map((d, i) => ({ i, v: d.value }))
+    .filter((p): p is { i: number; v: number } => p.v != null);
 
-  const pt = (i: number) =>
-    `${x(i).toFixed(2)} ${y(data[i].value as number).toFixed(2)}`;
-  const line = segments
-    .map((seg) => seg.map((i, j) => `${j === 0 ? "M" : "L"} ${pt(i)}`).join(" "))
-    .join(" ");
-  const area = segments
-    .map(
-      (seg) =>
-        `M ${x(seg[0]).toFixed(2)} ${H} ${seg
-          .map((i) => `L ${pt(i)}`)
-          .join(" ")} L ${x(seg[seg.length - 1]).toFixed(2)} ${H} Z`
-    )
-    .join(" ");
-  // A run of one point draws no line — mark it with a dot so it isn't invisible.
-  const singletons = segments.filter((seg) => seg.length === 1).map((seg) => seg[0]);
+  const pt = (p: { i: number; v: number }) =>
+    `${x(p.i).toFixed(2)} ${y(p.v).toFixed(2)}`;
+  const line = filled.map((p, j) => `${j === 0 ? "M" : "L"} ${pt(p)}`).join(" ");
+  const area = filled.length
+    ? `M ${x(filled[0].i).toFixed(2)} ${H} ${filled
+        .map((p) => `L ${pt(p)}`)
+        .join(" ")} L ${x(filled[filled.length - 1].i).toFixed(2)} ${H} Z`
+    : "";
+  // A lone point draws no line — mark it so it isn't invisible.
+  const singletons = filled.length === 1 ? [filled[0].i] : [];
 
   return (
     <svg

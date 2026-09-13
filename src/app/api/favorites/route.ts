@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
 // GET /api/favorites — Get user's favorited samples (and preset IDs)
 export async function GET(request: NextRequest) {
@@ -51,6 +52,12 @@ export async function GET(request: NextRequest) {
       prisma.favorite.count({ where }),
     ]);
 
+    // Real downloads — Sample.downloadCount is a purchase counter, so
+    // total_purchases below can read it but total_downloads cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      favorites.flatMap((f) => (f.sample ? [f.sample.id] : []))
+    );
+
     // Map to frontend format
     const samples = favorites
       .map((f) => ({
@@ -72,7 +79,7 @@ export async function GET(request: NextRequest) {
         average_rating: f.sample!.ratingAvg,
         total_ratings: f.sample!.ratingCount,
         total_purchases: f.sample!.downloadCount,
-        total_downloads: f.sample!.downloadCount,
+        total_downloads: downloadsBySampleId.get(f.sample!.id) ?? 0,
         created_date: f.sample!.createdAt.toISOString(),
         favorited_at: f.createdAt.toISOString(),
       }));

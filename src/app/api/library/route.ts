@@ -46,8 +46,17 @@ export async function GET(request: NextRequest) {
     }
     if (key && key !== "all" && scale && scale !== "all") {
       sampleWhere.key = `${key} ${scale}`;
+    } else if (key && key !== "all" && key.includes(" ")) {
+      sampleWhere.key = key;
     } else if (key && key !== "all") {
-      sampleWhere.key = { startsWith: key };
+      // Bare note: match the note token exactly ("C" must not return "C#…"),
+      // same rule as /api/samples. Under AND because OR holds the search.
+      sampleWhere.AND = {
+        OR: [
+          { key },
+          { key: { startsWith: `${key.replace(/[\\%_]/g, "\\$&")} ` } },
+        ],
+      };
     } else if (scale && scale !== "all") {
       sampleWhere.key = { endsWith: scale };
     }

@@ -1,6 +1,17 @@
 import posthog from "posthog-js";
-import { metaTrack, metaTrackOnce, purchaseEventId } from "./metaPixel";
-import { tiktokTrack, tiktokTrackOnce } from "./tiktokPixel";
+import {
+  metaTrack,
+  metaTrackOnce,
+  purchaseEventId,
+  registrationEventId,
+} from "./metaPixel";
+import {
+  tiktokTrack,
+  tiktokTrackOnce,
+  tiktokIdentifyEmail,
+} from "./tiktokPixel";
+import { waitForAdIdentity } from "./adIdentity";
+import { googleAdsPurchase } from "./googleAds";
 import {
   PUBLIC_SUBSCRIPTION_PACKAGES,
   VIP_FIRST_MONTH_OFFER,
@@ -69,20 +80,42 @@ export function trackLandingCta(cta: string) {
 
 // --- Auth ---
 
-export function trackSignup(method: "email" | "invite", source?: string) {
+export function trackSignup(
+  method: "email" | "invite",
+  source?: string,
+  // The new account's user id, known from signUp()'s response. Keys the
+  // dedup id shared with the server-side CompleteRegistration (CAPI) so the
+  // two channels count as one signup; TikTok gets the same id, inert until
+  // its Events API twin exists.
+  userId?: string,
+  // The address just entered. Optional so existing callers keep working; when
+  // present it identifies the TikTok pixel before CompleteRegistration, which
+  // otherwise fires before UserContext resolves and lands unidentified.
+  email?: string
+) {
   // source attributes the signup to a funnel — "vip" for the lifetime offer's
   // standalone /signup path, "checkout" for the signup step embedded on
   // /checkout, "pricing" for the one embedded on /pricing — so the
   // landed→subscribed question can be segmented at the signup step instead of
   // only at the endpoints.
   posthog.capture("signup", { method, ...(source ? { source } : {}) });
-  metaTrack("CompleteRegistration", {
-    content_name: source ?? method,
-    status: true,
-  });
-  tiktokTrack("CompleteRegistration", {
-    content_name: source ?? method,
-  });
+  const eventId = userId ? registrationEventId(userId) : undefined;
+  metaTrack(
+    "CompleteRegistration",
+    {
+      content_name: source ?? method,
+      status: true,
+    },
+    eventId
+  );
+  tiktokIdentifyEmail(email);
+  tiktokTrack(
+    "CompleteRegistration",
+    {
+      content_name: source ?? method,
+    },
+    eventId
+  );
 }
 
 // Signup-step leaks: client validation, provider rejections, and the
@@ -91,6 +124,8 @@ export function trackSignupFailed(
   reason:
     | "password_mismatch"
     | "password_too_short"
+    | "name_missing"
+    | "country_missing"
     | "terms_not_accepted"
     | "already_registered"
     | "provider_error"
@@ -483,7 +518,7 @@ export function trackCheckoutApiError(props: {
 // /checkout/complete verification result. NOT the activation event (that is
 // server-side, from the grant) — this measures what the BUYER saw: how long
 // verification took, and how often it times out (webhook lag) or errors.
-export function trackCheckoutCompleteOutcome(props: {
+export async function trackCheckoutCompleteOutcome(props: {
   provider: string | null;
   initialStatus: string | null;
   outcome: "confirmed" | "timeout" | "error";
@@ -513,6 +548,14 @@ export function trackCheckoutCompleteOutcome(props: {
   // Timeouts under-count here by design; the Conversions API is the eventual
   // fix for that.
   if (props.outcome === "confirmed" && props.tier && props.transactionId) {
+    // Identity BEFORE conversion, not in a race with it. This page confirms
+    // the subscription in one round trip; UserContext needs two plus an async
+    // hash to attach the buyer's email/external_id, so these events used to
+    // win and go out anonymous — 0% email coverage on the purchase event, and
+    // an anonymous conversion is one the ad platform cannot attribute back to
+    // the click that paid for it. Capped inside waitForAdIdentity, so a
+    // failing /api/user/me costs match quality, never the conversion itself.
+    await waitForAdIdentity();
     metaTrackOnce(purchaseEventId(props.transactionId), "Purchase", {
       content_category: "subscription",
       content_name: props.tier,
@@ -533,6 +576,13 @@ export function trackCheckoutCompleteOutcome(props: {
       ],
       value: (props.valueUsdCents ?? 0) / 100,
       currency: "USD",
+    });
+    // Google Ads runs its own dedup on transaction_id (and its own
+    // once-guard storage — see googleAds.ts for why it must not share
+    // metapixel's suppress markers).
+    googleAdsPurchase({
+      transactionId: props.transactionId,
+      valueUsdCents: props.valueUsdCents ?? 0,
     });
   }
 }

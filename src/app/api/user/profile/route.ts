@@ -15,7 +15,7 @@ export async function PUT(request: Request) {
     const { username, full_name, city, country } = body;
 
     // Validate required fields
-    if (!username || !full_name) {
+    if (!username || typeof full_name !== "string" || !full_name.trim()) {
       return NextResponse.json(
         { error: "Username and full name are required" },
         { status: 400 }
@@ -42,14 +42,18 @@ export async function PUT(request: Request) {
       );
     }
 
-    // Update user profile
+    // Update user profile. Blank optional fields mean "no answer", never
+    // "erase" — signup already collects city/country, and an untouched
+    // onboarding field must not blank what signup stored.
+    const cityTrimmed = typeof city === "string" ? city.trim() : "";
+    const countryTrimmed = typeof country === "string" ? country.trim() : "";
     const user = await prisma.user.update({
       where: { id: authUser.id },
       data: {
         username,
-        fullName: full_name,
-        city: city || null,
-        country: country || null,
+        fullName: full_name.trim(),
+        city: cityTrimmed || undefined,
+        country: countryTrimmed || undefined,
         profileCompleted: true,
       },
     });

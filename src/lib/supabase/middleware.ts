@@ -86,6 +86,12 @@ export async function updateSession(request: NextRequest) {
     return res;
   };
 
+  // TikTok's ad click id. Unlike fbclid there is no first-party cookie to
+  // mint: nothing server-side reads it yet (there is no TikTok Events API
+  // channel), and events.js recovers ttclid from the URL itself. It is read
+  // here only so redirects below can forward it — see the /signup hop.
+  const ttclid = request.nextUrl.searchParams.get("ttclid");
+
   // For any authenticated request, load the account's status ONCE. Reused for
   // both suspension enforcement (immediately below) and the subscription
   // paywall further down, so we don't query the users table twice.
@@ -137,18 +143,17 @@ export async function updateSession(request: NextRequest) {
   // /checkout (exact — NOT /checkout/complete) is public so an anonymous buyer
   // keeps the tier they picked and signs up inline on the page; the checkout
   // APIs it calls all still require a session.
-  // NOTE: "/explore" is a REMOVED route kept in this allowlist on purpose — it
-  // lets the deleted path fall through to Next's 404 for everyone instead of the
-  // auth gate bouncing anonymous visitors to /login (a hard 404, not a redirect).
-  const publicPaths = ["/", "/landing-preview", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore"];
+  // NOTE: "/explore" and "/waitlist" are REMOVED routes kept in this allowlist
+  // on purpose — they let the deleted paths fall through to Next's 404 for
+  // everyone instead of the auth gate bouncing anonymous visitors to /login
+  // (a hard 404, not a redirect).
+  const publicPaths = ["/", "/login", "/signup", "/callback", "/pricing", "/checkout", "/vip", "/promo", "/promo/pricing", "/help", "/contact", "/terms", "/privacy", "/creator-terms", "/license", "/copyright", "/api/health", "/explore", "/waitlist"];
   const isPublicSamplePath =
     pathname === "/api/samples" ||
     /^\/api\/samples\/[^/]+$/.test(pathname) ||
     /^\/api\/samples\/[^/]+\/preview$/.test(pathname);
   const isPublicPath =
     publicPaths.includes(pathname) ||
-    pathname.startsWith("/waitlist") ||
-    pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/webhooks") ||
     // Vercel cron invokes these with a Bearer CRON_SECRET header and no
     // session cookie. Each cron route verifies the secret itself and fails
@@ -172,7 +177,6 @@ export async function updateSession(request: NextRequest) {
     // PUT (seed defaults) that must stay behind auth.
     (request.method === "GET" && pathname.startsWith("/api/instruments")) ||
     pathname.startsWith("/api/search") ||
-    pathname.startsWith("/artist/") ||
     pathname === "/api/invites/verify" ||
     pathname === "/api/beta-invites/verify" ||
     // Referral banner on the (public) signup page — rate-limited, returns
@@ -226,9 +230,13 @@ export async function updateSession(request: NextRequest) {
       url.search = "";
       const ref = params.get("ref");
       if (ref) url.searchParams.set("ref", ref);
-      // Carry the Meta ad click id so the pixel on /pricing still sets _fbc
-      // (gr_fbc already backstops the CAPI side for this hop).
+      // Carry the ad click ids so each pixel on /pricing still mints its
+      // attribution cookie (_fbc / _ttp). gr_fbc above already backstops the
+      // CAPI side for this hop; TikTok has no server channel, so forwarding
+      // ttclid here is the ONLY thing keeping a TikTok ad click that lands on
+      // /signup attributable.
       if (fbclid) url.searchParams.set("fbclid", fbclid);
+      if (ttclid) url.searchParams.set("ttclid", ttclid);
       return withGrFbc(NextResponse.redirect(url));
     }
   }

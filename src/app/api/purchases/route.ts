@@ -152,7 +152,10 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Increment download count on the item
+      // Bump the item's popularity counter. Despite the `downloadCount` name
+      // (and its `download_count` column), this is a PURCHASE counter — it
+      // backs the "most popular" sort only. Actual downloads are rows in the
+      // `downloads` table, written by the /api/downloads/* routes.
       if (itemType === "sample") {
         await tx.sample.update({
           where: { id: sampleId },

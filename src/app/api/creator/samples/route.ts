@@ -144,7 +144,6 @@ export async function GET(_request: NextRequest) {
         waveformData: s.waveformData,
         status: s.status,
         reviewNote: s.reviewNote,
-        downloadCount: s.downloadCount,
         ratingAvg: s.ratingAvg,
         ratingCount: s.ratingCount,
         purchases: s._count.purchases,

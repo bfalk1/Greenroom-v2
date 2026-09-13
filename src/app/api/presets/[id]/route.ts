@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { parseCreditPrice } from "@/lib/creditPriceCaps";
 
 // GET /api/presets/[id] — Get single preset detail
 export async function GET(
@@ -21,6 +22,8 @@ export async function GET(
             avatarUrl: true,
           },
         },
+        // Real downloads. Preset.downloadCount is a purchase counter.
+        _count: { select: { downloads: true } },
       },
     });
 
@@ -50,7 +53,7 @@ export async function GET(
         is_init_preset: preset.isInitPreset,
         average_rating: preset.ratingAvg,
         total_ratings: preset.ratingCount,
-        total_downloads: preset.downloadCount,
+        total_downloads: preset._count.downloads,
         created_date: preset.createdAt.toISOString(),
       },
     });
@@ -101,6 +104,23 @@ export async function PATCH(
     }
 
     const body = await request.json();
+
+    // creditPrice is what a buyer is charged, so it is capped here exactly as
+    // POST /api/presets caps it. Without this check a creator could upload at
+    // the cap and then raise the price with a PATCH.
+    let validatedCreditPrice: number | undefined;
+    if (body.creditPrice !== undefined) {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: authUser.id },
+        select: { isWhitelisted: true },
+      });
+      const result = parseCreditPrice(body.creditPrice, dbUser?.isWhitelisted);
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      validatedCreditPrice = result.value;
+    }
+
     const allowedFields = [
       "name", "description", "genre", "tags", "creditPrice",
       "previewUrl", "coverImageUrl", "compatibleVersions",
@@ -114,7 +134,7 @@ export async function PATCH(
         if (field === "tags" && typeof body[field] === "string") {
           data[field] = body[field].split(",").map((t: string) => t.trim().toLowerCase());
         } else if (field === "creditPrice") {
-          data[field] = parseInt(body[field]);
+          data[field] = validatedCreditPrice;
         } else {
           data[field] = body[field];
         }

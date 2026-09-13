@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { buildSampleUpdateData } from "@/lib/sampleMetadata";
+import { parseCreditPrice } from "@/lib/creditPriceCaps";
 import { removeObject } from "@/lib/storageValidate";
 import {
   isOwnedStorageRef,
@@ -125,15 +126,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
-  // Enforce the same per-creator credit-price cap as the create route:
-  // 50 for whitelisted creators, 5 otherwise.
+  // Enforce the same per-creator credit-price cap as the create route.
   if (built.data.creditPrice !== undefined) {
-    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-    if ((built.data.creditPrice as number) > maxCreditPrice) {
-      return NextResponse.json(
-        { error: `Credit price cannot exceed ${maxCreditPrice}` },
-        { status: 400 }
-      );
+    const result = parseCreditPrice(built.data.creditPrice, dbUser.isWhitelisted);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
     }
   }
 

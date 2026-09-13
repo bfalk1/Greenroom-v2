@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getPresetDownloadCounts } from "@/lib/downloadCounts";
 import { NextRequest, NextResponse } from "next/server";
 
 // Display names for synth / category enums — kept in sync with /api/presets so
@@ -119,6 +120,11 @@ export async function GET(request: NextRequest) {
       path ? signedUrlMap[path] || null : null
     );
 
+    // Real downloads — Preset.downloadCount is a purchase counter.
+    const downloadsByPresetId = await getPresetDownloadCounts(
+      purchases.flatMap((p) => (p.preset ? [p.preset.id] : []))
+    );
+
     const presets = purchases.map((p, i) => {
       const preset = p.preset!;
       return {
@@ -143,7 +149,7 @@ export async function GET(request: NextRequest) {
         is_init_preset: preset.isInitPreset,
         average_rating: preset.ratingAvg,
         total_ratings: preset.ratingCount,
-        total_downloads: preset.downloadCount,
+        total_downloads: downloadsByPresetId.get(preset.id) ?? 0,
         created_date: preset.createdAt.toISOString(),
         purchased_at: p.createdAt.toISOString(),
       };

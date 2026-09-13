@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import { Prisma, PresetCategory, SynthName } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredImage, removeObject } from "@/lib/storageValidate";
+import { getPresetDownloadCounts } from "@/lib/downloadCounts";
+import { parseOptionalCreditPrice } from "@/lib/creditPriceCaps";
 
 // Display names for synth enums
 const SYNTH_DISPLAY_NAMES: Record<string, string> = {
@@ -283,6 +285,13 @@ export async function GET(request: NextRequest) {
       path ? signedUrlMap[path] || null : null
     );
 
+    // Real download counts for this page — one grouped query that covers both
+    // the raw-SQL (random order) and Prisma branches above. Preset.downloadCount
+    // is a purchase counter and cannot answer this.
+    const downloadsByPresetId = await getPresetDownloadCounts(
+      presets.map((p) => p.id)
+    );
+
     // Map to frontend format
     const mapped = presets.map((p, i) => ({
       id: p.id,
@@ -305,7 +314,7 @@ export async function GET(request: NextRequest) {
       is_init_preset: p.isInitPreset,
       average_rating: p.ratingAvg,
       total_ratings: p.ratingCount,
-      total_downloads: p.downloadCount,
+      total_downloads: downloadsByPresetId.get(p.id) ?? 0,
       created_date: p.createdAt.toISOString(),
     }));
 
@@ -417,14 +426,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid preset category" }, { status: 400 });
     }
 
-    const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
-    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-    if (parsedCreditPrice > maxCreditPrice) {
+    const creditPriceResult = parseOptionalCreditPrice(
+      creditPrice,
+      dbUser.isWhitelisted
+    );
+    if (!creditPriceResult.ok) {
       return NextResponse.json(
-        { error: `Credit price cannot exceed ${maxCreditPrice}` },
+        { error: creditPriceResult.error },
         { status: 400 }
       );
     }
+    const parsedCreditPrice = creditPriceResult.value;
 
     const slug =
       name
@@ -475,6 +487,15 @@ export async function POST(request: NextRequest) {
         usageCount: 1,
       },
     });
+
+    // Queue the AI-audio detection scan of the audio preview (the preset file
+    // itself is a synth patch, not audio). The ai-scan cron does the vendor
+    // calls. Never blocks the upload.
+    try {
+      await prisma.audioScan.create({ data: { presetId: preset.id } });
+    } catch (err) {
+      console.error("Failed to enqueue AI scan:", err);
+    }
 
     return NextResponse.json({
       preset: {

@@ -5,6 +5,8 @@
 // attribute and optimize ad delivery, so only the handful of standard events
 // TikTok optimizes on are sent.
 
+import { sha256Hex } from "./hashClient";
+
 // The queued stub TikTok's base snippet installs: an array whose method calls
 // push [method, ...args] onto it until events.js loads and replays them. Only
 // the members this app touches are typed; the rest live behind the loader.
@@ -122,6 +124,61 @@ export function initTikTokPixel(): TtqStub | null {
   window.ttq = ttq;
   ttq.load(id);
   return ttq;
+}
+
+// Identity (TikTok's "Advanced Matching" equivalent) — the counterpart to
+// metaSetAdvancedMatching in src/lib/metaPixel.ts. Without it TikTok receives
+// NO email/phone/external_id on any event, which trips the Critical "Email and
+// phone are missing" diagnostic on the pixel and measurably weakens match
+// quality. ttq.identify attaches these to every SUBSEQUENT event on the page,
+// so it is called once at the UserContext identify point rather than per event.
+//
+// Values are passed RAW: events.js normalizes and SHA-256 hashes email and
+// phone_number itself, so plaintext never leaves the browser. external_id is
+// pre-hashed here, matching what metaSetAdvancedMatching does — the server's
+// sha256Lower(userId) convention — so a future TikTok Events API twin resolves
+// to the same person without re-deriving the rule.
+export async function tiktokSetIdentity(user: {
+  id: string;
+  email?: string | null;
+  phone?: string | null;
+}): Promise<void> {
+  const ttq = initTikTokPixel();
+  if (!ttq) return;
+
+  const identity: Record<string, string> = {};
+  if (user.email?.trim()) identity.email = user.email.trim();
+  if (user.phone?.trim()) identity.phone_number = user.phone.trim();
+  const externalId = await sha256Hex(user.id);
+  if (externalId) identity.external_id = externalId;
+  // Nothing resolvable — identifying with an all-empty object would only
+  // register blank identifiers, which TikTok counts as missing anyway.
+  if (Object.keys(identity).length === 0) return;
+
+  ttq.identify(identity);
+}
+
+// Sync variant for the one conversion that fires BEFORE the signed-in user is
+// loaded: CompleteRegistration at signup, where the email was just typed but
+// UserContext has not resolved yet. Skips external_id precisely because
+// hashing is async and identity must be attached before the track call — an
+// await here would race the event and land it unidentified.
+export function tiktokIdentifyEmail(email: string | null | undefined) {
+  const ttq = initTikTokPixel();
+  if (!ttq || !email?.trim()) return;
+  ttq.identify({ email: email.trim() });
+}
+
+// Drop the previous user's identifiers on logout so a later event on a shared
+// browser can't carry a signed-out person's match keys. TikTok exposes no
+// un-identify, so overwrite with empty values — the same approach
+// metaClearAdvancedMatching takes. The primary logout path additionally does a
+// full page load, which reinitializes ttq outright; this covers the passive
+// SIGNED_OUT path (another tab, token expiry) that does not reload.
+export function tiktokClearIdentity() {
+  const ttq = initTikTokPixel();
+  if (!ttq) return;
+  ttq.identify({ email: "", phone_number: "", external_id: "" });
 }
 
 export function tiktokPageView() {

@@ -5,6 +5,8 @@ import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { isOwnedStorageRef, isSafeStorageRef, ownedPublicObjectPath } from "@/lib/storage";
 import { verifyStoredWav, verifyStoredImage, removeObject } from "@/lib/storageValidate";
+import { getSampleDownloadCounts } from "@/lib/downloadCounts";
+import { parseOptionalCreditPrice } from "@/lib/creditPriceCaps";
 
 // GET /api/samples — Public, returns published samples with filtering
 export async function GET(request: NextRequest) {
@@ -73,13 +75,23 @@ export async function GET(request: NextRequest) {
     }
 
     // Handle key and scale filtering
-    // Key format in DB: "C Major", "A Minor", etc.
+    // Key format in DB: "C Major", "A Minor", etc., or a bare note ("C") when
+    // the uploader picked no scale.
     if (key && key !== "all" && scale && scale !== "all") {
       // Both key and scale specified: exact match
       where.key = `${key} ${scale}`;
+    } else if (key && key !== "all" && key.includes(" ")) {
+      // Full key specified ("C# Minor"): exact match
+      where.key = key;
     } else if (key && key !== "all") {
-      // Only key (note) specified: match keys starting with that note
-      where.key = { startsWith: key };
+      // Only a note specified: match the note token exactly, so "C" returns
+      // "C", "C Major" and "C Minor" but never "C#…" as a prefix match did.
+      // Twin of split_part() in the raw-SQL branch below so the count and the
+      // page agree; Prisma passes LIKE wildcards through, hence the escaping.
+      where.OR = [
+        { key },
+        { key: { startsWith: `${key.replace(/[\\%_]/g, "\\$&")} ` } },
+      ];
     } else if (scale && scale !== "all") {
       // Only scale specified: match keys ending with Major/Minor
       where.key = { endsWith: scale };
@@ -201,9 +213,15 @@ export async function GET(request: NextRequest) {
         conditions.push(`s.key = $${paramIndex}`);
         filterParams.push(`${key} ${scale}`);
         paramIndex++;
+      } else if (key && key !== "all" && key.includes(" ")) {
+        conditions.push(`s.key = $${paramIndex}`);
+        filterParams.push(key);
+        paramIndex++;
       } else if (key && key !== "all") {
-        conditions.push(`s.key LIKE $${paramIndex}`);
-        filterParams.push(`${key}%`);
+        // Note token, not a prefix: "C" must not match "C# Minor". Twin of the
+        // Prisma where above, which `total` is counted with.
+        conditions.push(`split_part(s.key, ' ', 1) = $${paramIndex}`);
+        filterParams.push(key);
         paramIndex++;
       } else if (scale && scale !== "all") {
         conditions.push(`s.key LIKE $${paramIndex}`);
@@ -352,6 +370,14 @@ export async function GET(request: NextRequest) {
     );
 
     // Map to frontend format
+    // Real download counts for this page — one grouped query that covers both
+    // the raw-SQL (random order) and Prisma branches above. total_purchases
+    // below reads the denormalized downloadCount column, which IS the purchase
+    // count; total_downloads cannot.
+    const downloadsBySampleId = await getSampleDownloadCounts(
+      samples.map((s) => s.id)
+    );
+
     const mapped = samples.map((s, i) => ({
       id: s.id,
       name: s.name,
@@ -373,7 +399,7 @@ export async function GET(request: NextRequest) {
       average_rating: s.ratingAvg,
       total_ratings: s.ratingCount,
       total_purchases: s.downloadCount,
-      total_downloads: s.downloadCount,
+      total_downloads: downloadsBySampleId.get(s.id) ?? 0,
       created_date: s.createdAt.toISOString(),
     }));
 
@@ -490,15 +516,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Enforce credit price limit: max 5 for non-whitelisted creators
-    const parsedCreditPrice = creditPrice ? parseInt(creditPrice) : 1;
-    const maxCreditPrice = dbUser.isWhitelisted ? 50 : 5;
-    if (parsedCreditPrice > maxCreditPrice) {
+    const creditPriceResult = parseOptionalCreditPrice(
+      creditPrice,
+      dbUser.isWhitelisted
+    );
+    if (!creditPriceResult.ok) {
       return NextResponse.json(
-        { error: `Credit price cannot exceed ${maxCreditPrice}` },
+        { error: creditPriceResult.error },
         { status: 400 }
       );
     }
+    const parsedCreditPrice = creditPriceResult.value;
 
     const slug =
       name
@@ -559,6 +587,15 @@ export async function POST(request: NextRequest) {
       }).catch((err) => {
         console.error("Failed to trigger preview generation:", err);
       });
+    }
+
+    // Queue the AI-audio detection scan; the ai-scan cron does the vendor
+    // calls. Runs for whitelisted (insta-published) creators too — their flags
+    // surface in the mod queue after the fact. Never blocks the upload.
+    try {
+      await prisma.audioScan.create({ data: { sampleId: sample.id } });
+    } catch (err) {
+      console.error("Failed to enqueue AI scan:", err);
     }
 
     return NextResponse.json({ sample }, { status: 201 });
