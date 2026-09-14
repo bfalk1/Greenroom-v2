@@ -84,6 +84,14 @@ interface TierRow {
   cohorts: CohortRow[];
 }
 
+/** Tenure summary for one group of subscriptions, in days. */
+interface LifetimeStats {
+  count: number;
+  meanDays: number | null;
+  medianDays: number | null;
+  maxDays: number | null;
+}
+
 interface SubscriberRow {
   userId: string;
   email: string;
@@ -154,6 +162,24 @@ interface SubscribersResponse {
       last30d: number;
     }[];
   };
+  /** How long subscribers stay — see the Subscriber Lifetime panel. */
+  lifetime: {
+    /** Paying now: subscribed so far, still counting. */
+    paying: LifetimeStats;
+    /** Ended: checkout to the end of the last paid period. */
+    ended: LifetimeStats;
+    /** Both groups together. */
+    all: LifetimeStats;
+    churn: {
+      windowDays: number;
+      payingAtStart: number;
+      stopped: number;
+      /** Monthly churn as a percentage; null with nobody at the window start. */
+      ratePct: number | null;
+      /** Mean lifetime at that churn, in days; null when nobody stopped. */
+      expectedDays: number | null;
+    };
+  };
   tiers: TierRow[];
   acquisitionSources: { source: string; count: number }[];
   /** ADMIN-only; null for moderators, who see aggregates without the roster. */
@@ -192,6 +218,18 @@ const fmtDate = (iso: string | null) =>
         month: "short",
         day: "numeric",
       });
+
+const DAYS_PER_MONTH = 30.44;
+
+/** A tenure in days: whole days under a month, otherwise months to one decimal. */
+const fmtDays = (d: number | null | undefined) => {
+  if (d == null) return "—";
+  if (d < DAYS_PER_MONTH) {
+    const n = Math.round(d);
+    return `${n} day${n === 1 ? "" : "s"}`;
+  }
+  return `${(d / DAYS_PER_MONTH).toFixed(1)} mo`;
+};
 
 /** Tier accent colors, keyed by the tier's short name (GA / VIP / AA). */
 const TIER_COLOR: Record<string, string> = {
@@ -413,6 +451,7 @@ function SubscribersSkeleton() {
         ))}
       </div>
       <div className="h-[260px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
+      <div className="h-[200px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
       <div className="h-[420px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg" />
     </div>
   );
@@ -532,6 +571,7 @@ export function SubscribersPanel() {
   if (!data) return null;
 
   const t = data.totals;
+  const lt = data.lifetime;
   const showMoney = data.includesRevenue;
   const list = data.list;
   const pageStart = !list || list.total === 0 ? 0 : list.offset + 1;
@@ -752,6 +792,19 @@ export function SubscribersPanel() {
             hint={`${fmtInt(t.monthlyCreditsTotal)} credits allocated monthly`}
           />
           <BigStat
+            label="Avg Subscriber Lifetime"
+            value={fmtDays(lt.churn.expectedDays)}
+            hint={
+              lt.churn.expectedDays != null
+                ? `at ${fmtPct(lt.churn.ratePct)} monthly churn · ended subs stayed ${fmtDays(
+                    lt.ended.meanDays
+                  )}`
+                : lt.churn.payingAtStart > 0
+                  ? `nobody left in the last ${lt.churn.windowDays} days`
+                  : `needs subscribers older than ${lt.churn.windowDays} days`
+            }
+          />
+          <BigStat
             label="Canceling"
             value={fmtInt(t.canceling)}
             hint="active until period end"
@@ -826,6 +879,109 @@ export function SubscribersPanel() {
               )}
             </div>
           )}
+        </Panel>
+
+        {/* How long subscribers stay */}
+        <Panel
+          title="Subscriber Lifetime"
+          headerRight={
+            <span className="text-[10px] text-[#666] whitespace-nowrap">
+              from first checkout · payment failing left out
+            </span>
+          }
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[10px] text-[#666]">
+                  <th className="pb-1.5 pr-4 font-medium">Group</th>
+                  <th className="pb-1.5 px-4 font-medium text-right">
+                    Subscribers
+                  </th>
+                  <th className="pb-1.5 px-4 font-medium text-right">Average</th>
+                  <th className="pb-1.5 px-4 font-medium text-right">Median</th>
+                  <th className="pb-1.5 pl-4 font-medium text-right">Longest</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  {
+                    key: "paying",
+                    label: "Paying",
+                    detail: "subscribed so far, still counting",
+                    color: "#39b54a",
+                    stats: lt.paying,
+                  },
+                  {
+                    key: "ended",
+                    label: "Ended",
+                    detail: "checkout to the end of their last paid period",
+                    color: "#a1a1a1",
+                    stats: lt.ended,
+                  },
+                  {
+                    key: "all",
+                    label: "All subscribers",
+                    detail: "both groups together",
+                    color: "#fff",
+                    stats: lt.all,
+                  },
+                ].map((row) => (
+                  <tr key={row.key} className="border-t border-[#1f1f1f]">
+                    <td className="py-2 pr-4">
+                      <span className="inline-flex items-center gap-2 text-white">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: row.color }}
+                        />
+                        {row.label}
+                      </span>
+                      <span className="block text-xs text-[#666] pl-3.5">
+                        {row.detail}
+                      </span>
+                    </td>
+                    <td className="py-2 px-4 text-right text-[#a1a1a1] tabular-nums">
+                      {fmtInt(row.stats.count)}
+                    </td>
+                    <td className="py-2 px-4 text-right text-white font-medium tabular-nums">
+                      {fmtDays(row.stats.meanDays)}
+                    </td>
+                    <td className="py-2 px-4 text-right text-[#a1a1a1] tabular-nums">
+                      {fmtDays(row.stats.medianDays)}
+                    </td>
+                    <td className="py-2 pl-4 text-right text-[#a1a1a1] tabular-nums">
+                      {fmtDays(row.stats.maxDays)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-[#666] mt-3 leading-relaxed">
+            {lt.churn.expectedDays != null ? (
+              <>
+                Expected lifetime{" "}
+                <span className="text-white">{fmtDays(lt.churn.expectedDays)}</span>:{" "}
+                {fmtInt(lt.churn.stopped)} of the {fmtInt(lt.churn.payingAtStart)}{" "}
+                subscribers paying {lt.churn.windowDays} days ago have since left
+                ({fmtPct(lt.churn.ratePct)} monthly churn), and 1 ÷ churn is how
+                long the average subscriber lasts at that rate.{" "}
+              </>
+            ) : lt.churn.payingAtStart > 0 ? (
+              <>
+                None of the {fmtInt(lt.churn.payingAtStart)} subscribers paying{" "}
+                {lt.churn.windowDays} days ago have left, so there&apos;s no churn
+                to project a lifetime from yet.{" "}
+              </>
+            ) : (
+              <>
+                No subscription is {lt.churn.windowDays} days old yet, so
+                there&apos;s no churn to project a lifetime from.{" "}
+              </>
+            )}
+            Observed tenure can&apos;t exceed the oldest subscription (
+            {fmtDays(lt.all.maxDays)}), so it reads low while the base is young.
+          </p>
         </Panel>
 
         {/* Tier mix */}
@@ -1190,7 +1346,9 @@ export function SubscribersPanel() {
           )}
           Annual is identified by a billing period spanning about a year (the
           interval isn&apos;t stored on our side); other one-off coupons
-          aren&apos;t tracked.{" "}
+          aren&apos;t tracked. Lifetime counts from a subscriber&apos;s first
+          checkout, so someone who leaves and comes back keeps their original
+          start.{" "}
           {showMoney
             ? "Averages are per paying subscriber — comped accounts are excluded."
             : "Averages are per paying subscriber — comped accounts are excluded. Revenue figures are admin-only."}

@@ -8,6 +8,7 @@ import {
   monthlyUnitCents,
   type SubCohort,
 } from "@/lib/mrr";
+import { subscriberLifetime } from "@/lib/subscriberLifetime";
 import {
   MOVEMENT_WINDOWS,
   PROVIDER_BACKED,
@@ -16,6 +17,7 @@ import {
   subscriberState,
   subscriberStateWhere,
   windowStart,
+  type MovementInput,
   type WindowCounts,
 } from "@/lib/subscriberStatus";
 import type { Prisma } from "@prisma/client";
@@ -58,6 +60,10 @@ import type { Prisma } from "@prisma/client";
  * - promo    = acquisition_source "vip-first-month": priced at LIST, because
  *              the $5.99 coupon is duration-"once" and renews at full price.
  * Other one-off coupons aren't tracked and also report at list.
+ *
+ * `lifetime` is how long subscribers stay (@/lib/subscriberLifetime): observed
+ * tenure for paying and ended subs, and the lifetime the last 30 days' churn
+ * implies. Counts and days only, so moderators receive it unredacted.
  */
 
 const STATUSES = ["active", "canceling", "failing", "expired", "comped"] as const;
@@ -203,6 +209,7 @@ export async function GET(request: NextRequest) {
     // subscriptions live in the last 30 days) and bucketed in one pass below —
     // the same shape computeMrrSnapshot already uses.
     const cohortSelect = {
+      id: true,
       tierId: true,
       provider: true,
       cancelAtPeriodEnd: true,
@@ -213,7 +220,7 @@ export async function GET(request: NextRequest) {
       user: { select: { subscriptionStatus: true } },
     } as const;
 
-    const [tierRows, windowRows, expiredTotal, compedTotal] = await Promise.all([
+    const [tierRows, windowRows, endedRows, compedTotal] = await Promise.all([
       prisma.subscriptionTier.findMany({
         select: {
           id: true,
@@ -242,9 +249,21 @@ export async function GET(request: NextRequest) {
         },
         select: cohortSelect,
       }),
-      prisma.subscription.count({ where: subscriberStateWhere("ended", now) }),
+      // Every ended sub, however old, for how long subscribers stayed. Only
+      // dates come back, and nothing accumulates faster than subs churn.
+      prisma.subscription.findMany({
+        where: subscriberStateWhere("ended", now),
+        select: {
+          id: true,
+          createdAt: true,
+          currentPeriodStart: true,
+          currentPeriodEnd: true,
+          user: { select: { subscriptionStatus: true } },
+        },
+      }),
       prisma.user.count({ where: compedWhere }),
     ]);
+    const expiredTotal = endedRows.length;
 
     const rows = windowRows.map((row) => ({
       ...row,
@@ -368,6 +387,20 @@ export async function GET(request: NextRequest) {
     // How Paying moved over 24h / 7d / 30d — new subscriptions in, ended and
     // payment-failed ones out — so the headline reconciles day to day.
     const movement = subscriberMovement(rows, now);
+
+    // ── Lifetime ───────────────────────────────
+    // How long subscribers stay. Spans every subscription ever: the live and
+    // recent rows above plus every ended one. The two overlap on subs that
+    // ended inside the window, so key by id.
+    const lifetimeById = new Map<string, MovementInput>();
+    for (const row of rows) lifetimeById.set(row.id, row);
+    for (const row of endedRows) {
+      lifetimeById.set(row.id, {
+        ...row,
+        userStatus: row.user.subscriptionStatus,
+      });
+    }
+    const lifetime = subscriberLifetime([...lifetimeById.values()], now);
 
     // ── New signups, by cohort and by tier ─────
     // Two cuts of the same new subscriptions: which OFFER people came in on
@@ -611,6 +644,10 @@ export async function GET(request: NextRequest) {
         /** Same windows, split by tier — which plans people are buying. */
         tiers: newTierRows,
       },
+      /** How long subscribers stay: observed tenure (paying so far, ended
+       *  completed, both together) and the lifetime the last 30 days' churn
+       *  implies. */
+      lifetime,
       tiers,
       acquisitionSources: [...acquisitionCounts.entries()]
         .map(([source, count]) => ({ source, count }))
