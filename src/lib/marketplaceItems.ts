@@ -7,7 +7,7 @@ import { getSampleDownloadCounts, getPresetDownloadCounts } from "@/lib/download
 // build the same payload inline around their own filtering; this exists so
 // id-first surfaces (recommendations) don't grow a third copy of the mapping.
 
-export const SYNTH_DISPLAY_NAMES: Record<string, string> = {
+const SYNTH_DISPLAY_NAMES: Record<string, string> = {
   SERUM: "Serum",
   SERUM_2: "Serum 2",
   ASTRA: "Astra",
@@ -19,7 +19,7 @@ export const SYNTH_DISPLAY_NAMES: Record<string, string> = {
   BEAT_MAKER: "Beat Maker",
 };
 
-export const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   BASS: "Bass",
   LEAD: "Lead",
   PAD: "Pad",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { recordRecommendationOutcome } from "@/lib/recommendationTracking";
 
 // POST /api/purchases — Auth required, purchase a sample or preset
 export async function POST(request: NextRequest) {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sampleId, presetId } = body;
+    const { sampleId, presetId, recommendationImpressionId } = body;
 
     if (!sampleId && !presetId) {
       return NextResponse.json(
@@ -169,6 +170,16 @@ export async function POST(request: NextRequest) {
       }
 
       return purchase;
+    });
+
+    // Attribute a buy made from a For You list. Runs only after the purchase
+    // has committed, never throws, and is a no-op without an impression id.
+    await recordRecommendationOutcome({
+      impressionId: recommendationImpressionId,
+      userId: authUser.id,
+      kind: "PURCHASE",
+      sampleId: result.sampleId,
+      presetId: result.presetId,
     });
 
     return NextResponse.json({ purchase: result }, { status: 201 });

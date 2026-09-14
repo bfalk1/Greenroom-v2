@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { Search, Music, Users, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, Sliders, Shuffle } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -82,6 +82,10 @@ export default function MarketplacePage() {
   const [recommendations, setRecommendations] = useState<Recommendations | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const recommendationsStaleRef = useRef(true);
+  const recommendationsAbortRef = useRef<AbortController | null>(null);
+  // Query string of the last request, so the tab can tell a filter change apart
+  // from an unrelated re-render.
+  const recommendationsParamsRef = useRef<string | null>(null);
   const [filters, setFilters] = useState({
     genre: "all",
     instrumentType: "all",
@@ -360,20 +364,32 @@ export default function MarketplacePage() {
     }
   }, [user]);
 
-  const fetchRecommendations = useCallback(async () => {
+  const fetchRecommendations = useCallback(async (params: string) => {
     if (!user) return;
+    // Filter clicks can outpace the neighbour queries; only the newest request
+    // is allowed to land.
+    recommendationsAbortRef.current?.abort();
+    const controller = new AbortController();
+    recommendationsAbortRef.current = controller;
+    recommendationsParamsRef.current = params;
     try {
       setRecommendationsLoading(true);
-      const res = await fetch("/api/recommendations");
+      const res = await fetch(`/api/recommendations?${params}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error("Failed to fetch recommendations");
       const data = await res.json();
       setRecommendations(data);
       recommendationsStaleRef.current = false;
     } catch (error) {
+      if ((error as Error)?.name === "AbortError") return;
       console.error("Error fetching recommendations:", error);
       toast.error("Failed to load recommendations");
     } finally {
-      setRecommendationsLoading(false);
+      if (recommendationsAbortRef.current === controller) {
+        recommendationsAbortRef.current = null;
+        setRecommendationsLoading(false);
+      }
     }
   }, [user]);
 
@@ -449,17 +465,43 @@ export default function MarketplacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, presetCurrentPage, searchQuery, presetFilters, randomSeed]);
 
-  // Recompute on entry to the tab, and only when the cached set is stale, so
-  // browsing back and forth doesn't re-run the neighbour queries every time —
-  // and a purchase made while sitting here doesn't reload the list underneath.
+  // For You shares the Samples filter bar, minus sort — the ranking is the
+  // point of the tab — so its request is keyed on the filter fields only.
+  const recommendationParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filters.genre !== "all") params.set("genre", filters.genre);
+    if (filters.instrumentType !== "all") params.set("instrumentType", filters.instrumentType);
+    if (filters.sampleType !== "all") params.set("sampleType", filters.sampleType);
+    if (filters.key !== "all") {
+      if (filters.key === "Major" || filters.key === "Minor") {
+        params.set("scale", filters.key);
+      } else {
+        params.set("key", filters.key);
+      }
+    }
+    return params.toString();
+  }, [filters.genre, filters.instrumentType, filters.sampleType, filters.key]);
+
+  // Fetch while the tab is showing when its filters changed, or when the list
+  // went stale since the user was last here. Staleness only counts on ENTRY: a
+  // purchase marks the list stale, and the refreshUser() that follows it
+  // changes `user` and re-runs this effect — refetching then would reload the
+  // list underneath the buyer who just used it.
   const onRecommendedRef = useRef(false);
   useEffect(() => {
-    const wasOnTab = onRecommendedRef.current;
-    onRecommendedRef.current = activeTab === "recommended";
-    if (activeTab !== "recommended" || wasOnTab) return;
-    if (!user || !recommendationsStaleRef.current) return;
-    fetchRecommendations();
-  }, [activeTab, user, fetchRecommendations]);
+    if (activeTab !== "recommended") {
+      onRecommendedRef.current = false;
+      return;
+    }
+    // Not yet marked as entered, so the fetch still fires once auth resolves.
+    if (!user) return;
+    const entering = !onRecommendedRef.current;
+    onRecommendedRef.current = true;
+    const filtersChanged = recommendationsParamsRef.current !== recommendationParams;
+    if (filtersChanged || (entering && recommendationsStaleRef.current)) {
+      fetchRecommendations(recommendationParams);
+    }
+  }, [activeTab, user, recommendationParams, fetchRecommendations]);
 
   const handleTabChange = (tab: MarketplaceTab) => {
     setActiveTab(tab);
@@ -619,7 +661,8 @@ export default function MarketplacePage() {
     }
   };
 
-  const handlePurchase = async (sample: Sample) => {
+  // `recommendationImpressionId` is passed only for buys made from the For You list.
+  const handlePurchase = async (sample: Sample, recommendationImpressionId?: string | null) => {
     if (!user) {
       toast.error("Please log in to purchase samples");
       return;
@@ -641,7 +684,7 @@ export default function MarketplacePage() {
       const res = await fetch("/api/purchases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId: sample.id }),
+        body: JSON.stringify({ sampleId: sample.id, recommendationImpressionId }),
       });
 
       const data = await res.json();
@@ -708,7 +751,7 @@ export default function MarketplacePage() {
     }
   };
 
-  const handlePresetPurchase = async (preset: Preset) => {
+  const handlePresetPurchase = async (preset: Preset, recommendationImpressionId?: string | null) => {
     if (!user) {
       toast.error("Please log in to purchase presets");
       return;
@@ -728,7 +771,7 @@ export default function MarketplacePage() {
       const res = await fetch("/api/purchases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId: preset.id }),
+        body: JSON.stringify({ presetId: preset.id, recommendationImpressionId }),
       });
 
       const data = await res.json();
@@ -777,35 +820,9 @@ export default function MarketplacePage() {
     setRandomSeed(Math.random());
   };
 
-  // Suggestion chips are shortcuts into the browsable tabs: apply the filter,
-  // then hand the user over to the list that filter belongs to.
-  const applySampleFacet = (patch: Partial<typeof filters>) => {
-    const next = { ...filters, ...patch };
-    trackFilterChange({
-      genre: next.genre !== "all" ? next.genre : undefined,
-      instrumentType: next.instrumentType !== "all" ? next.instrumentType : undefined,
-      sampleType: next.sampleType !== "all" ? next.sampleType : undefined,
-      key: next.key !== "all" ? next.key : undefined,
-    });
-    setFilters(next);
-    setActiveTab("samples");
-    setSelectedIndex(0);
-    stopGlobalPlayback();
-  };
-
-  const handleRecommendedGenre = (genre: string) => applySampleFacet({ genre });
-  const handleRecommendedInstrument = (instrumentType: string) =>
-    applySampleFacet({ instrumentType });
-
-  const handleRecommendedPresetCategory = (category: string) => {
-    setPresetFilters((prev) => ({ ...prev, category }));
-    setActiveTab("presets");
-    stopGlobalPlayback();
-  };
-
   const handleRecommendationsRefresh = () => {
     recommendationsStaleRef.current = true;
-    fetchRecommendations();
+    fetchRecommendations(recommendationParams);
   };
 
   const userForCard = user
@@ -960,15 +977,20 @@ export default function MarketplacePage() {
         </div>
 
         {/* Tabs */}
+        {/* For You needs an account, so it only joins the row for signed-in users */}
         <MarketplaceTabs
           activeTab={activeTab}
           onTabChange={handleTabChange}
-          tabs={user ? ["recommended", "samples", "presets"] : ["samples", "presets"]}
+          tabs={user ? ["samples", "presets", "recommended"] : ["samples", "presets"]}
         />
 
-        {/* Filters — the recommended list has its own ordering, so no filter bar */}
-        {activeTab === "samples" && (
-          <SampleFilters filters={filters} onFilterChange={handleFilterChange} />
+        {/* Filters — For You and Samples share one filter state */}
+        {(activeTab === "samples" || activeTab === "recommended") && (
+          <SampleFilters
+            filters={filters}
+            onFilterChange={handleFilterChange}
+            showSort={activeTab === "samples"}
+          />
         )}
         {activeTab === "presets" && (
           <PresetFilters filters={presetFilters} onFilterChange={handlePresetFilterChange} />
@@ -995,13 +1017,11 @@ export default function MarketplacePage() {
             purchasedPresetIds={purchasedPresetIds}
             favoritedPresetIds={favoritedPresetIds}
             userPresetRatings={userPresetRatings}
-            onPurchase={handlePurchase}
+            onPurchase={(sample) => handlePurchase(sample, recommendations?.impressionId)}
             onFavoriteChange={handleFavoriteChange}
-            onPresetPurchase={handlePresetPurchase}
+            onPresetPurchase={(preset) => handlePresetPurchase(preset, recommendations?.impressionId)}
             onPresetFavoriteChange={handlePresetFavoriteChange}
-            onGenreSelect={handleRecommendedGenre}
-            onInstrumentSelect={handleRecommendedInstrument}
-            onPresetCategorySelect={handleRecommendedPresetCategory}
+            isFiltered={recommendationParams !== ""}
             onRefresh={handleRecommendationsRefresh}
             refreshUser={refreshUser}
           />

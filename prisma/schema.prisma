@@ -182,6 +182,8 @@ model User {
   sentMessages         Message[]             @relation("SentMessages")
   authoredBroadcasts   Broadcast[]           @relation("AuthoredBroadcasts")
   checkoutAttributions CheckoutAttribution[]
+  recommendationImpressions RecommendationImpression[]
+  recommendationOutcomes    RecommendationOutcome[]
 
   @@map("users")
 }
@@ -296,6 +298,7 @@ model Sample {
   ratings   Rating[]
   favorites Favorite[]
   audioScan AudioScan?
+  recommendationOutcomes RecommendationOutcome[]
 
   @@index([genre])
   @@index([instrumentType])
@@ -349,6 +352,7 @@ model Preset {
   ratings   Rating[]
   favorites Favorite[]
   audioScan AudioScan?
+  recommendationOutcomes RecommendationOutcome[]
 
   @@index([synthName])
   @@index([presetCategory])
@@ -924,4 +928,75 @@ model AudioScan {
   @@index([status])
   @@index([flagged])
   @@map("audio_scans")
+}
+
+// ─────────────────────────────────────────────
+// FOR YOU ATTRIBUTION
+// ─────────────────────────────────────────────
+
+enum RecommendationOutcomeKind {
+  PURCHASE
+  FAVORITE
+}
+
+// One row per For You list served: what was shown, in order, and the score
+// parts that ranked it. Parallel arrays (index = position - 1) keep a 50-item
+// list to a single compact row. A cold-start list stores ids only, since
+// nothing was scored. `ranker` names the scoring version, so outcomes can be
+// compared across weight changes.
+model RecommendationImpression {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  ranker              String
+  cold                Boolean
+  filters             Json     @default("{}") @db.JsonB
+  sampleIds           String[] @default([]) @map("sample_ids") @db.Uuid
+  sampleScores        Float[]  @default([]) @map("sample_scores") @db.Real
+  sampleSimilarBuyers Float[]  @default([]) @map("sample_similar_buyers") @db.Real
+  sampleGenre         Float[]  @default([]) @map("sample_genre") @db.Real
+  sampleInstrument    Float[]  @default([]) @map("sample_instrument") @db.Real
+  sampleCreator       Float[]  @default([]) @map("sample_creator") @db.Real
+  sampleRating        Float[]  @default([]) @map("sample_rating") @db.Real
+  samplePopularity    Float[]  @default([]) @map("sample_popularity") @db.Real
+  presetIds           String[] @default([]) @map("preset_ids") @db.Uuid
+  presetScores        Float[]  @default([]) @map("preset_scores") @db.Real
+  presetSimilarBuyers Float[]  @default([]) @map("preset_similar_buyers") @db.Real
+  presetGenre         Float[]  @default([]) @map("preset_genre") @db.Real
+  presetCategory      Float[]  @default([]) @map("preset_category") @db.Real
+  presetCreator       Float[]  @default([]) @map("preset_creator") @db.Real
+  presetRating        Float[]  @default([]) @map("preset_rating") @db.Real
+  presetPopularity    Float[]  @default([]) @map("preset_popularity") @db.Real
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user     User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outcomes RecommendationOutcome[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("recommendation_impressions")
+}
+
+// A purchase or favorite made from a served For You list. The position is read
+// from the impression server-side, never taken from the client.
+model RecommendationOutcome {
+  id           String                    @id @default(uuid()) @db.Uuid
+  impressionId String                    @map("impression_id") @db.Uuid
+  userId       String                    @map("user_id") @db.Uuid
+  sampleId     String?                   @map("sample_id") @db.Uuid
+  presetId     String?                   @map("preset_id") @db.Uuid
+  kind         RecommendationOutcomeKind
+  position     Int // 1-based rank within the impression's list
+  createdAt    DateTime                  @default(now()) @map("created_at")
+
+  impression RecommendationImpression @relation(fields: [impressionId], references: [id], onDelete: Cascade)
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sample     Sample?                  @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  preset     Preset?                  @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@unique([impressionId, kind, sampleId])
+  @@unique([impressionId, kind, presetId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([sampleId])
+  @@index([presetId])
+  @@map("recommendation_outcomes")
 }

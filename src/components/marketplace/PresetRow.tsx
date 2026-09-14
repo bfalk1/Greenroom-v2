@@ -68,6 +68,8 @@ export interface PresetRowProps {
   isSelected?: boolean;
   /** Why this row was surfaced — rendered under the name on recommendation lists. */
   reason?: string;
+  /** Set on For You rows, so a like made here is attributed to that list. */
+  recommendationImpressionId?: string | null;
   onPurchase: (preset: Preset) => void;
   onFavoriteChange?: (presetId: string, favorited: boolean) => void;
 }
@@ -80,6 +82,7 @@ export function PresetRow({
   userRating,
   isSelected = false,
   reason,
+  recommendationImpressionId,
   onPurchase,
   onFavoriteChange,
 }: PresetRowProps) {
@@ -234,7 +237,7 @@ export function PresetRow({
       const res = await fetch("/api/favorites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId: preset.id }),
+        body: JSON.stringify({ presetId: preset.id, recommendationImpressionId }),
       });
       if (!res.ok) throw new Error("Failed to update favorite");
       const data = await res.json();

@@ -1,38 +1,33 @@
 "use client";
 
 import React from "react";
-import { Sparkles, Music, Sliders, RefreshCw } from "lucide-react";
+import { Music, RefreshCw, ShoppingBag } from "lucide-react";
 import { Sample } from "@/components/marketplace/SampleCard";
 import { SampleRow } from "@/components/marketplace/SampleRow";
 import { PresetRow, Preset } from "@/components/marketplace/PresetRow";
 
-export interface FacetSuggestion {
-  value: string;
-  label: string;
-  available: number;
-  buyers: number;
-  owned: boolean;
-  reason: string;
-}
-
 export interface Recommendations {
   cold: boolean;
+  /** Too little purchase history to personalise well yet, so the tab asks for more. */
+  needsMoreHistory: boolean;
   signals: {
     purchasedSamples: number;
     purchasedPresets: number;
     favorites: number;
   };
-  samples: Array<Sample & { reason: string }>;
-  presets: Array<Preset & { reason: string }>;
-  genres: FacetSuggestion[];
-  instrumentTypes: FacetSuggestion[];
-  presetCategories: FacetSuggestion[];
-  presetSynths: FacetSuggestion[];
+  // `reason` is absent when nothing personal put an item in the list — e.g. a
+  // filter narrowed the pool past everything the user's history speaks to.
+  samples: Array<Sample & { reason?: string }>;
+  presets: Array<Preset & { reason?: string }>;
+  /** The served list's id, for attributing buys and likes. Null when it wasn't logged. */
+  impressionId: string | null;
 }
 
 interface RecommendedPanelProps {
   data: Recommendations | null;
   loading: boolean;
+  /** Whether the shared filter bar is narrowing the list (changes the empty state). */
+  isFiltered: boolean;
   user: { id: string; email?: string; credits?: number; subscription_status?: string; is_creator?: boolean; role?: string } | null;
   purchasedIds: Set<string>;
   favoritedIds: Set<string>;
@@ -44,53 +39,14 @@ interface RecommendedPanelProps {
   onFavoriteChange: (sampleId: string, favorited: boolean) => void;
   onPresetPurchase: (preset: Preset) => void;
   onPresetFavoriteChange: (presetId: string, favorited: boolean) => void;
-  onGenreSelect: (genre: string) => void;
-  onInstrumentSelect: (instrumentType: string) => void;
-  onPresetCategorySelect: (category: string) => void;
   onRefresh: () => void;
   refreshUser: () => void;
-}
-
-function SuggestionRow({
-  title,
-  hint,
-  items,
-  onSelect,
-}: {
-  title: string;
-  hint: string;
-  items: FacetSuggestion[];
-  onSelect: (value: string) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="mb-5">
-      <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2 mb-2">
-        <h3 className="text-xs font-semibold text-white">{title}</h3>
-        <span className="text-[11px] text-[#666]">{hint}</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item) => (
-          <button
-            key={item.value}
-            onClick={() => onSelect(item.value)}
-            className="group flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#39b54a]/60 hover:bg-[#202020] transition"
-            title={`${item.available} available`}
-          >
-            <span className="text-xs font-medium text-white group-hover:text-[#39b54a] transition-colors">
-              {item.label}
-            </span>
-            <span className="text-[10px] text-[#666]">{item.reason}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function RecommendedPanel({
   data,
   loading,
+  isFiltered,
   user,
   purchasedIds,
   favoritedIds,
@@ -102,85 +58,61 @@ export function RecommendedPanel({
   onFavoriteChange,
   onPresetPurchase,
   onPresetFavoriteChange,
-  onGenreSelect,
-  onInstrumentSelect,
-  onPresetCategorySelect,
   onRefresh,
   refreshUser,
 }: RecommendedPanelProps) {
-  if (loading || !data) {
-    return (
-      <div className="mb-8 space-y-3">
-        <div className="h-20 bg-[#1a1a1a] rounded-lg animate-pulse" />
-        {Array(8)
-          .fill(0)
-          .map((_, i) => (
-            <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
-          ))}
-      </div>
-    );
-  }
+  const showSkeleton = loading || !data;
 
-  const { signals } = data;
-  const purchases = signals.purchasedSamples + signals.purchasedPresets;
-  const basis = data.cold
-    ? "Buy or favorite a few sounds and this tab starts tracking your taste."
-    : `Built from your ${purchases} purchase${purchases !== 1 ? "s" : ""}` +
-      (signals.favorites > 0
-        ? `, ${signals.favorites} favorite${signals.favorites !== 1 ? "s" : ""},`
-        : "") +
-      " and what buyers with similar taste bought.";
+  let heading = "Picked for you";
+  let basis = "";
+  if (data) {
+    const count = data.samples.length;
+    heading = data.cold
+      ? "Popular picks"
+      : `${count} sample${count !== 1 ? "s" : ""} picked for you`;
+    const purchases = data.signals.purchasedSamples + data.signals.purchasedPresets;
+    const favorites = data.signals.favorites;
+    if (!data.cold) {
+      basis =
+        `Based on your ${purchases} purchase${purchases !== 1 ? "s" : ""}` +
+        (favorites > 0 ? `, ${favorites} favorite${favorites !== 1 ? "s" : ""},` : "") +
+        " and what buyers with similar taste bought.";
+    }
+  }
 
   return (
     <div className="mb-8">
-      <div className="mb-6 p-5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
-        <div className="flex items-start justify-between gap-4 mb-5">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#39b54a]/10 rounded-lg">
-              <Sparkles className="w-5 h-5 text-[#39b54a]" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-white">
-                {data.cold ? "Start here" : "Recommended for you"}
-              </h2>
-              <p className="text-xs text-[#a1a1a1]">{basis}</p>
-            </div>
-          </div>
-          <button
-            onClick={onRefresh}
-            className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#a1a1a1] hover:text-white bg-[#141414] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-[#39b54a]/50 rounded-md transition"
-            title="Recompute recommendations"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </button>
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-[#a1a1a1]">{heading}</h2>
+          {basis && <p className="text-xs text-[#666] truncate">{basis}</p>}
+          {data?.needsMoreHistory && (
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[#a1a1a1]">
+              <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0 text-[#39b54a]" aria-hidden="true" />
+              Buy more samples to let us figure out what you like.
+            </p>
+          )}
         </div>
-
-        <SuggestionRow
-          title="Genres for you"
-          hint="jumps to Samples with the filter applied"
-          items={data.genres}
-          onSelect={onGenreSelect}
-        />
-        <SuggestionRow
-          title="Sub-categories for you"
-          hint="instrument types worth digging into"
-          items={data.instrumentTypes}
-          onSelect={onInstrumentSelect}
-        />
-        <SuggestionRow
-          title="Preset categories for you"
-          hint="jumps to Presets with the filter applied"
-          items={data.presetCategories}
-          onSelect={onPresetCategorySelect}
-        />
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-[#a1a1a1] hover:text-white bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#2a2a2a] hover:border-[#39b54a]/50 rounded-md transition disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Recompute recommendations"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
       </div>
 
-      <h3 className="text-sm font-semibold text-[#a1a1a1] mb-4">
-        {data.cold ? "Popular picks" : "Samples picked for you"}
-      </h3>
-
-      {data.samples.length > 0 ? (
+      {showSkeleton ? (
+        <div className="space-y-2">
+          {Array(8)
+            .fill(0)
+            .map((_, i) => (
+              <div key={i} className="h-12 bg-[#1a1a1a] rounded-lg animate-pulse" />
+            ))}
+        </div>
+      ) : data.samples.length > 0 ? (
         <div className="bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] overflow-hidden">
           <div className="grid grid-cols-[auto_1fr_80px_60px] md:grid-cols-[auto_1fr_90px_45px_45px_80px_50px] gap-2 md:gap-3 px-3 md:px-4 py-3 border-b border-[#2a2a2a] bg-[#141414]">
             <div className="w-10" />
@@ -201,6 +133,7 @@ export function RecommendedPanel({
                 isFavorited={favoritedIds.has(sample.id)}
                 userRating={userRatings[sample.id]}
                 reason={sample.reason}
+                recommendationImpressionId={data.impressionId}
                 onPurchase={onPurchase}
                 onFavoriteChange={onFavoriteChange}
                 refreshUser={refreshUser}
@@ -209,15 +142,17 @@ export function RecommendedPanel({
           </div>
         </div>
       ) : (
-        <div className="text-center py-12 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
-          <Music className="w-10 h-10 text-[#2a2a2a] mx-auto mb-3" />
-          <p className="text-[#a1a1a1] text-sm">
-            Nothing to recommend yet — buy or favorite a few samples first.
+        <div className="text-center py-16">
+          <Music className="w-12 h-12 text-[#2a2a2a] mx-auto mb-4" />
+          <p className="text-[#a1a1a1]">
+            {isFiltered
+              ? "No recommendations match your filters."
+              : "Nothing to recommend yet — buy or favorite a few samples first."}
           </p>
         </div>
       )}
 
-      {data.presets.length > 0 && (
+      {!showSkeleton && data.presets.length > 0 && (
         <>
           <h3 className="text-sm font-semibold text-[#a1a1a1] mt-8 mb-4">
             {data.cold ? "Popular presets" : "Presets picked for you"}
@@ -242,6 +177,7 @@ export function RecommendedPanel({
                   isFavorited={favoritedPresetIds.has(preset.id)}
                   userRating={userPresetRatings[preset.id]}
                   reason={preset.reason}
+                  recommendationImpressionId={data.impressionId}
                   onPurchase={onPresetPurchase}
                   onFavoriteChange={onPresetFavoriteChange}
                 />
@@ -249,13 +185,6 @@ export function RecommendedPanel({
             </div>
           </div>
         </>
-      )}
-
-      {data.presets.length === 0 && data.presetSynths.length > 0 && (
-        <p className="mt-6 text-xs text-[#666]">
-          <Sliders className="inline w-3.5 h-3.5 mr-1 -mt-0.5" />
-          No preset picks yet — try the Presets tab.
-        </p>
       )}
     </div>
   );

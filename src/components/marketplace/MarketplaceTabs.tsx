@@ -8,9 +8,7 @@ const TAB_LABELS: Record<MarketplaceTab, string> = {
   samples: "Samples",
   presets: "Presets",
   favorites: "Favorites",
-  // Not "For You" — the marketplace already gives that name to the followed-
-  // artists strip above these tabs.
-  recommended: "Recommended",
+  recommended: "For You",
 };
 
 const DEFAULT_TABS: MarketplaceTab[] = ["samples", "presets"];
