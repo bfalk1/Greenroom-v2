@@ -44,6 +44,8 @@ export interface FilterState {
 interface SampleFiltersProps {
   filters: FilterState;
   onFilterChange: (filters: FilterState) => void;
+  // For You ranks its own list, so a sort control there would only fight it.
+  showSort?: boolean;
 }
 
 // Searchable dropdown component
@@ -155,7 +157,7 @@ function SearchableSelect({
   );
 }
 
-export function SampleFilters({ filters, onFilterChange }: SampleFiltersProps) {
+export function SampleFilters({ filters, onFilterChange, showSort = true }: SampleFiltersProps) {
   const [mounted, setMounted] = useState(false);
   const [genres, setGenres] = useState<string[]>([]);
 
@@ -236,20 +238,22 @@ export function SampleFilters({ filters, onFilterChange }: SampleFiltersProps) {
         className="w-32"
       />
 
-      <Select
-        value={filters.sortBy}
-        onValueChange={(v) => handleChange("sortBy", v)}
-      >
-        <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
-          <SelectValue placeholder="Sort" />
-        </SelectTrigger>
-        <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
-          <SelectItem value="random">Random</SelectItem>
-          <SelectItem value="newest">Most Recent</SelectItem>
-          <SelectItem value="popular">Most Popular</SelectItem>
-          <SelectItem value="rating">Top Rated</SelectItem>
-        </SelectContent>
-      </Select>
+      {showSort && (
+        <Select
+          value={filters.sortBy}
+          onValueChange={(v) => handleChange("sortBy", v)}
+        >
+          <SelectTrigger className="w-32 bg-[#0a0a0a] border-[#2a2a2a] text-white">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+            <SelectItem value="random">Random</SelectItem>
+            <SelectItem value="newest">Most Recent</SelectItem>
+            <SelectItem value="popular">Most Popular</SelectItem>
+            <SelectItem value="rating">Top Rated</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }

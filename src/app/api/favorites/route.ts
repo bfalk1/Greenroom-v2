@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recordRecommendationOutcome } from "@/lib/recommendationTracking";
 import { createClient } from "@/lib/supabase/server";
 import { getSampleDownloadCounts } from "@/lib/downloadCounts";
 
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { sampleId, presetId } = body;
+    const { sampleId, presetId, recommendationImpressionId } = body;
 
     if (!sampleId && !presetId) {
       return NextResponse.json(
@@ -168,6 +169,13 @@ export async function POST(request: NextRequest) {
           throw err;
         }
       }
+      // Liked from a For You list: attribute it (no-op otherwise, never throws).
+      await recordRecommendationOutcome({
+        impressionId: recommendationImpressionId,
+        userId: authUser.id,
+        kind: "FAVORITE",
+        sampleId,
+      });
       return NextResponse.json({ favorited: true, sampleId });
     } else {
       // Preset favorite toggle
@@ -205,6 +213,12 @@ export async function POST(request: NextRequest) {
           throw err;
         }
       }
+      await recordRecommendationOutcome({
+        impressionId: recommendationImpressionId,
+        userId: authUser.id,
+        kind: "FAVORITE",
+        presetId,
+      });
       return NextResponse.json({ favorited: true, presetId });
     }
   } catch (error) {

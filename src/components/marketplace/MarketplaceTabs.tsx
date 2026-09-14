@@ -2,12 +2,13 @@
 
 import React from "react";
 
-export type MarketplaceTab = "samples" | "presets" | "favorites";
+export type MarketplaceTab = "samples" | "presets" | "favorites" | "recommended";
 
 const TAB_LABELS: Record<MarketplaceTab, string> = {
   samples: "Samples",
   presets: "Presets",
   favorites: "Favorites",
+  recommended: "For You",
 };
 
 const DEFAULT_TABS: MarketplaceTab[] = ["samples", "presets"];

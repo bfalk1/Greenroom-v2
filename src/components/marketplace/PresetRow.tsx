@@ -66,6 +66,10 @@ export interface PresetRowProps {
   isFavorited?: boolean;
   userRating?: number;
   isSelected?: boolean;
+  /** Why this row was surfaced — rendered under the name on recommendation lists. */
+  reason?: string;
+  /** Set on For You rows, so a like made here is attributed to that list. */
+  recommendationImpressionId?: string | null;
   onPurchase: (preset: Preset) => void;
   onFavoriteChange?: (presetId: string, favorited: boolean) => void;
 }
@@ -77,6 +81,8 @@ export function PresetRow({
   isFavorited: isFavoritedProp = false,
   userRating,
   isSelected = false,
+  reason,
+  recommendationImpressionId,
   onPurchase,
   onFavoriteChange,
 }: PresetRowProps) {
@@ -231,7 +237,7 @@ export function PresetRow({
       const res = await fetch("/api/favorites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ presetId: preset.id }),
+        body: JSON.stringify({ presetId: preset.id, recommendationImpressionId }),
       });
       if (!res.ok) throw new Error("Failed to update favorite");
       const data = await res.json();
@@ -307,6 +313,11 @@ export function PresetRow({
             {preset.artist_name || "Unknown"}
           </Link>
           <span className="md:hidden text-[10px] text-[#666]">{synthDisplay}</span>
+          {reason && (
+            <span className="max-w-full truncate text-[11px] text-[#8a8a8a]">
+              {reason}
+            </span>
+          )}
           {preset.tags && preset.tags.length > 0 && (
             <div className="hidden min-w-0 lg:flex items-center gap-1 overflow-hidden">
               {preset.tags.slice(0, 3).map((tag, i) => (

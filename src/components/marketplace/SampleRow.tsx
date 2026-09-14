@@ -26,6 +26,10 @@ export interface SampleRowProps {
   userRating?: number;
   isSelected?: boolean;
   showArtist?: boolean;
+  /** Why this row was surfaced — rendered under the name on recommendation lists. */
+  reason?: string;
+  /** Set on For You rows, so a like made here is attributed to that list. */
+  recommendationImpressionId?: string | null;
   onPurchase: (sample: Sample) => void;
   onFavoriteChange?: (sampleId: string, favorited: boolean) => void;
   onHighlight?: () => void;
@@ -40,6 +44,8 @@ export function SampleRow({
   userRating,
   isSelected = false,
   showArtist = true,
+  reason,
+  recommendationImpressionId,
   onPurchase,
   onFavoriteChange,
   onHighlight,
@@ -288,7 +294,7 @@ export function SampleRow({
       const res = await fetch("/api/favorites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleId: sample.id }),
+        body: JSON.stringify({ sampleId: sample.id, recommendationImpressionId }),
       });
       if (!res.ok) throw new Error("Failed to update favorite");
       const data = await res.json();
@@ -392,6 +398,11 @@ export function SampleRow({
             </Link>
           ) : (
             <span className="max-w-full truncate text-xs text-[#39b54a]">{sample.genre || "Sample"}</span>
+          )}
+          {reason && (
+            <span className="max-w-full truncate text-[11px] text-[#8a8a8a]">
+              {reason}
+            </span>
           )}
           {sample.tags && sample.tags.length > 0 && (
             <div className="hidden min-w-0 lg:flex items-center gap-1 overflow-hidden">
