@@ -10,6 +10,8 @@ import {
   EMAIL_COLORS,
   EMAIL_FONTS,
 } from "./email-layout";
+import { normalizeEmail } from "./normalizeEmail";
+import { createUnsubscribeToken } from "./unsubscribeToken";
 
 // Lazy-initialize Resend to avoid build errors when API key is missing
 let resend: Resend | null = null;
@@ -49,11 +51,9 @@ interface SendEmailOptions {
   marketing?: boolean;
 }
 
-// Canonical email normalization. Supabase GoTrue lowercases the email on signup,
-// so authUser.email is always lowercase in server code. Any email we STORE or look
-// up (invites, user records, etc.) must be normalized the same way or case-only
-// differences silently break exact-match lookups on the @unique email columns.
-export const normalizeEmail = (email: string): string => email.toLowerCase().trim();
+// Canonical email normalization, defined in normalizeEmail.ts. Re-exported so
+// callers keep importing it from here.
+export { normalizeEmail };
 
 // Returns true if the recipient has unsubscribed from marketing email.
 export async function isEmailUnsubscribed(email: string): Promise<boolean> {
@@ -72,6 +72,22 @@ interface SendTemplateEmailOptions {
   replyTo?: string;
 }
 
+// Unsubscribe URLs for one send. They carry an opaque token, never the address:
+// every tracker on the /unsubscribe page records its URL (see
+// unsubscribeToken.ts).
+function unsubscribeUrls(to: string) {
+  const token = createUnsubscribeToken(to);
+  return {
+    // Visible links in the email body go to the page, where a human confirms
+    // via button.
+    page: `${EMAIL_SITE_URL}/unsubscribe?token=${token}`,
+    // RFC 8058 one-click target. Must be the API route, not the page: mail
+    // clients POST "List-Unsubscribe=One-Click" to this URL, and a POST to a
+    // Next.js page route is a 405.
+    oneClick: `${EMAIL_SITE_URL}/api/unsubscribe?token=${token}`,
+  };
+}
+
 export async function sendEmail(options: SendEmailOptions) {
   // Honor unsubscribes for marketing email. Transactional sends omit `marketing`
   // and always go out.
@@ -80,12 +96,7 @@ export async function sendEmail(options: SendEmailOptions) {
     return null;
   }
 
-  const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
-  // RFC 8058 one-click target. Must be the API route, not the page: mail
-  // clients POST "List-Unsubscribe=One-Click" to this URL, and a POST to a
-  // Next.js page route is a 405. Visible links in the email body keep
-  // pointing at the page (unsubscribeUrl), where a human confirms via button.
-  const oneClickUrl = `${EMAIL_SITE_URL}/api/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  const { page: unsubscribeUrl, oneClick: oneClickUrl } = unsubscribeUrls(options.to);
 
   // Add unsubscribe link to HTML emails if not already present
   let html = options.html;
@@ -132,10 +143,9 @@ export async function sendEmail(options: SendEmailOptions) {
 
 // Send email using a Resend template
 export async function sendTemplateEmail(options: SendTemplateEmailOptions) {
-  const unsubscribeUrl = `${EMAIL_SITE_URL}/unsubscribe?email=${encodeURIComponent(options.to)}`;
-  // See sendEmail: the one-click header must target the API route, the
+  // See unsubscribeUrls: the one-click header targets the API route, the
   // template's visible unsubscribe_url stays on the page.
-  const oneClickUrl = `${EMAIL_SITE_URL}/api/unsubscribe?email=${encodeURIComponent(options.to)}`;
+  const { page: unsubscribeUrl, oneClick: oneClickUrl } = unsubscribeUrls(options.to);
 
   const { data, error } = await getResend().emails.send({
     from: FROM_EMAIL,
