@@ -1,37 +1,30 @@
 import Script from "next/script";
+import { googleTagSnippet } from "@/lib/googleTag";
 
-// Google tag (gtag.js), used here for Google Ads conversion tracking. Like the
-// Meta pixel and PostHog, this is entirely inert unless NEXT_PUBLIC_GOOGLE_ADS_ID
-// is set: no script is loaded and no gtag calls fire, so dev/preview stay clean
-// and the tag only lives where the env var is configured (Vercel prod).
+// Google tag (gtag.js), used here for Google Ads conversion tracking and Google
+// Analytics 4. Like the Meta pixel and PostHog, this is entirely inert unless
+// NEXT_PUBLIC_GOOGLE_ADS_ID and/or NEXT_PUBLIC_GOOGLE_ANALYTICS_ID is set: no
+// script is loaded and no gtag calls fire, so dev/preview stay clean and the
+// tag only lives where the env vars are configured (Vercel prod). Which ids
+// load, and the snippet itself, are decided in src/lib/googleTag.ts.
 //
 // This is the App Router equivalent of Google's inline snippet: next/script with
 // afterInteractive loads gtag.js after hydration, and the sibling inline script
 // installs the dataLayer/gtag stub and runs config. gtag.js records the first
 // page automatically and, being a history-aware tag, follows SPA navigations on
 // its own — so unlike MetaPixel there is no manual per-route PageView here.
-//
-// allow_enhanced_conversions is what lets gtag.js TRANSMIT the user_data that
-// googleAdsSetUserData (src/lib/googleAds.ts) stages — without it the data is
-// staged and silently never sent. Whether Google USES it is the separate
-// per-conversion-action Enhanced Conversions toggle in the Ads account.
 export function GoogleTag() {
-  const id = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID?.trim();
-  if (!id) return null;
+  const snippet = googleTagSnippet({
+    adsId: process.env.NEXT_PUBLIC_GOOGLE_ADS_ID,
+    analyticsId: process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID,
+  });
+  if (!snippet) return null;
 
   return (
     <>
-      <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${id}`}
-        strategy="afterInteractive"
-      />
+      <Script src={snippet.src} strategy="afterInteractive" />
       <Script id="gtag-init" strategy="afterInteractive">
-        {`
-          window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-          gtag('config', '${id}', { allow_enhanced_conversions: true });
-        `}
+        {snippet.init}
       </Script>
     </>
   );
