@@ -793,15 +793,11 @@ export function SubscribersPanel() {
           />
           <BigStat
             label="Avg Subscriber Lifetime"
-            value={fmtDays(lt.churn.expectedDays)}
+            value={fmtDays(lt.all.meanDays)}
             hint={
-              lt.churn.expectedDays != null
-                ? `at ${fmtPct(lt.churn.ratePct)} monthly churn · ended subs stayed ${fmtDays(
-                    lt.ended.meanDays
-                  )}`
-                : lt.churn.payingAtStart > 0
-                  ? `nobody left in the last ${lt.churn.windowDays} days`
-                  : `needs subscribers older than ${lt.churn.windowDays} days`
+              lt.all.count > 0
+                ? `across ${fmtInt(lt.all.count)} subscribers · paying counted through today`
+                : "no subscriptions yet"
             }
           />
           <BigStat
@@ -922,7 +918,7 @@ export function SubscribersPanel() {
                   {
                     key: "all",
                     label: "All subscribers",
-                    detail: "both groups together",
+                    detail: "both groups together · the tile above",
                     color: "#fff",
                     stats: lt.all,
                   },
@@ -958,29 +954,34 @@ export function SubscribersPanel() {
             </table>
           </div>
           <p className="text-[11px] text-[#666] mt-3 leading-relaxed">
+            {lt.all.count > 0 && (
+              <>
+                These averages can&apos;t exceed the oldest subscription (
+                {fmtDays(lt.all.maxDays)}) and will keep rising while the base
+                is young.{" "}
+              </>
+            )}
             {lt.churn.expectedDays != null ? (
               <>
-                Expected lifetime{" "}
-                <span className="text-white">{fmtDays(lt.churn.expectedDays)}</span>:{" "}
-                {fmtInt(lt.churn.stopped)} of the {fmtInt(lt.churn.payingAtStart)}{" "}
-                subscribers paying {lt.churn.windowDays} days ago have since left
-                ({fmtPct(lt.churn.ratePct)} monthly churn), and 1 ÷ churn is how
-                long the average subscriber lasts at that rate.{" "}
+                Projection: {fmtInt(lt.churn.stopped)} of the{" "}
+                {fmtInt(lt.churn.payingAtStart)} subscribers paying{" "}
+                {lt.churn.windowDays} days ago have since left (
+                {fmtPct(lt.churn.ratePct)} monthly churn). If that rate held,
+                the average subscriber would last{" "}
+                <span className="text-white">{fmtDays(lt.churn.expectedDays)}</span>.
               </>
             ) : lt.churn.payingAtStart > 0 ? (
               <>
                 None of the {fmtInt(lt.churn.payingAtStart)} subscribers paying{" "}
                 {lt.churn.windowDays} days ago have left, so there&apos;s no churn
-                to project a lifetime from yet.{" "}
+                to project from yet.
               </>
             ) : (
               <>
                 No subscription is {lt.churn.windowDays} days old yet, so
-                there&apos;s no churn to project a lifetime from.{" "}
+                there&apos;s no churn to project from.
               </>
             )}
-            Observed tenure can&apos;t exceed the oldest subscription (
-            {fmtDays(lt.all.maxDays)}), so it reads low while the base is young.
           </p>
         </Panel>
 
